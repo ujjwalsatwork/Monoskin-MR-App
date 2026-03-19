@@ -1,5 +1,7 @@
 export type AuthStackParamList = {
     Login: undefined;
+    OTP: { mobileNumber: string };
+    DeviceBinding: undefined;
 };
 
 export type MainTabParamList = {

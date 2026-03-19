@@ -12,13 +12,15 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
-import { useAuth } from '@/hooks/useAuth';
-import { MedRepIcon, RightArrowIcon } from '@/assets/images';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AuthStackParamList } from '@/navigation/types';
+import { MonoskinLogo, RightArrowIcon } from '@/assets/images';
 
 const LoginScreen = () => {
   const [mobileNumber, setMobileNumber] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
 
   const handleSendOTP = async () => {
     if (!mobileNumber || mobileNumber.length < 10) {
@@ -29,8 +31,8 @@ const LoginScreen = () => {
     try {
       // Simulate network delay for OTP sending and auto-verification
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      // Log the user in with dummy data
-      await login(mobileNumber + '@example.com', 'dummy_pass');
+      // Navigate to OTP Screen
+      navigation.navigate('OTP', { mobileNumber });
     } catch {
       Alert.alert('Error', 'Failed to send OTP');
     } finally {
@@ -50,7 +52,7 @@ const LoginScreen = () => {
         style={styles.container}
       >
         <View style={styles.logoContainer}>
-          <MedRepIcon />
+          <MonoskinLogo />
         </View>
         <View style={styles.contentContainer}>
           
