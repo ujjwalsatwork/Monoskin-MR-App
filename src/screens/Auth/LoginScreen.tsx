@@ -12,6 +12,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
+import { FONTS } from '@/constants/fonts';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
@@ -131,8 +132,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logoText: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     marginLeft: 8,
     letterSpacing: -0.5,
@@ -147,15 +148,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 34,
     marginBottom: 12,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 20,
@@ -166,7 +168,8 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     marginBottom: 8,
     alignSelf: 'flex-start',
   },
@@ -180,9 +183,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   countryCode: {
-    fontSize: 16,
+    fontSize: FONTS.size.lg,
     color: COLORS.textDark,
-    fontWeight: '600',
+    fontFamily: FONTS.family.semibold,
   },
   separator: {
     width: 1,
@@ -192,9 +195,9 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 16,
+    fontSize: FONTS.size.lg,
     color: COLORS.textDark,
-    fontWeight: '500',
+    fontFamily: FONTS.family.medium,
   },
   button: {
     backgroundColor: COLORS.buttonBlue, // Match the solid blue from the design
@@ -209,8 +212,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.semibold,
     marginRight: 8,
   },
   footerContainer: {
@@ -220,7 +223,8 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
   },
   footerLinksRow: {
     flexDirection: 'row',
@@ -228,7 +232,8 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
     textDecorationLine: 'underline',
   },
 });

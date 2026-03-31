@@ -7,6 +7,10 @@ import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import VisitDetailScreen from '@/screens/Visits/VisitDetailScreen';
 import CreateOrderScreen from '@/screens/Orders/CreateOrderScreen';
+import CheckInSuccessScreen from '@/screens/Home/CheckInSuccessScreen';
+import CheckOutSuccessScreen from '@/screens/Home/CheckOutSuccessScreen';
+import AttendanceHistoryScreen from '@/screens/Home/AttendanceHistoryScreen';
+import RouteMapScreen from '@/screens/Route/RouteMapScreen';
 import { AppStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -36,6 +40,22 @@ const AppNavigator = () => {
               name="CreateOrder" 
               component={CreateOrderScreen} 
               options={{ headerShown: true, title: 'Create Order' }}
+            />
+            <Stack.Screen 
+              name="CheckInSuccess" 
+              component={CheckInSuccessScreen} 
+            />
+            <Stack.Screen
+              name="CheckOutSuccess"
+              component={CheckOutSuccessScreen}
+            />
+            <Stack.Screen
+              name="AttendanceHistory"
+              component={AttendanceHistoryScreen}
+            />
+            <Stack.Screen
+              name="RouteMapScreen"
+              component={RouteMapScreen}
             />
           </>
         )}

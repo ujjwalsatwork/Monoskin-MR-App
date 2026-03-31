@@ -11,6 +11,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
+import { FONTS } from '@/constants/fonts';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   RightArrowIcon, 
@@ -192,15 +193,16 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 34,
     marginBottom: 16,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 22,
@@ -233,14 +235,14 @@ const styles = StyleSheet.create({
   },
   label: {
     color: COLORS.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.semibold,
     marginBottom: 4,
   },
   value: {
     color: COLORS.textDark,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
   },
   divider: {
     height: 1,
@@ -263,8 +265,8 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: '#666666',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
     letterSpacing: 0.5,
   },
   button: {
@@ -281,8 +283,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.semibold,
     marginRight: 8,
   },
   bottomLinkContainer: {
@@ -292,8 +294,8 @@ const styles = StyleSheet.create({
   },
   notMyDeviceText: {
     color: COLORS.white,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
   },
 });
 

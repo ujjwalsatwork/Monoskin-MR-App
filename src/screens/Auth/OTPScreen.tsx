@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
+import { FONTS } from '@/constants/fonts';
 import { MonoskinLogo, RightArrowIcon, BackArrowIcon } from '@/assets/images';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
@@ -230,8 +231,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logoText: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     marginLeft: 8,
     letterSpacing: -0.5,
@@ -246,22 +247,23 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 34,
     marginBottom: 16,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
   },
   boldText: {
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
   },
   otpContainer: {
     flexDirection: 'row',
@@ -277,8 +279,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'transparent',
     color: COLORS.white,
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: FONTS.size.xxl,
+    fontFamily: FONTS.family.semibold,
     textAlign: 'center',
   },
   timerContainer: {
@@ -303,22 +305,21 @@ const styles = StyleSheet.create({
   },
   timerText: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
   },
   timerLabel: {
     color: COLORS.white,
-    fontSize: 9,
-    // position: 'absolute',
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
     bottom: -16,
     textAlign: 'center',
-    fontWeight: 'bold',
     letterSpacing: 0.5,
   },
   timerColon: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
     marginHorizontal: 8,
   },
   resendContainer: {
@@ -327,12 +328,13 @@ const styles = StyleSheet.create({
   },
   resendText: {
     color: COLORS.border,
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
   },
   resendLink: {
     color: COLORS.white,
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
   },
   resendDisabled: {
     opacity: 0.5,
@@ -351,8 +353,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.semibold,
     marginRight: 8,
   },
   footerContainer: {
@@ -362,7 +364,8 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
     letterSpacing: 0.5,
   },
 });
