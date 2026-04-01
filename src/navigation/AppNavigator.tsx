@@ -7,10 +7,14 @@ import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import VisitDetailScreen from '@/screens/Visits/VisitDetailScreen';
 import CreateOrderScreen from '@/screens/Orders/CreateOrderScreen';
+import ProductDetailScreen from '@/screens/Orders/ProductDetailScreen';
 import CheckInSuccessScreen from '@/screens/Home/CheckInSuccessScreen';
 import CheckOutSuccessScreen from '@/screens/Home/CheckOutSuccessScreen';
 import AttendanceHistoryScreen from '@/screens/Home/AttendanceHistoryScreen';
 import RouteMapScreen from '@/screens/Route/RouteMapScreen';
+import TodayVisitsScreen from '@/screens/Home/TodayVisitsScreen';
+import PharmacyDetailScreen from '@/screens/Portfolio/PharmacyDetailScreen';
+import PharmacyOrderScreen from '@/screens/Portfolio/PharmacyOrderScreen';
 import { AppStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -31,15 +35,20 @@ const AppNavigator = () => {
         ) : (
           <>
             <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen 
-              name="VisitDetail" 
-              component={VisitDetailScreen} 
-              options={{ headerShown: true, title: 'Visit Details' }}
+            <Stack.Screen
+              name="VisitDetail"
+              component={VisitDetailScreen}
+              options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="CreateOrder" 
-              component={CreateOrderScreen} 
-              options={{ headerShown: true, title: 'Create Order' }}
+            <Stack.Screen
+              name="CreateOrder"
+              component={CreateOrderScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="ProductDetail"
+              component={ProductDetailScreen}
+              options={{ headerShown: false }}
             />
             <Stack.Screen 
               name="CheckInSuccess" 
@@ -56,6 +65,20 @@ const AppNavigator = () => {
             <Stack.Screen
               name="RouteMapScreen"
               component={RouteMapScreen}
+            />
+            <Stack.Screen
+              name="TodayVisits"
+              component={TodayVisitsScreen}
+            />
+            <Stack.Screen
+              name="PharmacyDetail"
+              component={PharmacyDetailScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="PharmacyOrder"
+              component={PharmacyOrderScreen}
+              options={{ headerShown: false }}
             />
           </>
         )}

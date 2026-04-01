@@ -51,7 +51,19 @@ const CheckInSuccessScreen = ({ route, navigation }: Props) => {
              <Text style={styles.subLocationValue}>{subLocationText}</Text>
           </View>
 
-          <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Main')}>
+          <TouchableOpacity
+             style={styles.primaryButton}
+             onPress={() => navigation.navigate('RouteMapScreen', {
+               routeData: {
+                 origin: { lat: 22.7196, lng: 75.8577 },
+                 stops: [
+                   { id: 1, name: 'City General Hospital',  lat: 22.7250, lng: 75.8650, status: 'target',   distanceStr: '1.2 km', timeStr: '5 min',  address: '123 Pharma Heights, Indore', phone: '+91 98765 43210' },
+                   { id: 2, name: "St. Mary's Clinic",      lat: 22.7310, lng: 75.8720, status: 'upcoming', distanceStr: '3.4 km', timeStr: '12 min', address: 'Zone 4, West District',       phone: '+91 98765 43211' },
+                   { id: 3, name: 'Apollo Diagnostics',     lat: 22.7180, lng: 75.8500, status: 'upcoming', distanceStr: '5.1 km', timeStr: '18 min', address: 'Zone 2, East District',       phone: '+91 98765 43212' },
+                 ],
+               },
+             })}
+          >
              <Text style={styles.primaryButtonText}>Start Field Work</Text>
           </TouchableOpacity>
 

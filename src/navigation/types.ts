@@ -2,6 +2,9 @@ export type AuthStackParamList = {
     Login: undefined;
     OTP: { mobileNumber: string };
     DeviceBinding: undefined;
+    RequestUnbind: undefined;
+    UnbindSuccess: { deviceName: string; deviceId: string; reason: string };
+    ContactSupport: undefined;
 };
 
 export type MainTabParamList = {
@@ -17,6 +20,7 @@ export type AppStackParamList = {
     Main: undefined;
     VisitDetail: { visitId: string };
     CreateOrder: undefined;
+    ProductDetail: { productId: string; productName: string; productTime: string };
     CheckInSuccess: { 
         time: string; 
         locationText: string; 
@@ -30,6 +34,9 @@ export type AppStackParamList = {
         pharmacyLocation: string;
     };
     AttendanceHistory: undefined;
+    TodayVisits: undefined;
+    PharmacyDetail: { pharmacyId: string; pharmacyName: string };
+    PharmacyOrder: { pharmacyId: string; pharmacyName: string };
     RouteMapScreen: {
         routeData: {
             origin: { lat: number, lng: number };

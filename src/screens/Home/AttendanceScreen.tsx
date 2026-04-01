@@ -6,7 +6,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon } from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -15,6 +15,7 @@ const AttendanceScreen = () => {
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [location, setLocation] = useState<{ lat: number; long: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [breakActive, setBreakActive] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
   // Update time every minute
@@ -120,16 +121,50 @@ const AttendanceScreen = () => {
          </View>
       </View>
 
-      {/* Buttons */}
+      {/* Check-In / Check-Out — side by side */}
       <View style={styles.actionButtonsContainer}>
-         <TouchableOpacity style={styles.primaryButton} onPress={handleCheckIn}>
+         <TouchableOpacity style={[styles.primaryButton, styles.halfButton]} onPress={handleCheckIn}>
             <CheckInIcon />
             <Text style={styles.primaryButtonText}>Check-In</Text>
          </TouchableOpacity>
-         <TouchableOpacity style={styles.outlineButton} onPress={handleCheckOut}>
+         <TouchableOpacity style={[styles.outlineButton, styles.halfButton]} onPress={handleCheckOut}>
             <CheckOutIcon />
             <Text style={styles.outlineButtonText}>Check-Out</Text>
          </TouchableOpacity>
+      </View>
+
+      {/* Break Timer */}
+      <View style={styles.breakCard}>
+         <View style={styles.breakLeft}>
+            <View style={styles.breakIconContainer}>
+               <CoffeeIcon />
+            </View>
+            <View>
+               <Text style={styles.breakTitle}>Break Timer</Text>
+               <Text style={styles.breakSubtitle}>Log lunch breaks or{'\n'}transport gaps</Text>
+            </View>
+         </View>
+         <TouchableOpacity
+            style={styles.breakButton}
+            onPress={() => setBreakActive(prev => !prev)}
+            activeOpacity={0.8}
+         >
+            <PauseIcon />
+            <Text style={styles.breakButtonText}>{breakActive ? 'END\nBREAK' : 'START\nBREAK'}</Text>
+         </TouchableOpacity>
+      </View>
+
+      {/* Show Today's Visits */}
+      <View style={styles.visitsSection}>
+         <TouchableOpacity
+            style={styles.visitsButton}
+            onPress={() => navigation.navigate('TodayVisits')}
+            activeOpacity={0.85}
+         >
+            <VisitsIcon />
+            <Text style={styles.visitsButtonText}>Show Today's Visit</Text>
+         </TouchableOpacity>
+         <Text style={styles.visitsSubText}>12 visits planned today</Text>
       </View>
 
       {/* Quick Stats */}
@@ -265,27 +300,32 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   actionButtonsContainer: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
-    marginBottom: 24,
+    marginBottom: 16,
+    gap: 12,
+  },
+  halfButton: {
+    flex: 1,
+    marginBottom: 0,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary, // using primary as blue
+    backgroundColor: COLORS.primary,
     flexDirection: 'row',
     height: 52,
     borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
   },
   primaryButtonText: {
     color: '#FFF',
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
-    marginLeft: 8,
+    marginLeft: 6,
   },
   outlineButton: {
     backgroundColor: '#FFF',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.primary,
     flexDirection: 'row',
     height: 52,
@@ -297,7 +337,91 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
-    marginLeft: 8,
+    marginLeft: 6,
+  },
+
+  // Break Timer
+  breakCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+  },
+  breakLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  breakIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(46, 80, 178, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  breakTitle: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    marginBottom: 2,
+  },
+  breakSubtitle: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  breakButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  breakButtonText: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+
+  // Show Today's Visits
+  visitsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  visitsButton: {
+    backgroundColor: COLORS.buttonBlue,
+    height: 52,
+    borderRadius: 26,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    gap: 8,
+    marginBottom: 8,
+  },
+  visitsButtonText: {
+    color: '#FFF',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+  },
+  visitsSubText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
   },
   statsSection: {
     paddingHorizontal: 20,

@@ -3,8 +3,7 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AttendanceScreen from '@/screens/Home/AttendanceScreen';
 import RouteScreen from '@/screens/Route/RouteScreen';
-// Temporarily using existing screens for the other tabs
-import OrderListScreen from '@/screens/Orders/OrderListScreen';
+import PortfolioScreen from '@/screens/Portfolio/PortfolioScreen';
 import ProfileScreen from '@/screens/Profile/ProfileScreen';
 import VisitListScreen from '@/screens/Visits/VisitListScreen';
 import { MainTabParamList } from './types';
@@ -52,9 +51,9 @@ const TabNavigator = () => {
            tabBarIcon: ({ color }) => <RouteTabIcon stroke={color} />
         }}
       />
-      <Tab.Screen 
-        name="Portfolio" 
-        component={OrderListScreen} 
+      <Tab.Screen
+        name="Portfolio"
+        component={PortfolioScreen}
         options={{
            tabBarIcon: ({ color }) => <PortfolioTabIcon stroke={color} />
         }}

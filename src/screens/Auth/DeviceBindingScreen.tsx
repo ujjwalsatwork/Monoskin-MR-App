@@ -13,12 +13,13 @@ import {
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { useAuth } from '@/hooks/useAuth';
-import { 
-  RightArrowIcon, 
-  BackArrowIcon, 
-  PhoneSmallIcon, 
+import {
+  RightArrowIcon,
+  BackArrowIcon,
+  PhoneSmallIcon,
   FingerprintIcon,
-  MonoskinLogo
+  MonoskinLogo,
+  KeyIcon
 } from '@/assets/images';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
@@ -64,6 +65,10 @@ const DeviceBindingScreen = ({ navigation }: Props) => {
      Alert.alert('Security Alert', 'Please contact support to resolve this issue.', [
          { text: 'OK', onPress: () => navigation.goBack() }
      ]);
+  };
+
+  const handleUnbindViaManager = () => {
+    navigation.navigate('RequestUnbind');
   };
 
   return (
@@ -143,6 +148,14 @@ const DeviceBindingScreen = ({ navigation }: Props) => {
         <View style={styles.bottomLinkContainer}>
             <TouchableOpacity onPress={handleNotMyDevice}>
                 <Text style={styles.notMyDeviceText}>Not my device?</Text>
+            </TouchableOpacity>
+
+            <View style={styles.unbindDivider} />
+
+            <Text style={styles.unbindHelperText}>Lost your old device or exceeded limits?</Text>
+            <TouchableOpacity style={styles.unbindButton} onPress={handleUnbindViaManager} activeOpacity={0.8}>
+                <KeyIcon />
+                <Text style={styles.unbindButtonText}>Unbind via Manager</Text>
             </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -296,6 +309,37 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
+  },
+  unbindDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: '100%',
+    marginVertical: 16,
+  },
+  unbindHelperText: {
+    color: COLORS.white,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    textAlign: 'center',
+    marginBottom: 12,
+    opacity: 0.85,
+  },
+  unbindButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 28,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    gap: 8,
+  },
+  unbindButtonText: {
+    color: COLORS.white,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.semibold,
   },
 });
 
