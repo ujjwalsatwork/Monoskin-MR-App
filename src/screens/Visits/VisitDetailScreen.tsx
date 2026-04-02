@@ -10,13 +10,10 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import Header from '@/components/common/Header';
 import {
-  BackArrowIconBlack,
-  NotificationIcon,
-  ProfileIcon,
   PhoneIconOutline,
   WhatsAppIcon,
   LocationPinIcon,
@@ -30,8 +27,6 @@ import {
   Up,
   Down,
 } from '@/assets/images';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
-import { AppStackParamList } from '@/navigation/types';
 
 const OBJECTION_CHIPS = ['Too Expensive', 'Already Prescribes Brand X', 'Needs Study'];
 
@@ -44,10 +39,7 @@ const INTERACTION_DATES = [
 ];
 
 const VisitDetailScreen = () => {
-  const route = useRoute<RouteProp<AppStackParamList, 'VisitDetail'>>();
-  const navigation = useNavigation();
-
-  const [sampleExpanded, setSampleExpanded] = useState(true);
+const [sampleExpanded, setSampleExpanded] = useState(true);
   const [prefExpanded, setPrefExpanded] = useState(false);
   const [unprefExpanded, setUnprefExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(true);
@@ -94,19 +86,8 @@ const VisitDetailScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <BackArrowIconBlack />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>View Details</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}><NotificationIcon /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}><ProfileIcon /></TouchableOpacity>
-        </View>
-      </View>
-      <View style={styles.headerDivider} />
+    <View style={styles.safeArea}>
+      <Header title="View Details" showBack showNotification showProfile />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
@@ -357,7 +338,7 @@ const VisitDetailScreen = () => {
           <Text style={styles.submitButtonText}>Submit Report</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -365,12 +346,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
 
   // Header
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
-  backButton: { padding: 4, marginRight: 8 },
-  headerTitle: { flex: 1, fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.textDark },
-  headerIcons: { flexDirection: 'row', gap: 8 },
-  iconButton: { padding: 4 },
-  headerDivider: { height: 1, backgroundColor: COLORS.border },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
 

@@ -8,13 +8,10 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import Header from '@/components/common/Header';
 import {
-  BackArrowIconBlack,
-  NotificationIcon,
-  ProfileIcon,
   SearchIcon,
   PlayIcon,
   CartIcon,
@@ -24,6 +21,7 @@ import {
   CheckCircleIcon,
   StoreIcon,
   MapPinOutlineIcon,
+  Down,
 } from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -409,20 +407,8 @@ const PortfolioScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <BackArrowIconBlack />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Portfolio</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}><NotificationIcon /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}><ProfileIcon /></TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.headerDivider} />
+    <View style={styles.safeArea}>
+      <Header title="My Portfolio" showBack showNotification showProfile />
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -461,11 +447,13 @@ const PortfolioScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity style={styles.filterChipFilled}>
           <Text style={styles.filterChipFilledText}>Filter</Text>
-          <Text style={styles.chevron}> ›</Text>
+          {/* <Text style={styles.chevron}> ›</Text> */}
+          <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.filterChipFilled}>
           <Text style={styles.filterChipFilledText}>Sort By</Text>
-          <Text style={styles.chevron}> ›</Text>
+          {/* <Text style={styles.chevron}> ›</Text> */}
+          <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
       </View>
 
@@ -487,7 +475,7 @@ const PortfolioScreen = () => {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -497,23 +485,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  backButton: { padding: 4, marginRight: 8 },
-  headerTitle: {
-    flex: 1,
-    fontSize: FONTS.size.xl,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textDark,
-  },
-  headerIcons: { flexDirection: 'row', gap: 8 },
-  iconButton: { padding: 4 },
-  headerDivider: { height: 1, backgroundColor: COLORS.border },
 
   // Search
   searchContainer: {
@@ -600,8 +571,7 @@ const styles = StyleSheet.create({
   chevron: {
     color: COLORS.white,
     fontSize: 16,
-    transform: [{ rotate: '90deg' }],
-    lineHeight: 18,
+    marginLeft: 6,
   },
 
   // List

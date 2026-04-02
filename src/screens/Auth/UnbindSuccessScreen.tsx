@@ -6,13 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import Header from '@/components/common/Header';
 import {
-  BackArrowIconBlack,
-  NotificationIcon,
-  ProfileIcon,
   FingerprintIcon,
   InfoIcon,
   CheckCircleIcon,
@@ -30,24 +27,8 @@ const UnbindSuccessScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('DeviceBinding')}>
-          <BackArrowIconBlack />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Device Management</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}>
-            <NotificationIcon />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <ProfileIcon />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.headerDivider} />
+    <View style={styles.safeArea}>
+      <Header title="Device Management" showBack showNotification showProfile />
 
       <ScrollView
         style={styles.scrollView}
@@ -117,7 +98,7 @@ const UnbindSuccessScreen = ({ navigation, route }: Props) => {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -125,34 +106,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 8,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: FONTS.size.xl,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textDark,
-  },
-  headerIcons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconButton: {
-    padding: 4,
-  },
-  headerDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
   },
   scrollView: {
     flex: 1,

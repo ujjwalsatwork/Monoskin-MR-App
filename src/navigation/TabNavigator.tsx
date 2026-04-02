@@ -5,16 +5,16 @@ import AttendanceScreen from '@/screens/Home/AttendanceScreen';
 import RouteScreen from '@/screens/Route/RouteScreen';
 import PortfolioScreen from '@/screens/Portfolio/PortfolioScreen';
 import ProfileScreen from '@/screens/Profile/ProfileScreen';
-import VisitListScreen from '@/screens/Visits/VisitListScreen';
+import AssetsScreen from '@/screens/Assets/AssetsScreen';
 import { MainTabParamList } from './types';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
-import { 
-  HomeTabIcon, 
-  RouteTabIcon, 
-  PortfolioTabIcon, 
-  SessionsTabIcon, 
-  LeadsTabIcon 
+import {
+  HomeTabIcon,
+  RouteTabIcon,
+  PortfolioTabIcon,
+  AssetsTabIcon,
+  LeadsTabIcon
 } from '@/assets/images';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -58,11 +58,11 @@ const TabNavigator = () => {
            tabBarIcon: ({ color }) => <PortfolioTabIcon stroke={color} />
         }}
       />
-      <Tab.Screen 
-        name="Sessions" 
-        component={VisitListScreen} 
+      <Tab.Screen
+        name="Assets"
+        component={AssetsScreen}
         options={{
-           tabBarIcon: ({ color }) => <SessionsTabIcon stroke={color} />
+           tabBarIcon: ({ color }) => <AssetsTabIcon stroke={color} />
         }}
       />
       <Tab.Screen 

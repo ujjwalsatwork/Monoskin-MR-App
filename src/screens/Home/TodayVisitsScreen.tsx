@@ -7,13 +7,10 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import Header from '@/components/common/Header';
 import {
-  BackArrowIconBlack,
-  NotificationIcon,
-  ProfileIcon,
   MapPinOutlineIcon,
 } from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
@@ -77,20 +74,8 @@ const TodayVisitsScreen = () => {
   const remaining = PLANNED_TOTAL - VISITS.length;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <BackArrowIconBlack />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Today's Visits</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}><NotificationIcon /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}><ProfileIcon /></TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.headerDivider} />
+    <View style={styles.safeArea}>
+      <Header title="Today's Visits" showBack showNotification showProfile />
 
       <FlatList
         data={VISITS}
@@ -122,7 +107,7 @@ const TodayVisitsScreen = () => {
       <TouchableOpacity style={styles.fab} activeOpacity={0.85}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -132,23 +117,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  backButton: { padding: 4, marginRight: 8 },
-  headerTitle: {
-    flex: 1,
-    fontSize: FONTS.size.xl,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textDark,
-  },
-  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconButton: { padding: 4 },
-  headerDivider: { height: 1, backgroundColor: COLORS.border },
 
   // List
   listContent: {

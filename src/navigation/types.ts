@@ -11,7 +11,7 @@ export type MainTabParamList = {
     Home: undefined;
     Route: undefined;
     Portfolio: undefined;
-    Sessions: undefined;
+    Assets: undefined;
     Leads: undefined;
 };
 
