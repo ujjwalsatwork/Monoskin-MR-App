@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
-  Alert,
   Platform,
   Modal,
   FlatList,
@@ -222,10 +221,9 @@ const CreateOrderScreen = () => {
     setAddItemsVisible(false);
   };
 
-  const handlePlaceOrder = async () => {
-    Alert.alert('Order Placed', 'Your order has been reviewed and placed successfully.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+  const handlePlaceOrder = () => {
+    const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
+    navigation.navigate('Payment', { subtotal: orderValue, orderNumber });
   };
 
 

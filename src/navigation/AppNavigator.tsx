@@ -8,6 +8,10 @@ import TabNavigator from './TabNavigator';
 import VisitDetailScreen from '@/screens/Visits/VisitDetailScreen';
 import CreateOrderScreen from '@/screens/Orders/CreateOrderScreen';
 import ProductDetailScreen from '@/screens/Orders/ProductDetailScreen';
+import PaymentScreen from '@/screens/Orders/PaymentScreen';
+import PaymentSuccessScreen from '@/screens/Orders/PaymentSuccessScreen';
+import PaymentFailedScreen from '@/screens/Orders/PaymentFailedScreen';
+import OrderDetailScreen from '@/screens/Orders/OrderDetailScreen';
 import CheckInSuccessScreen from '@/screens/Home/CheckInSuccessScreen';
 import CheckOutSuccessScreen from '@/screens/Home/CheckOutSuccessScreen';
 import AttendanceHistoryScreen from '@/screens/Home/AttendanceHistoryScreen';
@@ -15,6 +19,11 @@ import RouteMapScreen from '@/screens/Route/RouteMapScreen';
 import TodayVisitsScreen from '@/screens/Home/TodayVisitsScreen';
 import PharmacyDetailScreen from '@/screens/Portfolio/PharmacyDetailScreen';
 import PharmacyOrderScreen from '@/screens/Portfolio/PharmacyOrderScreen';
+import AddLeadScreen from '@/screens/Leads/AddLeadScreen';
+import AddPharmacyLeadScreen from '@/screens/Leads/AddPharmacyLeadScreen';
+import LeadDetailsScreen from '@/screens/Leads/LeadDetailsScreen';
+import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
+import ProfileScreen from '@/screens/Profile/ProfileScreen';
 import { AppStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -50,6 +59,26 @@ const AppNavigator = () => {
               component={ProductDetailScreen}
               options={{ headerShown: false }}
             />
+            <Stack.Screen
+              name="Payment"
+              component={PaymentScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="PaymentSuccess"
+              component={PaymentSuccessScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="PaymentFailed"
+              component={PaymentFailedScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="OrderDetail"
+              component={OrderDetailScreen}
+              options={{ headerShown: false }}
+            />
             <Stack.Screen 
               name="CheckInSuccess" 
               component={CheckInSuccessScreen} 
@@ -78,6 +107,31 @@ const AppNavigator = () => {
             <Stack.Screen
               name="PharmacyOrder"
               component={PharmacyOrderScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="AddDoctorLead"
+              component={AddLeadScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="AddPharmacyLead"
+              component={AddPharmacyLeadScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="LeadDetails"
+              component={LeadDetailsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Profile"
+              component={ProfileScreen}
               options={{ headerShown: false }}
             />
           </>

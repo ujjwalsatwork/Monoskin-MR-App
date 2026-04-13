@@ -4,7 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AttendanceScreen from '@/screens/Home/AttendanceScreen';
 import RouteScreen from '@/screens/Route/RouteScreen';
 import PortfolioScreen from '@/screens/Portfolio/PortfolioScreen';
-import ProfileScreen from '@/screens/Profile/ProfileScreen';
+import LeadsScreen from '@/screens/Leads/LeadsScreen';
 import AssetsScreen from '@/screens/Assets/AssetsScreen';
 import { MainTabParamList } from './types';
 import { COLORS } from '@/constants/colors';
@@ -67,7 +67,7 @@ const TabNavigator = () => {
       />
       <Tab.Screen 
         name="Leads" 
-        component={ProfileScreen} 
+        component={LeadsScreen}
         options={{
            tabBarIcon: ({ color }) => <LeadsTabIcon stroke={color} />
         }}

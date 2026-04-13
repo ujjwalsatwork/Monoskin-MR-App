@@ -31,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({
       
       <View style={styles.headerRight}>
         {showNotification && (
-          <TouchableOpacity style={styles.iconButton}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Notifications' as never)}>
             <View>
               <NotificationIcon />
               <View style={styles.notificationDot} />
@@ -39,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({
           </TouchableOpacity>
         )}
         {showProfile && (
-          <TouchableOpacity style={styles.iconButton}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Profile' as never)}>
             <ProfileIcon />
           </TouchableOpacity>
         )}

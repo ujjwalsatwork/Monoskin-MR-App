@@ -55,3 +55,12 @@ export { default as AddPeople } from './AddPeople.svg';
 export { default as ShareIcon } from './ShareIcon.svg';
 export { default as ReplayIcon } from './ReplayIcon.svg';
 export { default as Stack } from './Stack.svg';
+export { default as Camera } from './Camera.svg';
+export { default as ShieldIcon } from './ShieldIcon.svg';
+export { default as CardIcon } from './CardIcon.svg';
+export { default as UpiIcon } from './UpiIcon.svg';
+export { default as BankIcon } from './BankIcon.svg';
+
+
+
+

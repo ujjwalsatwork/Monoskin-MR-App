@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Platform,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
@@ -15,8 +14,11 @@ import {
   Up,
   Down,
 } from '@/assets/images';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+
+type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
 type Highlight = { label: string; included: boolean };
 type Ingredient = { id: string; name: string; description: string };
@@ -42,6 +44,7 @@ const IngredientSeparator = () => <View style={styles.ingredientSeparator} />;
 
 const ProductDetailScreen = () => {
   const route = useRoute<RouteProp<AppStackParamList, 'ProductDetail'>>();
+  const navigation = useNavigation<NavProp>();
   const { productName, productTime } = route.params;
 
   const [expandedIngredient, setExpandedIngredient] = useState<string | null>('i1');
@@ -107,7 +110,10 @@ const ProductDetailScreen = () => {
         <TouchableOpacity
           style={styles.quickOrderBtn}
           activeOpacity={0.85}
-          onPress={() => Alert.alert('Quick Order', 'Order placed successfully!')}
+          onPress={() => {
+            const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
+            navigation.navigate('Payment', { subtotal: 1250, orderNumber });
+          }}
         >
           <Text style={styles.quickOrderText}>Quick Order  ›</Text>
         </TouchableOpacity>
