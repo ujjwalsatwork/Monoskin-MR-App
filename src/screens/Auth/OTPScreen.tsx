@@ -16,32 +16,35 @@ import { FONTS } from '@/constants/fonts';
 import { MonoskinLogo, RightArrowIcon, BackArrowIcon } from '@/assets/images';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
-
-
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/redux/store';
+import { verifyOtp, sendOtp } from '@/redux/slices/authSlice';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
 
 const OTPScreen = ({ route, navigation }: Props) => {
   const { mobileNumber } = route.params;
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [loading, setLoading] = useState(false);
   const [timer, setTimer] = useState(59);
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { verifyLoading, otpLoading, otpFallback } = useSelector(
+    (state: RootState) => state.auth,
+  );
 
   useEffect(() => {
+    if (timer === 0) return;
     const interval = setInterval(() => {
       setTimer(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [timer]);
 
   const handleOtpChange = (text: string, index: number) => {
     const newOtp = [...otp];
     newOtp[index] = text;
     setOtp(newOtp);
-
-    // Auto-advance
     if (text !== '' && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -59,37 +62,48 @@ const OTPScreen = ({ route, navigation }: Props) => {
       Alert.alert('Error', 'Please enter a valid 6-digit OTP');
       return;
     }
-
-    setLoading(true);
-    try {
-      await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      // Navigate to DeviceBinding Screen upon successful OTP
+    const result = await dispatch(
+      verifyOtp({ phone: mobileNumber, otp: otpValue }),
+    );
+    if (verifyOtp.fulfilled.match(result)) {
       navigation.navigate('DeviceBinding');
-    } catch {
-      Alert.alert('Error', 'OTP Verification failed');
-    } finally {
-      setLoading(false);
+    } else {
+      const errorMsg =
+        typeof result.payload === 'string'
+          ? result.payload
+          : 'OTP verification failed';
+      Alert.alert('Error', errorMsg);
+      setOtp(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
     }
   };
 
-  const handleResend = () => {
-    if (timer === 0) {
+  const handleResend = async () => {
+    if (timer > 0) return;
+    const result = await dispatch(sendOtp({ phone: mobileNumber }));
+    if (sendOtp.fulfilled.match(result)) {
       setTimer(59);
-      // Insert resend logic here
-      Alert.alert('Success', 'OTP Resent!');
+      setOtp(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
+    } else {
+      const errorMsg =
+        typeof result.payload === 'string'
+          ? result.payload
+          : 'Failed to resend OTP';
+      Alert.alert('Error', errorMsg);
     }
   };
 
   const formatTimer = (time: number) => {
-    const minutes = Math.floor(time / 60)
-      .toString()
-      .padStart(2, '0');
+    const minutes = Math.floor(time / 60).toString().padStart(2, '0');
     const seconds = (time % 60).toString().padStart(2, '0');
     return { minutes, seconds };
   };
 
-  const maskedNumber = '+1 ••• ••• ' + mobileNumber.slice(-2);
+  const maskedNumber =
+    '+91 ' + mobileNumber.slice(0, 2) + '•••••' + mobileNumber.slice(-3);
   const { minutes, seconds } = formatTimer(timer);
+  const isLoading = verifyLoading || otpLoading;
 
   return (
     <ImageBackground
@@ -111,15 +125,12 @@ const OTPScreen = ({ route, navigation }: Props) => {
           <BackArrowIcon />
         </TouchableOpacity>
 
-        {/* <MonoskinLogo /> */}
         <View style={styles.logoContainer}>
           <MonoskinLogo />
         </View>
 
         <View style={styles.contentContainer}>
-          <View style={styles.iconContainer}>
-            {/* <MobileVerificationIcon /> */}
-          </View>
+          <View style={styles.iconContainer} />
 
           <Text style={styles.title}>Verify Your Mobile{'\n'}Number</Text>
           <Text style={styles.subtitle}>
@@ -131,7 +142,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
             {otp.map((digit, index) => (
               <TextInput
                 key={index}
-                style={[styles.otpInput]}
+                style={styles.otpInput}
                 value={digit}
                 onChangeText={text => handleOtpChange(text, index)}
                 onKeyPress={e => handleKeyPress(e, index)}
@@ -144,6 +155,10 @@ const OTPScreen = ({ route, navigation }: Props) => {
             ))}
           </View>
 
+          {otpFallback ? (
+            <Text style={styles.otpFallbackText}>Dev OTP: {otpFallback}</Text>
+          ) : null}
+
           <View style={styles.timerContainer}>
             <View style={styles.timerBoxView}>
               <View style={styles.timerBox}>
@@ -151,7 +166,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
               </View>
               <Text style={styles.timerLabel}>MINUTES</Text>
             </View>
-              <Text style={styles.timerColon}>:</Text>
+            <Text style={styles.timerColon}>:</Text>
             <View style={styles.timerBoxView}>
               <View style={styles.timerBox}>
                 <Text style={styles.timerText}>{seconds}</Text>
@@ -162,22 +177,36 @@ const OTPScreen = ({ route, navigation }: Props) => {
 
           <View style={styles.resendContainer}>
             <Text style={styles.resendText}>Didn't receive the code? </Text>
-            <TouchableOpacity onPress={handleResend} disabled={timer > 0}>
-              <Text
-                style={[styles.resendLink, timer > 0 && styles.resendDisabled]}
-              >
-                Resend
-              </Text>
+            <TouchableOpacity
+              onPress={handleResend}
+              disabled={timer > 0 || otpLoading}
+            >
+              {otpLoading ? (
+                <ActivityIndicator
+                  color={COLORS.white}
+                  size="small"
+                  style={styles.resendLoader}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.resendLink,
+                    timer > 0 && styles.resendDisabled,
+                  ]}
+                >
+                  Resend
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, isLoading && styles.buttonDisabled]}
             onPress={handleVerify}
-            disabled={loading}
+            disabled={isLoading}
             activeOpacity={0.8}
           >
-            {loading ? (
+            {verifyLoading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
               <>
@@ -219,7 +248,7 @@ const styles = StyleSheet.create({
     top: 60,
     left: 24,
     zIndex: 10,
-    padding: 8, // Increase touch area
+    padding: 8,
     marginLeft: -8,
   },
   logoContainer: {
@@ -269,7 +298,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 24,
+    marginBottom: 12,
   },
   otpInput: {
     width: 48,
@@ -282,6 +311,12 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.xxl,
     fontFamily: FONTS.family.semibold,
     textAlign: 'center',
+  },
+  otpFallbackText: {
+    color: 'rgba(255,255,200,0.85)',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    marginBottom: 12,
   },
   timerContainer: {
     flexDirection: 'row',
@@ -300,7 +335,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 50,
   },
-  timerBoxView:{
+  timerBoxView: {
     alignItems: 'center',
   },
   timerText: {
@@ -325,6 +360,7 @@ const styles = StyleSheet.create({
   resendContainer: {
     flexDirection: 'row',
     marginBottom: 24,
+    alignItems: 'center',
   },
   resendText: {
     color: COLORS.border,
@@ -338,6 +374,9 @@ const styles = StyleSheet.create({
   },
   resendDisabled: {
     opacity: 0.5,
+  },
+  resendLoader: {
+    marginLeft: 4,
   },
   button: {
     backgroundColor: COLORS.buttonBlue,

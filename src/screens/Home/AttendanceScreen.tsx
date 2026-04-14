@@ -10,6 +10,9 @@ import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon 
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/redux/store';
+import { logAttendance } from '@/redux/slices/attendanceSlice';
 
 const AttendanceScreen = () => {
   const [currentDate, setCurrentDate] = useState(dayjs());
@@ -17,6 +20,10 @@ const AttendanceScreen = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [breakActive, setBreakActive] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const dispatch = useDispatch<AppDispatch>();
+  const { checkInLoading, checkOutLoading } = useSelector(
+    (state: RootState) => state.attendance,
+  );
 
   // Update time every minute
   useEffect(() => {
@@ -42,29 +49,55 @@ const AttendanceScreen = () => {
     );
   }, []);
 
-  const handleCheckIn = () => {
-     navigation.navigate('CheckInSuccess', {
-       time: currentDate.format('hh:mm A'),
-       locationText: '123 Pharma Heights, Indore',
-       subLocationText: 'Zone 4 • West District',
-     });
+  const locationString = location
+    ? `${location.lat.toFixed(6)}, ${location.long.toFixed(6)}`
+    : 'Unknown';
+
+  const handleCheckIn = async () => {
+    const result = await dispatch(
+      logAttendance({ type: 'checkIn', location: locationString }),
+    );
+    console.log('🚀 ~ handleCheckIn ~ result:', result)
+    if (logAttendance.fulfilled.match(result)) {
+      navigation.navigate('CheckInSuccess', {
+        time: currentDate.format('hh:mm A'),
+        locationText: '123 Pharma Heights, Indore',
+        subLocationText: 'Zone 4 • West District',
+      });
+    } else {
+      const msg = typeof result.payload === 'string'
+        ? result.payload
+        : 'Failed to log check-in';
+      Alert.alert('Error', msg);
+    }
   };
 
-  const handleCheckOut = () => {
-     navigation.navigate('CheckOutSuccess', {
-       time: currentDate.format('hh:mm A'),
-       doctorName: 'Dr. Anil Sharma',
-       doctorLocation: 'Zone 4 • West District',
-       pharmacyName: 'United Pharmacy',
-       pharmacyLocation: 'Zone 4 • West District',
-     });
+  const handleCheckOut = async () => {
+    const result = await dispatch(
+      logAttendance({ type: 'checkOut', location: locationString }),
+    );
+    console.log('🚀 ~ handleCheckOut ~ result:', result)
+    if (logAttendance.fulfilled.match(result)) {
+      navigation.navigate('CheckOutSuccess', {
+        time: currentDate.format('hh:mm A'),
+        doctorName: 'Dr. Anil Sharma',
+        doctorLocation: 'Zone 4 • West District',
+        pharmacyName: 'United Pharmacy',
+        pharmacyLocation: 'Zone 4 • West District',
+      });
+    } else {
+      const msg = typeof result.payload === 'string'
+        ? result.payload
+        : 'Failed to log check-out';
+      Alert.alert('Error', msg);
+    }
   };
 
   return (
     <View style={styles.mainContainer}>
       <Header 
         title="Today's Attendance" 
-        showBack
+        // showBack
         showNotification 
         showProfile 
       />
@@ -123,13 +156,27 @@ const AttendanceScreen = () => {
 
       {/* Check-In / Check-Out — side by side */}
       <View style={styles.actionButtonsContainer}>
-         <TouchableOpacity style={[styles.primaryButton, styles.halfButton]} onPress={handleCheckIn}>
+         <TouchableOpacity
+            style={[styles.primaryButton, styles.halfButton, checkInLoading && styles.buttonDisabled]}
+            onPress={handleCheckIn}
+            disabled={checkInLoading || checkOutLoading}
+            activeOpacity={0.8}
+         >
             <CheckInIcon />
-            <Text style={styles.primaryButtonText}>Check-In</Text>
+            <Text style={styles.primaryButtonText}>
+               {checkInLoading ? 'Logging...' : 'Check-In'}
+            </Text>
          </TouchableOpacity>
-         <TouchableOpacity style={[styles.outlineButton, styles.halfButton]} onPress={handleCheckOut}>
+         <TouchableOpacity
+            style={[styles.outlineButton, styles.halfButton, checkOutLoading && styles.buttonDisabled]}
+            onPress={handleCheckOut}
+            disabled={checkInLoading || checkOutLoading}
+            activeOpacity={0.8}
+         >
             <CheckOutIcon />
-            <Text style={styles.outlineButtonText}>Check-Out</Text>
+            <Text style={styles.outlineButtonText}>
+               {checkOutLoading ? 'Logging...' : 'Check-Out'}
+            </Text>
          </TouchableOpacity>
       </View>
 
@@ -337,6 +384,9 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
     marginLeft: 6,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 
   // Break Timer
