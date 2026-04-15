@@ -7,6 +7,13 @@ export const ENDPOINTS = {
     },
     attendance: {
         log: '/mr-attendance',
+        history: (mrId: number) => `/mrs/${mrId}/attendance`,
+    },
+    portfolio: {
+        doctors: '/doctors',
+        doctorDetail: (id: string) => `/doctors/${id}`,
+        pharmacies: '/pharmacies',
+        pharmacyDetail: (id: string) => `/pharmacies/${id}`,
     },
     // user: {
     //     profile: '/user/profile',

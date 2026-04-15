@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -24,6 +25,9 @@ import {
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { ApiPharmacy } from '@/redux/slices/portfolioSlice';
+import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type Priority = 'Low' | 'Medium' | 'High';
@@ -111,7 +115,24 @@ const ProductCard = ({
 const PharmacyOrderScreen = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RouteProp<AppStackParamList, 'PharmacyOrder'>>();
-  const { pharmacyName } = route.params;
+  const { pharmacyId, pharmacyName } = route.params;
+
+  const [pharmacy, setPharmacy] = useState<ApiPharmacy | null>(null);
+  const [pharmacyLoading, setPharmacyLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPharmacy = async () => {
+      try {
+        const res = await apiClient.get<ApiPharmacy>(ENDPOINTS.portfolio.pharmacyDetail(pharmacyId));
+        setPharmacy(res.data);
+      } catch {
+        // keep null — UI will show fallback
+      } finally {
+        setPharmacyLoading(false);
+      }
+    };
+    fetchPharmacy();
+  }, [pharmacyId]);
 
   const [products, setProducts] = useState<PharmacyProduct[]>(INITIAL_PRODUCTS);
   const [notes, setNotes] = useState('');
@@ -172,22 +193,34 @@ const PharmacyOrderScreen = () => {
         <Text style={styles.sectionLabel}>PHARMACY</Text>
 
         {/* Pharmacy card */}
-        <View style={styles.pharmacyCard}>
-          <View style={styles.pharmAvatarWrapper}>
-            <View style={styles.pharmAvatar}>
-              <Text style={styles.pharmAvatarText}>PH</Text>
-            </View>
-            <View style={styles.onlineDot} />
+        {pharmacyLoading ? (
+          <View style={styles.pharmLoader}>
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} />
           </View>
-          <View style={styles.pharmInfo}>
-            <Text style={styles.pharmName}>{pharmacyName}</Text>
-            <Text style={styles.pharmSpecialty}>Cardiologist • MD, FACC</Text>
-            <View style={styles.pharmLocationRow}>
-              <MapPinOutlineIcon width={13} height={13} />
-              <Text style={styles.pharmLocation}> City General Hospital, Wing B-402</Text>
+        ) : (
+          <View style={styles.pharmacyCard}>
+            <View style={styles.pharmAvatarWrapper}>
+              <View style={styles.pharmAvatar}>
+                <Text style={styles.pharmAvatarText}>
+                  {(pharmacy?.name ?? pharmacyName).slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.onlineDot} />
+            </View>
+            <View style={styles.pharmInfo}>
+              <Text style={styles.pharmName}>{pharmacy?.name ?? pharmacyName}</Text>
+              {pharmacy?.importance ? (
+                <Text style={styles.pharmSpecialty}>{pharmacy.importance} Importance</Text>
+              ) : null}
+              <View style={styles.pharmLocationRow}>
+                <MapPinOutlineIcon width={13} height={13} />
+                <Text style={styles.pharmLocation}>
+                  {' '}{pharmacy?.address ?? (`${pharmacy?.city ?? ''}, ${pharmacy?.state ?? ''}`.trim() || '—')}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Product Summary header */}
         <View style={styles.productSummaryHeader}>
@@ -329,6 +362,7 @@ const PharmacyOrderScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
+  pharmLoader: { height: 100, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
 
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 16 },

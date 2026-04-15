@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState, AppDispatch } from '@/redux/store';
+import { fetchDoctors, fetchPharmacies, Doctor, Pharmacy } from '@/redux/slices/portfolioSlice';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -29,109 +33,13 @@ import { AppStackParamList } from '@/navigation/types';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type Category = 'A' | 'B' | 'C';
-type PaymentStatus = 'completed' | 'overdue' | 'pending';
 type Tab = 'Doctors' | 'Pharmacies';
-
-/* ─── Doctor types & data ─────────────────────────────────────── */
-type Doctor = {
-  id: string;
-  name: string;
-  specialty: string;
-  hospital: string;
-  category: Category;
-  priority?: string;
-  followUpToday: boolean;
-  weeklyTarget: number;
-  amount: string;
-  paymentStatus: PaymentStatus;
-  lastVisit: string;
-  lastVisitOverdue: boolean;
-  achievement: { done: number; total: number };
-};
-
-const DOCTORS: Doctor[] = [
-  {
-    id: '1', name: 'Dr. Anil Sharma', specialty: 'Cardiologist', hospital: 'Heart & Vascular Center',
-    category: 'A', priority: 'High Priority', followUpToday: true,
-    weeklyTarget: 2, amount: '₹450.00', paymentStatus: 'completed',
-    lastVisit: '3 days ago', lastVisitOverdue: false, achievement: { done: 6, total: 8 },
-  },
-  {
-    id: '2', name: 'Dr. Anil Sharma', specialty: 'Internal Medicine', hospital: 'City General',
-    category: 'B', followUpToday: true,
-    weeklyTarget: 2, amount: '₹450.00', paymentStatus: 'completed',
-    lastVisit: '3 days ago', lastVisitOverdue: false, achievement: { done: 6, total: 8 },
-  },
-  {
-    id: '3', name: 'Dr. Anil Sharma', specialty: 'Internal Medicine', hospital: 'City General',
-    category: 'C', followUpToday: true,
-    weeklyTarget: 2, amount: '₹450.00', paymentStatus: 'overdue',
-    lastVisit: 'OVERDUE', lastVisitOverdue: true, achievement: { done: 6, total: 8 },
-  },
-  {
-    id: '4', name: 'Dr. Priya Mehta', specialty: 'Dermatologist', hospital: 'Skin Care Clinic',
-    category: 'A', priority: 'High Priority', followUpToday: false,
-    weeklyTarget: 3, amount: '₹600.00', paymentStatus: 'pending',
-    lastVisit: '1 day ago', lastVisitOverdue: false, achievement: { done: 4, total: 8 },
-  },
-];
 
 const CATEGORY_CONFIG: Record<Category, { label: string; bg: string; color: string }> = {
   A: { label: 'CATEGORY A', bg: '#FFF3E0', color: '#E65100' },
   B: { label: 'CATEGORY B', bg: '#F0F0F0', color: '#555555' },
   C: { label: 'CATEGORY C', bg: '#E8F5E9', color: '#2E7D32' },
 };
-
-/* ─── Pharmacy types & data ───────────────────────────────────── */
-type Pharmacy = {
-  id: string;
-  name: string;
-  location: string;
-  iconBg: string;
-  lastVisit: string;
-  neverVisited?: boolean;
-  salesCurrent: number;
-  salesTarget: number;
-  amount: string;
-  paymentStatus: PaymentStatus;
-};
-
-const PHARMACIES: Pharmacy[] = [
-  {
-    id: 'p1',
-    name: 'City Health Pharma',
-    location: 'Downtown Medical Hub',
-    iconBg: '#E8F5E9',
-    lastVisit: '2 days ago',
-    salesCurrent: 7500,
-    salesTarget: 10000,
-    amount: '$450.00',
-    paymentStatus: 'completed',
-  },
-  {
-    id: 'p2',
-    name: 'Metro Care Meds',
-    location: 'East Wing Plaza, G-2',
-    iconBg: '#FFF3E0',
-    lastVisit: '1 week ago',
-    salesCurrent: 3200,
-    salesTarget: 10000,
-    amount: '$450.00',
-    paymentStatus: 'completed',
-  },
-  {
-    id: 'p3',
-    name: 'Apex Rx Pharmacy',
-    location: 'North Suburban Block C',
-    iconBg: '#EDE7F6',
-    neverVisited: true,
-    lastVisit: '',
-    salesCurrent: 12400,
-    salesTarget: 10000,
-    amount: '$450.00',
-    paymentStatus: 'completed',
-  },
-];
 
 /* ─── Doctor Card (outside render) ───────────────────────────── */
 const DoctorCard = ({
@@ -269,11 +177,11 @@ const PharmacyCard = ({
 }) => {
   const progressPercent = Math.min(item.salesCurrent / item.salesTarget, 1);
   const salesStr = item.salesCurrent >= 1000
-    ? `$${(item.salesCurrent / 1000).toFixed(1).replace('.0', '')}k`
-    : `$${item.salesCurrent}`;
+    ? `₹${(item.salesCurrent / 1000).toFixed(1).replace('.0', '')}k`
+    : `₹${item.salesCurrent}`;
   const targetStr = item.salesTarget >= 1000
-    ? `$${item.salesTarget / 1000}k`
-    : `$${item.salesTarget}`;
+    ? `₹${item.salesTarget / 1000}k`
+    : `₹${item.salesTarget}`;
 
   return (
     <View style={styles.card}>
@@ -300,7 +208,7 @@ const PharmacyCard = ({
       {/* Sales target row */}
       <View style={styles.pharmSalesRow}>
         <View>
-          <Text style={styles.salesTargetLabel}>SALES TARGET</Text>
+          <Text style={styles.salesTargetLabel}>ENGAGEMENT SCORE</Text>
           <Text style={styles.salesTargetValue}>
             {salesStr}
             <Text style={styles.salesTargetMax}>  / {targetStr}</Text>
@@ -360,18 +268,34 @@ const PharmacyCard = ({
 /* ─── Screen ──────────────────────────────────────────────────── */
 const PortfolioScreen = () => {
   const navigation = useNavigation<NavProp>();
+  const dispatch = useDispatch<AppDispatch>();
+
   const [activeTab, setActiveTab] = useState<Tab>('Doctors');
   const [searchText, setSearchText] = useState('');
 
-  const filteredDoctors = DOCTORS.filter(d =>
-    d.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    d.specialty.toLowerCase().includes(searchText.toLowerCase()) ||
-    d.hospital.toLowerCase().includes(searchText.toLowerCase())
+  const { doctors, doctorsLoading, pharmacies, pharmaciesLoading } = useSelector(
+    (state: RootState) => state.portfolio,
   );
 
-  const filteredPharmacies = PHARMACIES.filter(p =>
-    p.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    p.location.toLowerCase().includes(searchText.toLowerCase())
+  useEffect(() => {
+    dispatch(fetchDoctors());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (activeTab === 'Pharmacies' && pharmacies.length === 0) {
+      dispatch(fetchPharmacies());
+    }
+  }, [activeTab, dispatch, pharmacies.length]);
+
+  const filteredDoctors = doctors.filter(d =>
+    d?.name?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
+    d?.specialty?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
+    d?.hospital?.toLowerCase()?.includes(searchText?.toLowerCase()),
+  );
+
+  const filteredPharmacies = pharmacies.filter(p =>
+    p?.name?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
+    p?.location?.toLowerCase()?.includes(searchText?.toLowerCase()),
   );
 
   const renderDoctor = ({ item }: { item: Doctor }) => (
@@ -385,7 +309,7 @@ const PortfolioScreen = () => {
           ],
         },
       })}
-      onCreateOrder={() => navigation.navigate('CreateOrder')}
+      onCreateOrder={() => navigation.navigate('CreateOrder', { doctorId: item.id })}
       onViewDetail={() => navigation.navigate('VisitDetail', { visitId: item.id })}
     />
   );
@@ -447,33 +371,43 @@ const PortfolioScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity style={styles.filterChipFilled}>
           <Text style={styles.filterChipFilledText}>Filter</Text>
-          {/* <Text style={styles.chevron}> ›</Text> */}
           <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.filterChipFilled}>
           <Text style={styles.filterChipFilledText}>Sort By</Text>
-          {/* <Text style={styles.chevron}> ›</Text> */}
           <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
       </View>
 
       {/* List */}
       {activeTab === 'Doctors' ? (
-        <FlatList
-          data={filteredDoctors}
-          keyExtractor={item => item.id}
-          renderItem={renderDoctor}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        doctorsLoading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredDoctors}
+            keyExtractor={item => item.id}
+            renderItem={renderDoctor}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        )
       ) : (
-        <FlatList
-          data={filteredPharmacies}
-          keyExtractor={item => item.id}
-          renderItem={renderPharmacy}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        pharmaciesLoading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredPharmacies}
+            keyExtractor={item => item.id}
+            renderItem={renderPharmacy}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        )
       )}
     </View>
   );
@@ -484,7 +418,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
-
 
   // Search
   searchContainer: {
@@ -579,6 +512,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 32,
     gap: 14,
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Shared card wrapper

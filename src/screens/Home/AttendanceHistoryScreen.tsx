@@ -1,81 +1,211 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  FlatList,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import { ENDPOINTS } from '@/constants/endpoints';
 import Header from '@/components/common/Header';
 import { LoginTimeIcon, LogoutTimeIcon } from '@/assets/images';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/redux/store';
+import apiClient from '@/services/apiClient';
+import {
+  transformAttendanceData,
+  AttendanceApiRecord,
+  AttendanceHistoryItem,
+} from '@/utils/attendanceFormatter';
+
+// ─── Constants ─────────────────────────────────────────────────────────────────
 
 const FILTERS = ['All Time', 'This Week', 'October', 'September'];
+const PAGE_LIMIT = 20;
 
-const HISTORY_DATA = [
-  {
-    id: 1,
-    date: 'Oct 24, 2023',
-    day: 'Tuesday',
-    isToday: true,
-    status: 'PRESENT',
-    timeIn: '09:00 AM',
-    timeOut: '06:05 PM',
-  },
-  {
-    id: 2,
-    date: 'Oct 23, 2023',
-    day: 'Monday',
-    isToday: false,
-    status: 'LATE',
-    timeIn: '09:45 AM',
-    timeOut: '06:15 PM',
-  },
-  {
-    id: 3,
-    date: 'Oct 22, 2023',
-    day: 'Sunday',
-    isToday: false,
-    status: 'ABSENT',
-    timeIn: '--:-- --',
-    timeOut: '--:-- --',
-  },
-  {
-    id: 4,
-    date: 'Oct 21, 2023',
-    day: 'Saturday',
-    isToday: false,
-    status: 'PRESENT',
-    timeIn: '08:55 AM',
-    timeOut: '05:30 PM',
-  },
-];
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+const getStatusStyle = (status: string) => {
+  switch (status) {
+    case 'PRESENT':
+      return { bg: '#E8F5E9', text: '#388E3C', dot: '#388E3C' };
+    case 'LATE':
+      return { bg: '#FFF3E0', text: '#F57C00', dot: '#F57C00' };
+    case 'ABSENT':
+      return { bg: '#FFEBEE', text: '#D32F2F', dot: '#D32F2F' };
+    default:
+      return { bg: '#F5F5F5', text: '#9E9E9E', dot: '#9E9E9E' };
+  }
+};
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+
+const AttendanceCard = React.memo(({ item }: { item: AttendanceHistoryItem }) => {
+  const statusStyle = getStatusStyle(item.status);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View>
+          {item.isToday && <Text style={styles.todayLabel}>TODAY</Text>}
+          <Text style={styles.dateText}>{item.date}</Text>
+          <Text style={styles.dayText}>{item.day}</Text>
+        </View>
+        <View style={[styles.statusPill, { backgroundColor: statusStyle.bg }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusStyle.dot }]} />
+          <Text style={[styles.statusText, { color: statusStyle.text }]}>{item.status}</Text>
+        </View>
+      </View>
+
+      <View style={styles.divider} />
+
+      <View style={styles.timeRow}>
+        <View style={styles.timeBlock}>
+          <Text style={styles.timeLabel}>TIME IN</Text>
+          <View style={styles.timeValueRow}>
+            <LoginTimeIcon />
+            <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>
+              {item.timeIn}
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.timeBlock, styles.timeBlockRight]}>
+          <Text style={styles.timeLabel}>TIME OUT</Text>
+          <View style={styles.timeValueRow}>
+            <LogoutTimeIcon />
+            <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>
+              {item.timeOut}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+});
+
+const EmptyList = () => (
+  <View style={styles.emptyContainer}>
+    <Text style={styles.emptyText}>No attendance records found.</Text>
+  </View>
+);
+
+const FooterLoader = () => (
+  <View style={styles.footerLoader}>
+    <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+  </View>
+);
+
+// ─── Screen ────────────────────────────────────────────────────────────────────
 
 const AttendanceHistoryScreen = () => {
-  const [activeFilter, setActiveFilter] = useState('All Time');
+  const userId = useSelector((state: RootState) => state.auth.user?.id);
 
-  const getStatusStyle = (status: string) => {
-    switch (status) {
-      case 'PRESENT':
-        return { bg: '#E8F5E9', text: '#388E3C', dot: '#388E3C' };
-      case 'LATE':
-        return { bg: '#FFF3E0', text: '#F57C00', dot: '#F57C00' };
-      case 'ABSENT':
-        return { bg: '#FFEBEE', text: '#D32F2F', dot: '#D32F2F' };
-      default:
-        return { bg: '#F5F5F5', text: '#9E9E9E', dot: '#9E9E9E' };
-    }
-  };
+  const [activeFilter, setActiveFilter] = useState('All Time');
+  const [records, setRecords] = useState<AttendanceHistoryItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    setLoading(true);
+    setPage(1);
+    setHasMore(true);
+    setRecords([]);
+
+    apiClient
+      .get<AttendanceApiRecord[]>(ENDPOINTS.attendance.history(userId), {
+        params: { page: 1, limit: PAGE_LIMIT },
+      })
+      .then((response) => {
+        const raw: AttendanceApiRecord[] = Array.isArray(response.data)
+          ? response.data
+          : [];
+        if (raw.length < PAGE_LIMIT) setHasMore(false);
+        setRecords(transformAttendanceData(raw));
+      })
+      .catch(() => {
+        setHasMore(false);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [userId]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingMoreRef.current || !userId) return;
+
+    const nextPage = page + 1;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setPage(nextPage);
+
+    apiClient
+      .get<AttendanceApiRecord[]>(ENDPOINTS.attendance.history(userId), {
+        params: { page: nextPage, limit: PAGE_LIMIT },
+      })
+      .then((response) => {
+        const raw: AttendanceApiRecord[] = Array.isArray(response.data)
+          ? response.data
+          : [];
+        if (raw.length < PAGE_LIMIT) setHasMore(false);
+        const transformed = transformAttendanceData(raw);
+        setRecords((prev) => {
+          const existingIds = new Set(prev.map((r) => r.id));
+          return [...prev, ...transformed.filter((r) => !existingIds.has(r.id))];
+        });
+      })
+      .catch(() => {
+        setHasMore(false);
+      })
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [hasMore, page, userId]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: AttendanceHistoryItem }) => <AttendanceCard item={item} />,
+    [],
+  );
+
+  const keyExtractor = useCallback((item: AttendanceHistoryItem) => item.id, []);
+
+  const listFooter = loadingMore ? <FooterLoader /> : null;
+
+  if (loading) {
+    return (
+      <View style={styles.mainContainer}>
+        <Header title="Attendance History" showBack showNotification showProfile />
+        <View style={styles.fullScreenLoader}>
+          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.mainContainer}>
-      <Header 
-        title="Attendance History" 
-        showBack 
-        showNotification 
-        showProfile 
-      />
+      <Header title="Attendance History" showBack showNotification showProfile />
 
       <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          {FILTERS.map((item, index) => (
-            <TouchableOpacity 
-              key={index} 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
+        >
+          {FILTERS.map((item) => (
+            <TouchableOpacity
+              key={item}
               style={[styles.filterPill, activeFilter === item && styles.filterPillActive]}
               onPress={() => setActiveFilter(item)}
             >
@@ -87,55 +217,35 @@ const AttendanceHistoryScreen = () => {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false}>
-        {HISTORY_DATA.map((item) => {
-          const statusStyle = getStatusStyle(item.status);
-          
-          return (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View>
-                  {item.isToday && <Text style={styles.todayLabel}>TODAY</Text>}
-                  <Text style={styles.dateText}>{item.date}</Text>
-                  <Text style={styles.dayText}>{item.day}</Text>
-                </View>
-                <View style={[styles.statusPill, { backgroundColor: statusStyle.bg }]}>
-                  <View style={[styles.statusDot, { backgroundColor: statusStyle.dot }]} />
-                  <Text style={[styles.statusText, { color: statusStyle.text }]}>{item.status}</Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.timeRow}>
-                <View style={styles.timeBlock}>
-                  <Text style={styles.timeLabel}>TIME IN</Text>
-                  <View style={styles.timeValueRow}>
-                    <LoginTimeIcon />
-                    <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>{item.timeIn}</Text>
-                  </View>
-                </View>
-
-                <View style={[styles.timeBlock, { alignItems: 'flex-end' }]}>
-                  <Text style={styles.timeLabel}>TIME OUT</Text>
-                  <View style={styles.timeValueRow}>
-                    <LogoutTimeIcon />
-                    <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>{item.timeOut}</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </ScrollView>
+      <FlatList
+        data={records}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListEmptyComponent={EmptyList}
+        ListFooterComponent={listFooter}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.4}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+      />
     </View>
   );
 };
+
+// ─── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  fullScreenLoader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterContainer: {
     paddingVertical: 16,
@@ -234,6 +344,9 @@ const styles = StyleSheet.create({
   timeBlock: {
     width: '45%',
   },
+  timeBlockRight: {
+    alignItems: 'flex-end',
+  },
   timeLabel: {
     fontSize: 10,
     fontFamily: FONTS.family.bold,
@@ -254,6 +367,20 @@ const styles = StyleSheet.create({
   timeValueAbsent: {
     color: '#B0B0B0',
     fontFamily: FONTS.family.regular,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    marginTop: 60,
+  },
+  emptyText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+  },
+  footerLoader: {
+    paddingVertical: 16,
+    alignItems: 'center',
   },
 });
 

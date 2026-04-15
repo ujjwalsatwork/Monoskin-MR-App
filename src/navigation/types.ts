@@ -19,7 +19,7 @@ export type AppStackParamList = {
     Auth: undefined;
     Main: undefined;
     VisitDetail: { visitId: string };
-    CreateOrder: undefined;
+    CreateOrder: { doctorId: string };
     ProductDetail: { productId: string; productName: string; productTime: string };
     Payment: { subtotal: number; orderNumber: string };
     PaymentSuccess: {

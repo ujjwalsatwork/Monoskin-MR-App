@@ -180,6 +180,18 @@ const AttendanceScreen = () => {
          </TouchableOpacity>
       </View>
 
+      <TouchableOpacity
+            style={[{marginHorizontal: 20},styles.outlineButton, styles.halfButton, checkOutLoading && styles.buttonDisabled]}
+            onPress={() => navigation.navigate('AttendanceHistory')}
+            disabled={checkInLoading || checkOutLoading}
+            activeOpacity={0.8}
+         >
+            <Text style={styles.outlineButtonText}>
+               View Attendance History
+            </Text>
+         </TouchableOpacity>
+      <View style={{ height: 12 }} />
+
       {/* Break Timer */}
       <View style={styles.breakCard}>
          <View style={styles.breakLeft}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -24,11 +25,15 @@ import {
   AddCircle,
   OfferTag,
 } from '@/assets/images';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { ApiDoctor } from '@/redux/slices/portfolioSlice';
+import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
+type RoutePropType = RouteProp<AppStackParamList, 'CreateOrder'>;
 
 type Priority = 'Low' | 'Medium' | 'High';
 
@@ -169,6 +174,25 @@ const ProductCard = ({
 
 const CreateOrderScreen = () => {
   const navigation = useNavigation<NavProp>();
+  const route = useRoute<RoutePropType>();
+  const { doctorId } = route.params;
+
+  const [doctor, setDoctor] = useState<ApiDoctor | null>(null);
+  const [doctorLoading, setDoctorLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDoctor = async () => {
+      try {
+        const res = await apiClient.get<ApiDoctor>(ENDPOINTS.portfolio.doctorDetail(doctorId));
+        setDoctor(res.data);
+      } catch {
+        // keep null — UI will show fallback
+      } finally {
+        setDoctorLoading(false);
+      }
+    };
+    fetchDoctor();
+  }, [doctorId]);
 
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -249,38 +273,54 @@ const CreateOrderScreen = () => {
         </View>
 
         {/* Doctor Card */}
-        <View style={styles.doctorCard}>
-          <View style={styles.doctorTop}>
-            <View style={styles.doctorAvatarWrapper}>
-              <View style={styles.doctorAvatar}>
-                <Text style={styles.doctorAvatarText}>AS</Text>
+        {doctorLoading ? (
+          <View style={styles.doctorLoader}>
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+          </View>
+        ) : (
+          <View style={styles.doctorCard}>
+            <View style={styles.doctorTop}>
+              <View style={styles.doctorAvatarWrapper}>
+                <View style={styles.doctorAvatar}>
+                  <Text style={styles.doctorAvatarText}>
+                    {doctor?.name
+                      ? doctor.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                      : '--'}
+                  </Text>
+                </View>
+                <View style={styles.onlineDot} />
               </View>
-              <View style={styles.onlineDot} />
+              <View style={styles.doctorInfo}>
+                <Text style={styles.doctorName}>{doctor?.name ?? '—'}</Text>
+                <Text style={styles.doctorSpecialty}>{doctor?.specialization ?? '—'}</Text>
+                <Text style={styles.doctorHospital}>{doctor?.clinic ?? '—'}</Text>
+              </View>
+              {doctor?.importance ? (
+                <View style={styles.priorityVisitBadge}>
+                  <Text style={styles.priorityVisitText}>{doctor.importance.toUpperCase()} PRIORITY</Text>
+                </View>
+              ) : null}
             </View>
-            <View style={styles.doctorInfo}>
-              <Text style={styles.doctorName}>Dr. Anil Sharma</Text>
-              <Text style={styles.doctorSpecialty}>Cardiologist • MD, FACC</Text>
-              <Text style={styles.doctorHospital}>City General Hospital, Wing B-402</Text>
-            </View>
-            <View style={styles.priorityVisitBadge}>
-              <Text style={styles.priorityVisitText}>PRIORITY VISIT</Text>
-            </View>
-          </View>
 
-          {/* Stats */}
-          <View style={styles.doctorStatsRow}>
-            <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
-              <Text style={styles.doctorStatLabel}>LAST ORDER</Text>
-              <Text style={styles.doctorStatTime}>08:00 AM</Text>
-              <Text style={styles.doctorStatSub}>20 Units • 12 Oct</Text>
-            </View>
-            <View style={styles.doctorStatBox}>
-              <Text style={styles.doctorStatLabel}>TOP PRESCRIPTION</Text>
-              <Text style={styles.doctorStatTime}>08:00 AM</Text>
-              <Text style={styles.doctorStatSub}>Avg. 50/week</Text>
+            {/* Stats */}
+            <View style={styles.doctorStatsRow}>
+              <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
+                <Text style={styles.doctorStatLabel}>LAST SALE DATE</Text>
+                <Text style={styles.doctorStatTime} numberOfLines={1}>
+                  {doctor?.lastSalesDate
+                    ? new Date(doctor.lastSalesDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                    : '—'}
+                </Text>
+                <Text style={styles.doctorStatSub}>₹{doctor?.totalSalesValue ?? '0.00'}</Text>
+              </View>
+              <View style={styles.doctorStatBox}>
+                <Text style={styles.doctorStatLabel}>NEARBY CHEMIST</Text>
+                <Text style={styles.doctorStatTime} numberOfLines={1}>{doctor?.nearbyChemistName || '—'}</Text>
+                <Text style={styles.doctorStatSub} numberOfLines={1}>{doctor?.nearbyChemistPhone || '—'}</Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Available Inventory */}
         <CollapsibleSection
@@ -463,6 +503,7 @@ const CreateOrderScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
+  doctorLoader: { height: 120, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
 
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 16 },
