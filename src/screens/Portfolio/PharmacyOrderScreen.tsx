@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
-  Alert,
   Platform,
   Modal,
   FlatList,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -28,38 +28,47 @@ import { AppStackParamList } from '@/navigation/types';
 import { ApiPharmacy } from '@/redux/slices/portfolioSlice';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import DatePickerModal from '@/components/common/DatePickerModal';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type Priority = 'Low' | 'Medium' | 'High';
+
+type ApiProduct = {
+  id: number;
+  code: string;
+  name: string;
+  sku: string;
+  category: string;
+  packSize: string;
+  mrp: string;
+  gst: string;
+  hsnCode: string;
+  shelfLife: number;
+  description: string;
+  isActive: boolean;
+};
 
 type PharmacyProduct = {
   id: string;
   name: string;
   category: string;
   price: number;
+  gst: string;
   bulkOrder: boolean;
   qty: number;
 };
 
-const INITIAL_PRODUCTS: PharmacyProduct[] = [
-  { id: '1', name: 'Amoxicillin 500mg', category: 'Antibiotic • Strip of 10',    price: 45,  bulkOrder: true,  qty: 12 },
-  { id: '2', name: 'Paracetamol 650mg', category: 'Analgesic • Bulk Box (500)',   price: 210, bulkOrder: true,  qty: 12 },
-];
-
 type CatalogueItem = {
   id: string;
   name: string;
+  sku: string;
   category: string;
+  packSize: string;
+  price: number;
+  gst: string;
   qty: number;
   selected: boolean;
 };
-
-const CATALOGUE: CatalogueItem[] = [
-  { id: 'c1', name: 'Cetirizine 10mg',     category: 'Antihistamine • Strip of 10', qty: 10, selected: false },
-  { id: 'c2', name: 'Metformin 500mg',     category: 'Antidiabetic • Strip of 15',  qty: 6,  selected: false },
-  { id: 'c3', name: 'Atorvastatin 10mg',   category: 'Statin • Strip of 10',        qty: 8,  selected: false },
-  { id: 'c4', name: 'Omeprazole 20mg',     category: 'Antacid • Strip of 14',       qty: 12, selected: false },
-];
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
@@ -134,12 +143,38 @@ const PharmacyOrderScreen = () => {
     fetchPharmacy();
   }, [pharmacyId]);
 
-  const [products, setProducts] = useState<PharmacyProduct[]>(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState<PharmacyProduct[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [notes, setNotes] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState('10 / 25 / 2025');
+  const [shippingAddress, setShippingAddress] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(null);
+  const [calendarVisible, setCalendarVisible] = useState(false);
   const [priority, setPriority] = useState<Priority>('Medium');
   const [addItemsVisible, setAddItemsVisible] = useState(false);
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(CATALOGUE);
+
+  const fetchCatalogue = async () => {
+    setCatalogueLoading(true);
+    try {
+      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.list);
+      const items: CatalogueItem[] = res.data.map(p => ({
+        id: String(p.id),
+        name: p.name,
+        sku: p.sku,
+        category: p.category,
+        packSize: p.packSize,
+        price: parseFloat(p.mrp),
+        gst: p.gst,
+        qty: 1,
+        selected: false,
+      }));
+      setCatalogue(items);
+    } catch {
+      // keep empty
+    } finally {
+      setCatalogueLoading(false);
+    }
+  };
 
   const updateQty = (id: string, delta: number) => {
     setProducts(prev =>
@@ -165,12 +200,14 @@ const PharmacyOrderScreen = () => {
       .map(c => ({
         id: c.id,
         name: c.name,
-        category: c.category,
-        price: 45,
+        category: `${c.category} • ${c.packSize}`,
+        price: c.price,
+        gst: c.gst,
         bulkOrder: false,
         qty: c.qty,
       }));
     if (newItems.length) setProducts(prev => [...prev, ...newItems]);
+    setCatalogue(prev => prev.map(c => ({ ...c, selected: false })));
     setAddItemsVisible(false);
   };
 
@@ -178,9 +215,45 @@ const PharmacyOrderScreen = () => {
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
   const handlePlaceOrder = () => {
-    Alert.alert('Order Placed', 'Your pharmacy order has been placed successfully.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+    // Validation 1: Check if at least one product is added
+    if (products.length === 0) {
+      Alert.alert('No Products', 'Please add at least one product to create an order.');
+      return;
+    }
+
+    // Validation 2: Check if order total is greater than 0
+    if (orderValue <= 0) {
+      Alert.alert('Invalid Amount', 'Order amount must be greater than ₹0. Please add products with valid prices.');
+      return;
+    }
+
+    const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
+    const items = products.map(p => {
+      const base = p.price * p.qty;
+      const gstRate = parseFloat(p.gst || '12') / 100;
+      const itemTax = parseFloat((base * gstRate).toFixed(2));
+      const itemTotal = parseFloat((base + itemTax).toFixed(2));
+      return {
+        productId: parseInt(p.id, 10),
+        quantity: p.qty,
+        unitPrice: p.price.toFixed(2),
+        discount: '0',
+        tax: itemTax.toFixed(2),
+        total: itemTotal.toFixed(2),
+      };
+    });
+    navigation.navigate('Payment', {
+      subtotal: orderValue,
+      orderNumber,
+      orderCreateData: {
+        pharmacyId: parseInt(pharmacyId, 10),
+        warehouseId: 1,
+        shippingAddress,
+        notes,
+        reasonTag: 'Pharmacy Order',
+        items,
+      },
+    });
   };
 
   return (
@@ -227,7 +300,7 @@ const PharmacyOrderScreen = () => {
           <Text style={styles.productSummaryTitle}>Product Summary</Text>
           <TouchableOpacity
             style={styles.addItemsBtn}
-            onPress={() => setAddItemsVisible(true)}
+            onPress={() => { setAddItemsVisible(true); fetchCatalogue(); }}
             activeOpacity={0.8}
           >
             <AddCircle width={18} height={18} />
@@ -236,14 +309,30 @@ const PharmacyOrderScreen = () => {
         </View>
 
         {/* Product cards */}
-        {products.map(item => (
-          <ProductCard
-            key={item.id}
-            item={item}
-            onToggleBulk={toggleBulk}
-            onUpdateQty={updateQty}
-          />
-        ))}
+        {products.length === 0 ? (
+          <Text style={styles.emptyProducts}>No products added yet.</Text>
+        ) : (
+          products.map(item => (
+            <ProductCard
+              key={item.id}
+              item={item}
+              onToggleBulk={toggleBulk}
+              onUpdateQty={updateQty}
+            />
+          ))
+        )}
+
+        {/* Shipping Address */}
+        <Text style={styles.sectionLabel}>SHIPPING ADDRESS</Text>
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Enter delivery address or any specific instructions for the delivery personnel..."
+          placeholderTextColor={COLORS.textMuted}
+          multiline
+          value={shippingAddress}
+          onChangeText={setShippingAddress}
+          textAlignVertical="top"
+        />
 
         {/* Notes */}
         <Text style={styles.sectionLabel}>NOTES / SPECIAL INSTRUCTIONS</Text>
@@ -260,15 +349,27 @@ const PharmacyOrderScreen = () => {
         {/* Expected Delivery */}
         <View style={styles.deliverySection}>
           <Text style={styles.sectionLabel}>EXPECTED DELIVERY</Text>
-          <View style={styles.dateInputRow}>
+          <TouchableOpacity
+            style={styles.dateInputRow}
+            onPress={() => setCalendarVisible(true)}
+            activeOpacity={0.8}
+          >
             <CalendarNoteIcon width={18} height={18} />
-            <TextInput
-              style={styles.dateInput}
-              value={deliveryDate}
-              onChangeText={setDeliveryDate}
-            />
-          </View>
+            <Text style={[styles.dateInput, !deliveryDate && styles.datePlaceholder]}>
+              {deliveryDate
+                ? deliveryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                : 'Select delivery date'}
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        <DatePickerModal
+          visible={calendarVisible}
+          selectedDate={deliveryDate}
+          minDate={new Date()}
+          onSelect={d => { setDeliveryDate(d); setCalendarVisible(false); }}
+          onClose={() => setCalendarVisible(false)}
+        />
 
         {/* Order Priority */}
         <Text style={styles.sectionLabel}>ORDER PRIORITY</Text>
@@ -305,6 +406,9 @@ const PharmacyOrderScreen = () => {
         <View style={styles.modalSheet}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Select Items</Text>
+          {catalogueLoading ? (
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} style={styles.modalLoader} />
+          ) : null}
           <FlatList
             data={catalogue}
             keyExtractor={item => item.id}
@@ -320,7 +424,8 @@ const PharmacyOrderScreen = () => {
                 </TouchableOpacity>
                 <View style={styles.modalItemInfo}>
                   <Text style={styles.modalItemName}>{item.name}</Text>
-                  <Text style={styles.modalItemCategory}>{item.category}</Text>
+                  <Text style={styles.modalItemCategory}>{item.category} • {item.packSize}</Text>
+                  <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
                 </View>
                 <View style={styles.stepper}>
                   <TouchableOpacity style={styles.stepperBtn} onPress={() => updateCatalogueQty(item.id, -1)}>
@@ -497,6 +602,10 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     padding: 0,
   },
+  datePlaceholder: {
+    color: COLORS.textMuted,
+    fontFamily: FONTS.family.regular,
+  },
 
   // Priority
   prioritySelector: {
@@ -535,6 +644,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  modalLoader: { marginVertical: 32 },
   modalList: { flexGrow: 0 },
   modalItem: {
     flexDirection: 'row',
@@ -554,6 +664,14 @@ const styles = StyleSheet.create({
   modalItemInfo: { flex: 1 },
   modalItemName: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   modalItemCategory: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+  modalItemPrice: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue, marginTop: 2 },
+  emptyProducts: {
+    textAlign: 'center',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    paddingVertical: 20,
+  },
   modalFooter: {
     paddingHorizontal: 16, paddingVertical: 16,
     borderTopWidth: 1, borderTopColor: COLORS.border,

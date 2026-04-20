@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import MapView from 'react-native-maps';
 import { COLORS } from '@/constants/colors';
@@ -18,37 +19,71 @@ import {
   ReplayIcon,
   StoreIcon,
   ClockIcon,
+  ProfileIcon,
 } from '@/assets/images';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { AppStackParamList } from '@/navigation/types';
+import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type RouteProps = RouteProp<AppStackParamList, 'OrderDetail'>;
 
-/* ── Static mock data ── */
-const ORDER_ITEMS = [
-  { id: '1', time: '08:00 AM', qty: 100, price: 625 },
-  { id: '2', time: '08:00 AM', qty: 100, price: 625 },
-];
+/* ── Types ── */
+interface OrderDetail {
+  id: number;
+  orderNumber: string;
+  doctorId: number | null;
+  pharmacyId: number | null;
+  status: string;
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+  shippingAddress: string;
+  notes: string;
+  reasonTag: string;
+  createdAt: string;
+}
 
+interface OrderItem {
+  id: number;
+  productId: number;
+  quantity: number;
+  unitPrice: string;
+  discount: string;
+  tax: string;
+  total: string;
+  productName?: string;
+}
+
+interface EntityDetail {
+  name?: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  [key: string]: any;
+}
+
+/* ── Status chip config ── */
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
+  'Draft':            { bg: 'rgba(158,158,158,0.15)', text: '#757575', label: 'DRAFT' },
+  'Pending Approval': { bg: 'rgba(255,152,0,0.15)',   text: '#E65100', label: 'PENDING APPROVAL' },
+  'Approved':         { bg: 'rgba(33,150,243,0.15)',  text: '#1565C0', label: 'APPROVED' },
+  'Processing':       { bg: 'rgba(33,150,243,0.15)',  text: '#1565C0', label: 'PROCESSING' },
+  'Shipped':          { bg: 'rgba(103,58,183,0.15)',  text: '#4527A0', label: 'SHIPPED' },
+  'Delivered':        { bg: 'rgba(52,168,83,0.12)',   text: '#34A853', label: '✓  DELIVERED' },
+  'Cancelled':        { bg: 'rgba(229,57,53,0.12)',   text: '#C62828', label: 'CANCELLED' },
+  'Rejected':         { bg: 'rgba(229,57,53,0.12)',   text: '#C62828', label: 'REJECTED' },
+};
+
+const getStatusConfig = (status: string) =>
+  STATUS_CONFIG[status] ?? { bg: 'rgba(158,158,158,0.15)', text: '#757575', label: status.toUpperCase() };
+
+/* ── Static timeline (to be wired later) ── */
 const TIMELINE = [
-  {
-    id: 't1',
-    label: 'Delivered',
-    detail: 'Today, 02:45 PM • Signature: S. Jenkins',
-    status: 'done' as const,
-  },
-  {
-    id: 't2',
-    label: 'Out for Delivery',
-    detail: 'Today, 09:12 AM • Courier: RapidLogistics',
-    status: 'transit' as const,
-  },
-  {
-    id: 't3',
-    label: 'Order Confirmed',
-    detail: 'Oct 24, 05:30 PM',
-    status: 'confirmed' as const,
-  },
+  { id: 't1', label: 'Delivered',       detail: 'Today, 02:45 PM • Signature: S. Jenkins', status: 'done'      as const },
+  { id: 't2', label: 'Out for Delivery', detail: 'Today, 09:12 AM • Courier: RapidLogistics', status: 'transit'  as const },
+  { id: 't3', label: 'Order Confirmed',  detail: 'Oct 24, 05:30 PM',                          status: 'confirmed' as const },
 ];
 
 const INDORE_REGION = {
@@ -59,12 +94,6 @@ const INDORE_REGION = {
 };
 
 /* ── Sub-components ── */
-const SectionHeader = ({ label }: { label: string }) => (
-  <View style={styles.sectionHeader}>
-    <Text style={styles.sectionLabel}>{label}</Text>
-  </View>
-);
-
 const Divider = () => <View style={styles.divider} />;
 
 const TimelineDot = ({ status }: { status: 'done' | 'transit' | 'confirmed' }) => {
@@ -75,18 +104,70 @@ const TimelineDot = ({ status }: { status: 'done' | 'transit' | 'confirmed' }) =
       </View>
     );
   }
-  if (status === 'transit') {
-    return <View style={[styles.dot, styles.dotTransit]} />;
-  }
+  if (status === 'transit') return <View style={[styles.dot, styles.dotTransit]} />;
   return <View style={[styles.dot, styles.dotConfirmed]} />;
 };
 
 /* ── Screen ── */
 const OrderDetailScreen = () => {
   const route = useRoute<RouteProps>();
-  const { orderNumber, totalAmount, subtotal, orderDate } = route.params;
+  const { orderId, orderNumber } = route.params;
 
-  const tax = parseFloat((subtotal * 0.12).toFixed(2));
+  const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [items, setItems] = useState<OrderItem[]>([]);
+  const [entity, setEntity] = useState<EntityDetail | null>(null);
+  const [entityType, setEntityType] = useState<'doctor' | 'pharmacy' | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const [orderRes, itemsRes] = await Promise.all([
+          apiClient.get(ENDPOINTS.orders.detail(orderId)),
+          apiClient.get(ENDPOINTS.orders.items(orderId)),
+        ]);
+
+        const orderData: OrderDetail = orderRes.data;
+        setOrder(orderData);
+
+        const rawItems: OrderItem[] = itemsRes.data ?? [];
+        const itemsWithNames = await Promise.all(
+          rawItems.map(async (item) => {
+            try {
+              const prodRes = await apiClient.get(ENDPOINTS.products.detail(item.productId));
+              return { ...item, productName: prodRes.data?.name ?? `Product #${item.productId}` };
+            } catch {
+              return { ...item, productName: `Product #${item.productId}` };
+            }
+          })
+        );
+        setItems(itemsWithNames);
+
+        if (orderData.doctorId) {
+          const res = await apiClient.get(ENDPOINTS.portfolio.doctorDetail(String(orderData.doctorId)));
+          setEntity(res.data);
+          setEntityType('doctor');
+        } else if (orderData.pharmacyId) {
+          const res = await apiClient.get(ENDPOINTS.portfolio.pharmacyDetail(String(orderData.pharmacyId)));
+          setEntity(res.data);
+          setEntityType('pharmacy');
+        }
+      } catch (err) {
+        console.log('OrderDetailScreen fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, [orderId]);
+
+  const displayOrderNumber = order?.orderNumber ?? orderNumber;
+  const statusCfg = getStatusConfig(order?.status ?? '');
+
+  const placedDate = order?.createdAt
+    ? new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '—';
 
   return (
     <View style={styles.safeArea}>
@@ -95,141 +176,172 @@ const OrderDetailScreen = () => {
       {/* Order ID + date + status chip */}
       <View style={styles.orderMeta}>
         <View>
-          <Text style={styles.orderMetaId}>Order #{orderNumber}</Text>
-          <Text style={styles.orderMetaDate}>Placed on {orderDate}</Text>
+          <Text style={styles.orderMetaId}>Order #{displayOrderNumber}</Text>
+          <Text style={styles.orderMetaDate}>Placed on {placedDate}</Text>
         </View>
-        <View style={styles.deliveredBadge}>
-          <Text style={styles.deliveredBadgeText}>✓  DELIVERED</Text>
-        </View>
+        {order && (
+          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
+            <Text style={[styles.statusBadgeText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
+          </View>
+        )}
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* ── Order Items ── */}
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <View style={styles.cardTitleIcon}>
-              <PillIcon width={18} height={18} />
-            </View>
-            <Text style={styles.cardTitle}>Order Items</Text>
-            <Text style={styles.cardTitleRight}>{ORDER_ITEMS.length} Items</Text>
-          </View>
-          <Divider />
-          {ORDER_ITEMS.map((item, i) => (
-            <View key={item.id}>
-              <View style={styles.orderItemRow}>
-                {/* Product thumbnail */}
-                <View style={styles.productThumb}>
-                  <PillIcon width={28} height={28} />
-                </View>
-                <View style={styles.orderItemInfo}>
-                  <Text style={styles.orderItemTime}>{item.time}</Text>
-                  <Text style={styles.orderItemQty}>Quantity: {item.qty} units</Text>
-                </View>
-                <Text style={styles.orderItemPrice}>₹{item.price.toFixed(2)}</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+
+          {/* ── Order Items ── */}
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <View style={styles.cardTitleIcon}>
+                <PillIcon width={18} height={18} />
               </View>
-              {i < ORDER_ITEMS.length - 1 && <Divider />}
+              <Text style={styles.cardTitle}>Order Items</Text>
+              <Text style={styles.cardTitleRight}>{items.length} Item{items.length !== 1 ? 's' : ''}</Text>
             </View>
-          ))}
-        </View>
-
-        {/* ── Pharmacy Details ── */}
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <View style={styles.cardTitleIcon}>
-              <StoreIcon width={18} height={18} />
-            </View>
-            <Text style={styles.cardTitle}>Pharmacy Details</Text>
-          </View>
-          <Divider />
-          <View style={styles.pharmacyBody}>
-            <Text style={styles.pharmacyName}>City Health Pharmacy</Text>
-            <Text style={styles.pharmacyDetail}>Dr. Sarah Jenkins</Text>
-            <Text style={styles.pharmacyDetail}>+91 9876643210</Text>
-          </View>
-        </View>
-
-        {/* ── Delivery Address ── */}
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <View style={styles.cardTitleIcon}>
-              <LocationPinIcon width={18} height={18} />
-            </View>
-            <Text style={styles.cardTitle}>Delivery Address</Text>
-          </View>
-          <Divider />
-          <Text style={styles.addressText}>
-            1248 Medical Center Blvd Suite 200, Downtown Plaza{'\n'}Indore, 462001
-          </Text>
-        </View>
-
-        {/* ── Order Status Timeline ── */}
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <View style={styles.cardTitleIcon}>
-              <ClockIcon width={18} height={18} />
-            </View>
-            <Text style={styles.cardTitle}>Order Status Timeline</Text>
-          </View>
-          <Divider />
-          <View style={styles.timeline}>
-            {TIMELINE.map((step, i) => (
-              <View key={step.id} style={styles.timelineRow}>
-                {/* Dot + vertical connector */}
-                <View style={styles.timelineLeft}>
-                  <TimelineDot status={step.status} />
-                  {i < TIMELINE.length - 1 && <View style={styles.timelineConnector} />}
+            <Divider />
+            {items.length === 0 ? (
+              <Text style={styles.emptyText}>No items found</Text>
+            ) : (
+              items.map((item, i) => (
+                <View key={item.id}>
+                  <View style={styles.orderItemRow}>
+                    <View style={styles.productThumb}>
+                      <PillIcon width={28} height={28} />
+                    </View>
+                    <View style={styles.orderItemInfo}>
+                      <Text style={styles.orderItemName}>{item.productName ?? `Product #${item.productId}`}</Text>
+                      <Text style={styles.orderItemQty}>Qty: {item.quantity} units  •  ₹{parseFloat(item.unitPrice).toFixed(2)}/unit</Text>
+                      {parseFloat(item.discount) > 0 && (
+                        <Text style={styles.orderItemDiscount}>Discount: ₹{parseFloat(item.discount).toFixed(2)}</Text>
+                      )}
+                    </View>
+                    <Text style={styles.orderItemPrice}>₹{parseFloat(item.total).toFixed(2)}</Text>
+                  </View>
+                  {i < items.length - 1 && <Divider />}
                 </View>
-                {/* Text */}
-                <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>{step.label}</Text>
-                  <Text style={styles.timelineDetail}>{step.detail}</Text>
+              ))
+            )}
+          </View>
+
+          {/* ── Doctor / Pharmacy Details (conditional) ── */}
+          {entity && (
+            <View style={styles.card}>
+              <View style={styles.cardTitleRow}>
+                <View style={styles.cardTitleIcon}>
+                  {entityType === 'pharmacy'
+                    ? <StoreIcon width={18} height={18} />
+                    : <ProfileIcon width={18} height={18} />
+                  }
                 </View>
+                <Text style={styles.cardTitle}>
+                  {entityType === 'pharmacy' ? 'Pharmacy Details' : 'Doctor Details'}
+                </Text>
               </View>
-            ))}
-          </View>
-        </View>
+              <Divider />
+              <View style={styles.entityBody}>
+                {entity.name && <Text style={styles.entityName}>{entity.name}</Text>}
+                {entity.contactPerson && <Text style={styles.entityDetail}>{entity.contactPerson}</Text>}
+                {entity.phone && <Text style={styles.entityDetail}>{entity.phone}</Text>}
+                {entity.address && <Text style={styles.entityDetail}>{entity.address}</Text>}
+              </View>
+            </View>
+          )}
 
-        {/* ── Price Breakdown ── */}
-        <View style={styles.card}>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceKey}>Subtotal</Text>
-            <Text style={styles.priceValue}>₹{subtotal.toFixed(2)}</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceKey}>Tax (GST 12%)</Text>
-            <Text style={styles.priceValue}>₹{tax.toFixed(2)}</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceKey}>Shipping Fee</Text>
-            <Text style={[styles.priceValue, styles.freeText]}>Free</Text>
-          </View>
-          <Divider />
-          <View style={styles.priceRow}>
-            <Text style={styles.totalKey}>Total Amount</Text>
-            <Text style={styles.totalValue}>₹{totalAmount.toFixed(2)}</Text>
-          </View>
-        </View>
+          {/* ── Delivery Address ── */}
+          {order?.shippingAddress ? (
+            <View style={styles.card}>
+              <View style={styles.cardTitleRow}>
+                <View style={styles.cardTitleIcon}>
+                  <LocationPinIcon width={18} height={18} />
+                </View>
+                <Text style={styles.cardTitle}>Delivery Address</Text>
+              </View>
+              <Divider />
+              <Text style={styles.addressText}>{order.shippingAddress}</Text>
+            </View>
+          ) : null}
 
-        {/* ── Location Tracking View ── */}
-        <View style={styles.card}>
-          <SectionHeader label="Location Tracking View" />
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.map}
-              region={INDORE_REGION}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-            />
+          {/* ── Order Status Timeline (static for now) ── */}
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <View style={styles.cardTitleIcon}>
+                <ClockIcon width={18} height={18} />
+              </View>
+              <Text style={styles.cardTitle}>Order Status Timeline</Text>
+            </View>
+            <Divider />
+            <View style={styles.timeline}>
+              {TIMELINE.map((step, i) => (
+                <View key={step.id} style={styles.timelineRow}>
+                  <View style={styles.timelineLeft}>
+                    <TimelineDot status={step.status} />
+                    {i < TIMELINE.length - 1 && <View style={styles.timelineConnector} />}
+                  </View>
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineLabel}>{step.label}</Text>
+                    <Text style={styles.timelineDetail}>{step.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
 
-        <View style={{ height: 100 }} />
-      </ScrollView>
+          {/* ── Price Breakdown ── */}
+          {order && (
+            <View style={styles.card}>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceKey}>Subtotal</Text>
+                <Text style={styles.priceValue}>₹{parseFloat(order.subtotal).toFixed(2)}</Text>
+              </View>
+              {parseFloat(order.discount) > 0 && (
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceKey}>Discount</Text>
+                  <Text style={[styles.priceValue, styles.discountText]}>-₹{parseFloat(order.discount).toFixed(2)}</Text>
+                </View>
+              )}
+              <View style={styles.priceRow}>
+                <Text style={styles.priceKey}>Tax (GST)</Text>
+                <Text style={styles.priceValue}>₹{parseFloat(order.tax).toFixed(2)}</Text>
+              </View>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceKey}>Shipping Fee</Text>
+                <Text style={[styles.priceValue, styles.freeText]}>Free</Text>
+              </View>
+              <Divider />
+              <View style={styles.priceRow}>
+                <Text style={styles.totalKey}>Total Amount</Text>
+                <Text style={styles.totalValue}>₹{parseFloat(order.total).toFixed(2)}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* ── Location Tracking View ── */}
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <View style={styles.cardTitleIcon}>
+                <LocationPinIcon width={18} height={18} />
+              </View>
+              <Text style={styles.cardTitle}>Location Tracking View</Text>
+            </View>
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                region={INDORE_REGION}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                pitchEnabled={false}
+                rotateEnabled={false}
+              />
+            </View>
+          </View>
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      )}
 
       {/* ── Bottom Bar ── */}
       <View style={styles.bottomBar}>
@@ -247,6 +359,12 @@ const OrderDetailScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F6FA' },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   orderMeta: {
     flexDirection: 'row',
@@ -270,22 +388,19 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
   },
-  deliveredBadge: {
-    backgroundColor: 'rgba(52,168,83,0.12)',
+  statusBadge: {
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  deliveredBadgeText: {
+  statusBadgeText: {
     fontSize: FONTS.size.xs,
     fontFamily: FONTS.family.bold,
-    color: '#34A853',
     letterSpacing: 0.4,
   },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
 
-  // Cards
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 14,
@@ -323,12 +438,12 @@ const styles = StyleSheet.create({
 
   divider: { height: 1, backgroundColor: COLORS.border },
 
-  // Section header (for map)
-  sectionHeader: { paddingHorizontal: 14, paddingVertical: 13 },
-  sectionLabel: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textDark,
+  emptyText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
 
   // Order items
@@ -350,7 +465,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   orderItemInfo: { flex: 1 },
-  orderItemTime: {
+  orderItemName: {
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
     color: COLORS.textDark,
@@ -361,21 +476,27 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
   },
+  orderItemDiscount: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#34A853',
+    marginTop: 2,
+  },
   orderItemPrice: {
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
     color: COLORS.textDark,
   },
 
-  // Pharmacy
-  pharmacyBody: { paddingHorizontal: 14, paddingVertical: 14 },
-  pharmacyName: {
+  // Entity (doctor / pharmacy)
+  entityBody: { paddingHorizontal: 14, paddingVertical: 14 },
+  entityName: {
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
     color: COLORS.textDark,
     marginBottom: 4,
   },
-  pharmacyDetail: {
+  entityDetail: {
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
@@ -394,14 +515,8 @@ const styles = StyleSheet.create({
 
   // Timeline
   timeline: { paddingHorizontal: 14, paddingVertical: 14 },
-  timelineRow: {
-    flexDirection: 'row',
-    gap: 14,
-  },
-  timelineLeft: {
-    alignItems: 'center',
-    width: 22,
-  },
+  timelineRow: { flexDirection: 'row', gap: 14 },
+  timelineLeft: { alignItems: 'center', width: 22 },
   dot: {
     width: 22,
     height: 22,
@@ -461,6 +576,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.medium,
     color: COLORS.textDark,
   },
+  discountText: { color: '#34A853' },
   freeText: { color: '#34A853', fontFamily: FONTS.family.bold },
   totalKey: {
     fontSize: FONTS.size.lg,
@@ -474,10 +590,7 @@ const styles = StyleSheet.create({
   },
 
   // Map
-  mapContainer: {
-    height: 180,
-    overflow: 'hidden',
-  },
+  mapContainer: { height: 180, overflow: 'hidden' },
   map: { flex: 1 },
 
   // Bottom bar
@@ -515,6 +628,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  bottomSpacer: { height: 100 },
 });
 
 export default OrderDetailScreen;

@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -31,15 +32,30 @@ import { AppStackParamList } from '@/navigation/types';
 import { ApiDoctor } from '@/redux/slices/portfolioSlice';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import DatePickerModal from '@/components/common/DatePickerModal';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type RoutePropType = RouteProp<AppStackParamList, 'CreateOrder'>;
 
 type Priority = 'Low' | 'Medium' | 'High';
 
+type ApiProduct = {
+  id: number;
+  code: string;
+  name: string;
+  sku: string;
+  category: string;
+  packSize: string;
+  mrp: string;
+  gst: string;
+  hsnCode: string;
+  shelfLife: number;
+  description: string;
+  isActive: boolean;
+};
+
 type Product = {
   id: string;
-  time: string;
   name: string;
   category: string;
   badge: 'Best Seller' | 'Limited Stock' | null;
@@ -47,35 +63,20 @@ type Product = {
   offer: string;
   foc: boolean;
   qty: number;
+  gst: string;
 };
-
-const INITIAL_PRODUCTS: Product[] = [
-  { id: '1', time: '08:00 AM', name: 'Antibiotic', category: 'Strip of 10', badge: 'Best Seller',   price: 45, offer: '10 + 2 Offer', foc: true,  qty: 12 },
-  { id: '2', time: '08:00 AM', name: 'Antibiotic', category: 'Strip of 10', badge: 'Limited Stock', price: 45, offer: '10 + 2 Offer', foc: true,  qty: 12 },
-];
 
 type CatalogueItem = {
   id: string;
-  time: string;
-  description: string;
+  name: string;
+  sku: string;
+  category: string;
+  packSize: string;
+  price: number;
+  gst: string;
   qty: number;
   selected: boolean;
 };
-
-const CATALOGUE: CatalogueItem[] = [
-  { id: 'c1', time: '08:00 AM', description: 'Reduces Sebum & Prevents Breakout Without Drying Skin', qty: 12, selected: true  },
-  { id: 'c2', time: '08:00 AM', description: 'Reduces Sebum & Prevents Breakout Without Drying Skin', qty: 12, selected: false },
-  { id: 'c3', time: '08:00 AM', description: 'Advanced Moisturising Formula for Sensitive Skin',       qty: 6,  selected: false },
-  { id: 'c4', time: '08:00 AM', description: 'Broad Spectrum SPF 50 Sunscreen Gel',                   qty: 10, selected: false },
-];
-
-const LAST_ORDERED = [
-  { time: '08:00 AM', name: 'Antihypertensive' },
-  { time: '08:00 AM', name: 'Statin Combo' },
-  { time: '08:00 AM', name: 'Anti-arrhythmic' },
-  { time: '08:00 AM', name: 'Anti-arrhythmic' },
-  { time: '08:00 AM', name: 'Anti-arrhythmic' },
-];
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
@@ -129,7 +130,7 @@ const ProductCard = ({
       </View>
       <View style={styles.productMeta}>
         <View style={styles.productNameRow}>
-          <Text style={styles.productTime}>{item.time}</Text>
+          <Text style={styles.productTime}>{item.name}</Text>
           {item.badge && (
             <View style={[styles.badge, item.badge === 'Best Seller' ? styles.badgeBestSeller : styles.badgeLimitedStock]}>
               <Text style={[styles.badgeText, item.badge === 'Best Seller' ? styles.badgeBestSellerText : styles.badgeLimitedStockText]}>
@@ -138,7 +139,7 @@ const ProductCard = ({
             </View>
           )}
         </View>
-        <Text style={styles.productCategory}>{item.name} • {item.category}</Text>
+        <Text style={styles.productCategory}>{item.category}</Text>
       </View>
       <View style={styles.productPriceBlock}>
         <Text style={styles.productPrice}>₹{item.price.toFixed(2)}</Text>
@@ -185,6 +186,7 @@ const CreateOrderScreen = () => {
       try {
         const res = await apiClient.get<ApiDoctor>(ENDPOINTS.portfolio.doctorDetail(doctorId));
         setDoctor(res.data);
+        console.log('🚀 ~ fetchDoctor ~ res.data:', res.data)
       } catch {
         // keep null — UI will show fallback
       } finally {
@@ -194,15 +196,41 @@ const CreateOrderScreen = () => {
     fetchDoctor();
   }, [doctorId]);
 
+  const fetchCatalogue = async () => {
+    setCatalogueLoading(true);
+    try {
+      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.list);
+      const items: CatalogueItem[] = res.data.map(p => ({
+        id: String(p.id),
+        name: p.name,
+        sku: p.sku,
+        category: p.category,
+        packSize: p.packSize,
+        price: parseFloat(p.mrp),
+        gst: p.gst,
+        qty: 1,
+        selected: false,
+      }));
+      setCatalogue(items);
+    } catch {
+      // keep empty
+    } finally {
+      setCatalogueLoading(false);
+    }
+  };
+
   const [search, setSearch] = useState('');
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [inventoryExpanded, setInventoryExpanded] = useState(true);
   const [lastOrderedExpanded, setLastOrderedExpanded] = useState(false);
   const [priority, setPriority] = useState<Priority>('Medium');
-  const [deliveryDate, setDeliveryDate] = useState('10 / 25 / 2025');
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(null);
+  const [calendarVisible, setCalendarVisible] = useState(false);
   const [notes, setNotes] = useState('');
+  const [shippingAddress, setShippingAddress] = useState('');
   const [addItemsVisible, setAddItemsVisible] = useState(false);
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(CATALOGUE);
 
   const updateQty = (id: string, delta: number) => {
     setProducts(prev =>
@@ -232,22 +260,60 @@ const CreateOrderScreen = () => {
       .filter(c => c.selected && !products.find(p => p.id === c.id))
       .map(c => ({
         id: c.id,
-        time: c.time,
-        name: c.description.split(' ').slice(0, 2).join(' '),
-        category: 'Strip of 10',
+        name: c.name,
+        category: `${c.category} • ${c.packSize}`,
         badge: null,
-        price: 45,
-        offer: '10 + 2 Offer',
+        price: c.price,
+        gst: c.gst,
+        offer: '',
         foc: false,
         qty: c.qty,
       }));
     if (newItems.length) setProducts(prev => [...prev, ...newItems]);
+    setCatalogue(prev => prev.map(c => ({ ...c, selected: false })));
     setAddItemsVisible(false);
   };
 
   const handlePlaceOrder = () => {
-    const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
-    navigation.navigate('Payment', { subtotal: orderValue, orderNumber });
+    // Validation 1: Check if at least one product is added
+    if (products.length === 0) {
+      Alert.alert('No Products', 'Please add at least one product to create an order.');
+      return;
+    }
+
+    // Validation 2: Check if order total is greater than 0
+    if (orderValue <= 0) {
+      Alert.alert('Invalid Amount', 'Order amount must be greater than ₹0. Please add products with valid prices.');
+      return;
+    }
+
+    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`
+    const items = products.map(p => {
+      const base = p.price * p.qty;
+      const gstRate = parseFloat(p.gst || '12') / 100;
+      const itemTax = parseFloat((base * gstRate).toFixed(2));
+      const itemTotal = parseFloat((base + itemTax).toFixed(2));
+      return {
+        productId: parseInt(p.id, 10),
+        quantity: p.qty,
+        unitPrice: p.price.toFixed(2),
+        discount: '0',
+        tax: itemTax.toFixed(2),
+        total: itemTotal.toFixed(2),
+      };
+    });
+    navigation.navigate('Payment', {
+      subtotal: orderValue,
+      orderNumber,
+      orderCreateData: {
+        doctorId: parseInt(doctorId, 10),
+        warehouseId: 1,
+        shippingAddress,
+        notes,
+        reasonTag: 'Doctor Request',
+        items,
+      },
+    });
   };
 
 
@@ -332,26 +398,30 @@ const CreateOrderScreen = () => {
           <View style={styles.addItemsRow}>
             <TouchableOpacity
               style={styles.addItemsBtn}
-              onPress={() => setAddItemsVisible(true)}
+              onPress={() => { setAddItemsVisible(true); fetchCatalogue(); }}
             >
               <AddCircle />
               <Text style={styles.addItemsBtnText}>  Add Items</Text>
             </TouchableOpacity>
           </View>
 
-          {products.map(item => (
-            <ProductCard
-              key={item.id}
-              item={item}
-              onToggleFoc={toggleFoc}
-              onUpdateQty={updateQty}
-              onLongPress={() => navigation.navigate('ProductDetail', {
-                productId: item.id,
-                productName: `${item.name} • ${item.category}`,
-                productTime: item.time,
-              })}
-            />
-          ))}
+          {products.length === 0 ? (
+            <Text style={styles.emptyProducts}>No products added yet.</Text>
+          ) : (
+            products.map(item => (
+              <ProductCard
+                key={item.id}
+                item={item}
+                onToggleFoc={toggleFoc}
+                onUpdateQty={updateQty}
+                onLongPress={() => navigation.navigate('ProductDetail', {
+                  productId: item.id,
+                  productName: item.name,
+                  productTime: item.category,
+                })}
+              />
+            ))
+          )}
 
           <Text style={styles.longPressHint}>Long-press items to view composition and detailed pricing</Text>
         </CollapsibleSection>
@@ -359,16 +429,60 @@ const CreateOrderScreen = () => {
         {/* Expected Delivery */}
         <View style={styles.deliverySection}>
           <Text style={styles.sectionLabel}>EXPECTED DELIVERY</Text>
-          <View style={styles.dateInputRow}>
+          <TouchableOpacity
+            style={styles.dateInputRow}
+            onPress={() => setCalendarVisible(true)}
+            activeOpacity={0.8}
+          >
             <CalendarNoteIcon width={18} height={18} />
-            <TextInput
-              style={styles.dateInput}
-              value={deliveryDate}
-              onChangeText={setDeliveryDate}
-            />
-          </View>
+            <Text style={[styles.dateInput, !deliveryDate && styles.datePlaceholder]}>
+              {deliveryDate
+                ? deliveryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                : 'Select delivery date'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
+        <DatePickerModal
+          visible={calendarVisible}
+          selectedDate={deliveryDate}
+          minDate={new Date()}
+          onSelect={d => { setDeliveryDate(d); setCalendarVisible(false); }}
+          onClose={() => setCalendarVisible(false)}
+        />
+
+        {/* Last Ordered Products */}
+        {/* <CollapsibleSection
+          title="Last Ordered Products"
+          expanded={lastOrderedExpanded}
+          onToggle={() => setLastOrderedExpanded(p => !p)}
+        >
+          {products.length === 0 ? (
+            <Text style={styles.lastOrderedEmpty}>No products added yet.</Text>
+          ) : (
+            products.map((item, i) => (
+              <View key={item.id} style={[styles.lastOrderedRow, i < products.length - 1 && styles.lastOrderedRowBorder]}>
+                <View>
+                  <Text style={styles.lastOrderedTime}>{item.name}</Text>
+                  <Text style={styles.lastOrderedName}>{item.category}</Text>
+                </View>
+                <TouchableOpacity><InfoIcon width={20} height={20} /></TouchableOpacity>
+              </View>
+            ))
+          )}
+        </CollapsibleSection> */}
+
+        {/* Notes */}
+        <Text style={styles.sectionLabel}>SHIPPING ADDRESS</Text>
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Enter delivery address or any specific instructions for the delivery personnel..."
+          placeholderTextColor={COLORS.textMuted}
+          multiline
+          value={shippingAddress}
+          onChangeText={setShippingAddress}
+          textAlignVertical="top"
+        />
         {/* Order Priority */}
         <View style={styles.prioritySection}>
           <Text style={styles.sectionLabel}>ORDER PRIORITY</Text>
@@ -388,24 +502,6 @@ const CreateOrderScreen = () => {
           </View>
         </View>
 
-        {/* Last Ordered Products */}
-        <CollapsibleSection
-          title="Last Ordered Products"
-          expanded={lastOrderedExpanded}
-          onToggle={() => setLastOrderedExpanded(p => !p)}
-        >
-          {LAST_ORDERED.map((item, i) => (
-            <View key={i} style={[styles.lastOrderedRow, i < LAST_ORDERED.length - 1 && styles.lastOrderedRowBorder]}>
-              <View>
-                <Text style={styles.lastOrderedTime}>{item.time}</Text>
-                <Text style={styles.lastOrderedName}>{item.name}</Text>
-              </View>
-              <TouchableOpacity><InfoIcon width={20} height={20} /></TouchableOpacity>
-            </View>
-          ))}
-        </CollapsibleSection>
-
-        {/* Notes */}
         <Text style={styles.sectionLabel}>NOTES / SPECIAL INSTRUCTIONS</Text>
         <TextInput
           style={styles.notesInput}
@@ -437,6 +533,9 @@ const CreateOrderScreen = () => {
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Select Items</Text>
 
+          {catalogueLoading ? (
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} style={{ marginVertical: 32 }} />
+          ) : null}
           <FlatList
             data={catalogue}
             keyExtractor={item => item.id}
@@ -454,8 +553,9 @@ const CreateOrderScreen = () => {
 
                 {/* Info */}
                 <View style={styles.modalItemInfo}>
-                  <Text style={styles.modalItemTime}>{item.time}</Text>
-                  <Text style={styles.modalItemDesc}>{item.description}</Text>
+                  <Text style={styles.modalItemTime}>{item.name}</Text>
+                  <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+                  <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
                 </View>
 
                 {/* Stepper */}
@@ -663,6 +763,13 @@ const styles = StyleSheet.create({
   stepperValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, minWidth: 28, textAlign: 'center' },
 
   // Hint
+  emptyProducts: {
+    textAlign: 'center',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    paddingVertical: 20,
+  },
   longPressHint: {
     textAlign: 'center',
     fontSize: FONTS.size.xs,
@@ -691,6 +798,10 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     padding: 0,
   },
+  datePlaceholder: {
+    color: COLORS.textMuted,
+    fontFamily: FONTS.family.regular,
+  },
 
   // Priority
   prioritySection: { marginBottom: 16 },
@@ -711,6 +822,13 @@ const styles = StyleSheet.create({
   priorityOptionTextActive: { color: COLORS.white },
 
   // Last Ordered
+  lastOrderedEmpty: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
   lastOrderedRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -841,6 +959,12 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
     lineHeight: 18,
+  },
+  modalItemPrice: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    marginTop: 2,
   },
   modalFooter: {
     paddingHorizontal: 16,

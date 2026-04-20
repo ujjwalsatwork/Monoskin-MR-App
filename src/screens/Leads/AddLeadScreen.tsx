@@ -1,43 +1,193 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, Platform,
+  TouchableOpacity, Platform, ActivityIndicator,
+  Modal, FlatList, TouchableWithoutFeedback, Alert,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
-import AssignModal, { ASSIGN_OPTIONS } from '@/components/common/AssignModal';
 import {
-  ProfileIcon, CameraUploadIcon, InfoIcon,
-  PhoneSmallIcon, Down,
-  Camera,
+  ProfileIcon, InfoIcon, PhoneSmallIcon, Down, Camera,
 } from '@/assets/images';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import DatePickerModal from '@/components/common/DatePickerModal';
+import apiClient from '@/services/apiClient';
 
 type AddDoctorRouteProp = RouteProp<AppStackParamList, 'AddDoctorLead'>;
+type NavProp = NativeStackNavigationProp<AppStackParamList>;
+
+const STAGE_OPTIONS = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted', 'Lost'];
+const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'];
+const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Other'];
+
+/* ─── Generic options bottom-sheet ───────────────────────────────── */
+type OptionsSheetProps = {
+  visible: boolean;
+  title: string;
+  options: string[];
+  selected: string;
+  onSelect: (val: string) => void;
+  onClose: () => void;
+};
+
+const OptionsSheet = ({ visible, title, options, selected, onSelect, onClose }: OptionsSheetProps) => (
+  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={sheet.overlay} />
+    </TouchableWithoutFeedback>
+    <View style={sheet.container}>
+      <View style={sheet.handle} />
+      <Text style={sheet.title}>{title}</Text>
+      <FlatList
+        data={options}
+        keyExtractor={item => item}
+        scrollEnabled={false}
+        renderItem={({ item }) => {
+          const active = item === selected;
+          return (
+            <TouchableOpacity
+              style={sheet.option}
+              activeOpacity={0.7}
+              onPress={() => { onSelect(item); onClose(); }}
+            >
+              <Text style={[sheet.optionText, active && sheet.optionActive]}>{item}</Text>
+              {active && <Text style={sheet.check}>✓</Text>}
+            </TouchableOpacity>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={sheet.sep} />}
+      />
+    </View>
+  </Modal>
+);
+
+const sheet = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  container: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 12,
+  },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+    marginBottom: 12,
+  },
+  option: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', paddingVertical: 14,
+  },
+  optionText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textDark,
+  },
+  optionActive: {
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+  },
+  check: { fontSize: FONTS.size.lg, color: COLORS.buttonBlue },
+  sep: { height: 1, backgroundColor: COLORS.border },
+});
 
 /* ─── Screen ─────────────────────────────────────────────────────── */
 const AddLeadScreen = () => {
   const route = useRoute<AddDoctorRouteProp>();
+  const navigation = useNavigation<NavProp>();
   const { editMode, leadData } = route.params || {};
+
   const [form, setForm] = useState({
-    fullName: leadData?.name || '',
-    companyName: leadData?.company || '',
+    name: leadData?.name || '',
+    designation: leadData?.designation || '',
+    specialization: leadData?.specialization || '',
+    clinic: leadData?.clinic || leadData?.company || '',
+    city: leadData?.city || '',
+    state: leadData?.state || '',
+    address: leadData?.address || '',
+    phone: leadData?.phone || '',
+    whatsappNumber: leadData?.whatsappNumber || '',
     email: leadData?.email || '',
-    contact: leadData?.phone || '',
-    linkedPharmacy: '',
-    notes: '',
+    receptionistPhone: leadData?.receptionistPhone || '',
+    nearbyChemistName: leadData?.nearbyChemistName || '',
+    nearbyChemistPhone: leadData?.nearbyChemistPhone || '',
+    stage: leadData?.stage || 'New',
+    priority: leadData?.priority || 'Medium',
+    source: leadData?.source || '',
+    notes: leadData?.notes || '',
   });
-  const [assignTo, setAssignTo] = useState(ASSIGN_OPTIONS[0]);
-  const [showAssign, setShowAssign] = useState(false);
+
+  const [followUpDate, setFollowUpDate] = useState<Date | null>(
+    leadData?.nextFollowUp ? new Date(leadData.nextFollowUp) : null
+  );
+
+  const [showStage, setShowStage] = useState(false);
+  const [showPriority, setShowPriority] = useState(false);
+  const [showSource, setShowSource] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(prev => ({ ...prev, [key]: val }));
 
+  const formatDate = (d: Date | null) => {
+    if (!d) return '';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) {
+      Alert.alert('Validation Error', 'Name is required.');
+      return;
+    }
+    if (!form.city.trim()) {
+      Alert.alert('Validation Error', 'City is required.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const timestamp = Date.now().toString().slice(-6);
+      const payload: Record<string, unknown> = {
+        ...form,
+        nextFollowUp: followUpDate ? followUpDate.toISOString().split('T')[0] : undefined,
+      };
+
+      if (editMode && leadData?.id) {
+        await apiClient.patch(`/leads/${leadData.id}`, payload);
+      } else {
+        payload.code = `LED${timestamp}`;
+        await apiClient.post('/leads', payload);
+      }
+
+      navigation.goBack();
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Something went wrong. Please try again.';
+      Alert.alert('Error', message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <Header title={editMode ? "Edit Doctor Lead" : "Add New Lead"} showBack showNotification showProfile />
+      <Header
+        title={editMode ? 'Edit Doctor Lead' : 'Add New Lead'}
+        showBack
+        showNotification
+        showProfile
+      />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -67,27 +217,119 @@ const AddLeadScreen = () => {
           <Text style={styles.sectionTitle}>NEW PROSPECT INFORMATION</Text>
         </View>
 
-        {/* Form fields */}
-        <Field label="Full Name">
+        {/* Name * */}
+        <Field label="Full Name *">
           <TextInput
             style={styles.input}
-            placeholder="Enter name"
+            placeholder="Dr. Name"
             placeholderTextColor={COLORS.textMuted}
-            value={form.fullName}
-            onChangeText={set('fullName')}
+            value={form.name}
+            onChangeText={set('name')}
           />
         </Field>
 
-        <Field label="Company Name">
+        {/* Designation + Specialization row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Designation</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Dermatologist"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.designation}
+              onChangeText={set('designation')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Specialization</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Skin Care"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.specialization}
+              onChangeText={set('specialization')}
+            />
+          </View>
+        </View>
+
+        {/* Clinic Name */}
+        <Field label="Clinic Name">
           <TextInput
             style={styles.input}
-            placeholder="Enter company name"
+            placeholder="Clinic / Hospital"
             placeholderTextColor={COLORS.textMuted}
-            value={form.companyName}
-            onChangeText={set('companyName')}
+            value={form.clinic}
+            onChangeText={set('clinic')}
           />
         </Field>
 
+        {/* City * + State row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>City *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="City"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.city}
+              onChangeText={set('city')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>State</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="State"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.state}
+              onChangeText={set('state')}
+            />
+          </View>
+        </View>
+
+        {/* Address */}
+        <Field label="Address">
+          <TextInput
+            style={[styles.input, styles.notesInput]}
+            placeholder="Full address"
+            placeholderTextColor={COLORS.textMuted}
+            multiline
+            textAlignVertical="top"
+            value={form.address}
+            onChangeText={set('address')}
+          />
+        </Field>
+
+        {/* Phone + WhatsApp row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Phone</Text>
+            <View style={styles.phoneRow}>
+              <PhoneSmallIcon width={16} height={16} />
+              <TextInput
+                style={[styles.input, styles.phoneInput]}
+                placeholder="+91 9876543210"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="phone-pad"
+                value={form.phone}
+                onChangeText={set('phone')}
+              />
+            </View>
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>WhatsApp Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="WhatsApp number"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="phone-pad"
+              value={form.whatsappNumber}
+              onChangeText={set('whatsappNumber')}
+            />
+          </View>
+        </View>
+
+        {/* Email */}
         <Field label="Email Address">
           <TextInput
             style={styles.input}
@@ -100,34 +342,104 @@ const AddLeadScreen = () => {
           />
         </Field>
 
-        <Field label="Contact Number">
-          <View style={styles.phoneRow}>
-            <PhoneSmallIcon width={16} height={16} />
-            <TextInput
-              style={[styles.input, styles.phoneInput]}
-              placeholder="+91 9876543210"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="phone-pad"
-              value={form.contact}
-              onChangeText={set('contact')}
-            />
-          </View>
-        </Field>
-
-        <Field label="Linked Pharmacy">
+        {/* Receptionist / Other Number */}
+        <Field label="Receptionist / Other Number">
           <TextInput
             style={styles.input}
-            placeholder="Enter Pharmacy"
+            placeholder="Receptionist phone number"
             placeholderTextColor={COLORS.textMuted}
-            value={form.linkedPharmacy}
-            onChangeText={set('linkedPharmacy')}
+            keyboardType="phone-pad"
+            value={form.receptionistPhone}
+            onChangeText={set('receptionistPhone')}
           />
         </Field>
 
+        {/* Chemist name + phone row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Chemist / Micropharmacy Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nearby chemist name"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.nearbyChemistName}
+              onChangeText={set('nearbyChemistName')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Chemist / Micropharmacy Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Chemist phone"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="phone-pad"
+              value={form.nearbyChemistPhone}
+              onChangeText={set('nearbyChemistPhone')}
+            />
+          </View>
+        </View>
+
+        {/* Stage * dropdown */}
+        <Field label="Stage *">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowStage(true)}
+          >
+            <Text style={[styles.dropdownText, form.stage && styles.dropdownSelected]}>
+              {form.stage || 'Select Stage'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+
+        {/* Priority * dropdown */}
+        <Field label="Priority *">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowPriority(true)}
+          >
+            <Text style={[styles.dropdownText, form.priority && styles.dropdownSelected]}>
+              {form.priority || 'Select Priority'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+
+        {/* Source dropdown */}
+        <Field label="Source">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowSource(true)}
+          >
+            <Text style={[styles.dropdownText, form.source && styles.dropdownSelected]}>
+              {form.source || 'Select Source'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+
+        {/* Next Follow-up date picker */}
+        <Field label="Next Follow-up">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={[styles.dropdownText, followUpDate && styles.dropdownSelected]}>
+              {followUpDate ? formatDate(followUpDate) : 'dd/mm/yyyy'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+
+        {/* Notes */}
         <Field label="Notes">
           <TextInput
             style={[styles.input, styles.notesInput]}
-            placeholder="Add initial notes about this lead..."
+            placeholder="Additional notes about this lead..."
             placeholderTextColor={COLORS.textMuted}
             multiline
             textAlignVertical="top"
@@ -136,32 +448,60 @@ const AddLeadScreen = () => {
           />
         </Field>
 
-        <Field label="Assign to">
-          <TouchableOpacity
-            style={styles.dropdown}
-            activeOpacity={0.8}
-            onPress={() => setShowAssign(true)}
-          >
-            <Text style={styles.dropdownText}>{assignTo}</Text>
-            <Down width={16} height={16} stroke={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </Field>
-
         <View style={{ height: 24 }} />
       </ScrollView>
 
       {/* Save button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveBtn} activeOpacity={0.85}>
-          <Text style={styles.saveBtnText}>{editMode ? 'Update Lead' : 'Save Lead'}</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+          activeOpacity={0.85}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveBtnText}>
+              {editMode ? 'Update Lead' : 'Save Lead'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 
-      <AssignModal
-        visible={showAssign}
-        selected={assignTo}
-        onSelect={setAssignTo}
-        onClose={() => setShowAssign(false)}
+      {/* Dropdown sheets */}
+      <OptionsSheet
+        visible={showStage}
+        title="Select Stage"
+        options={STAGE_OPTIONS}
+        selected={form.stage}
+        onSelect={val => set('stage')(val)}
+        onClose={() => setShowStage(false)}
+      />
+      <OptionsSheet
+        visible={showPriority}
+        title="Select Priority"
+        options={PRIORITY_OPTIONS}
+        selected={form.priority}
+        onSelect={val => set('priority')(val)}
+        onClose={() => setShowPriority(false)}
+      />
+      <OptionsSheet
+        visible={showSource}
+        title="Select Source"
+        options={SOURCE_OPTIONS}
+        selected={form.source}
+        onSelect={val => set('source')(val)}
+        onClose={() => setShowSource(false)}
+      />
+
+      {/* Date picker */}
+      <DatePickerModal
+        visible={showDatePicker}
+        selectedDate={followUpDate}
+        minDate={new Date()}
+        onSelect={date => { setFollowUpDate(date); setShowDatePicker(false); }}
+        onClose={() => setShowDatePicker(false)}
       />
     </View>
   );
@@ -228,6 +568,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
+  row: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  halfField: { flex: 1 },
+
   fieldGroup: { marginBottom: 16 },
   label: {
     fontSize: FONTS.size.md,
@@ -262,7 +609,7 @@ const styles = StyleSheet.create({
     borderRadius: 0,
   },
   notesInput: {
-    height: 110,
+    height: 90,
     borderRadius: 16,
     paddingTop: Platform.OS === 'ios' ? 14 : 10,
   },
@@ -279,7 +626,10 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
+    color: COLORS.textMuted,
+  },
+  dropdownSelected: {
+    color: COLORS.textDark,
   },
 
   footer: {
@@ -296,6 +646,9 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  saveBtnDisabled: {
+    opacity: 0.6,
   },
   saveBtnText: {
     fontSize: FONTS.size.lg,

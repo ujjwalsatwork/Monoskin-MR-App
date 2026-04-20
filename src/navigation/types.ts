@@ -1,3 +1,22 @@
+export type OrderItemPayload = {
+    productId: number;
+    quantity: number;
+    unitPrice: string;
+    discount: string;
+    tax: string;
+    total: string;
+};
+
+export type OrderCreateData = {
+    doctorId?: number;
+    pharmacyId?: number;
+    warehouseId: number;
+    shippingAddress: string;
+    notes: string;
+    reasonTag: string;
+    items: OrderItemPayload[];
+};
+
 export type AuthStackParamList = {
     Login: undefined;
     OTP: { mobileNumber: string };
@@ -21,8 +40,9 @@ export type AppStackParamList = {
     VisitDetail: { visitId: string };
     CreateOrder: { doctorId: string };
     ProductDetail: { productId: string; productName: string; productTime: string };
-    Payment: { subtotal: number; orderNumber: string };
+    Payment: { subtotal: number; orderNumber: string; orderCreateData: OrderCreateData };
     PaymentSuccess: {
+        orderId: number;
         orderNumber: string;
         totalAmount: number;
         paymentMethod: string;
@@ -39,10 +59,8 @@ export type AppStackParamList = {
         last4: string;
     };
     OrderDetail: {
+        orderId: number;
         orderNumber: string;
-        totalAmount: number;
-        subtotal: number;
-        orderDate: string;
     };
     CheckInSuccess: { 
         time: string; 

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -40,14 +41,23 @@ const DetailRow = ({
 const PaymentSuccessScreen = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavProp>();
-  const { orderNumber, totalAmount, paymentMethod, last4, dateTime } = route.params;
+  const { orderId, orderNumber, totalAmount, paymentMethod, last4, dateTime } = route.params;
 
-  const subtotal = parseFloat((totalAmount / 1.12).toFixed(2));
-  const orderDate = dateTime.split(' - ')[0];
+
+  const goToPortfolio = () =>
+    (navigation as any).navigate('Main', { screen: 'Portfolio' });
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      (navigation as any).navigate('Main', { screen: 'Portfolio' });
+      return true;
+    });
+    return () => sub.remove();
+  }, [navigation]);
 
   return (
     <View style={styles.safeArea}>
-      <Header title="Payment Successful" showBack showNotification showProfile />
+      <Header title="Payment Successful" showBack showNotification showProfile onBack={goToPortfolio} />
 
       <View style={styles.container}>
         {/* Icon */}
@@ -105,10 +115,8 @@ const PaymentSuccessScreen = () => {
           style={styles.primaryBtn}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('OrderDetail', {
+            orderId,
             orderNumber,
-            totalAmount,
-            subtotal,
-            orderDate,
           })}
         >
           <Text style={styles.primaryBtnText}>View Order Details  →</Text>

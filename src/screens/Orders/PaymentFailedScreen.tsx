@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  BackHandler,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -31,9 +32,20 @@ const PaymentFailedScreen = () => {
     last4,
   } = route.params;
 
+  const goToPortfolio = () =>
+    (navigation as any).navigate('Main', { screen: 'Portfolio' });
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      (navigation as any).navigate('Main', { screen: 'Portfolio' });
+      return true;
+    });
+    return () => sub.remove();
+  }, [navigation]);
+
   return (
     <View style={styles.safeArea}>
-      <Header title="Payment Failed" showBack showNotification showProfile />
+      <Header title="Payment Failed" showBack showNotification showProfile onBack={goToPortfolio} />
 
       <View style={styles.container}>
         {/* Icon */}

@@ -10,20 +10,22 @@ interface HeaderProps {
   showBack?: boolean;
   showNotification?: boolean;
   showProfile?: boolean;
+  onBack?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ 
-  title, 
-  showBack = false, 
-  showNotification = false, 
-  showProfile = false 
+const Header: React.FC<HeaderProps> = ({
+  title,
+  showBack = false,
+  showNotification = false,
+  showProfile = false,
+  onBack,
 }) => {
   const navigation = useNavigation();
 
   return (
     <View style={styles.header}>
       {showBack && (
-        <TouchableOpacity style={styles.iconButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.iconButton} onPress={onBack ?? (() => navigation.goBack())}>
           <BackArrowIconBlack />
         </TouchableOpacity>
       )}

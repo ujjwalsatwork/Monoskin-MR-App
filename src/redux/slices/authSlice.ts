@@ -64,7 +64,7 @@ export const sendOtp = createAsyncThunk<SendOtpResponse, SendOtpPayload>(
                 url: ENDPOINTS.auth.sendOtp,
                 data: { phone: payload.phone },
             });
-            console.log('🚀 ~ response:', response.data.otpFallback)
+            console.log('🚀 ~ response:', response)
             return response.data;
         } catch (error) {
             return rejectWithValue(extractErrorMessage(error, 'Failed to send OTP'));

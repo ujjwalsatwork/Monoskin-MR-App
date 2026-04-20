@@ -1,58 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, TextInput, Platform,
+  TouchableOpacity, TextInput, Platform, ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { SearchIcon, PhoneIconOutline, EmailIcon } from '@/assets/images';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import apiClient from '@/services/apiClient';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
-/* ─── Types & Data ───────────────────────────────────────────────── */
-type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'CONVERTED';
-type Priority = 'High Priority' | 'Med Priority' | 'Low Priority';
-
+/* ─── Types ──────────────────────────────────────────────────────── */
 type Lead = {
-  id: string;
+  id: number;
   name: string;
-  company: string;
-  status: LeadStatus;
-  priority: Priority;
-  lastContact: string;
-  category: 'Doctors' | 'Pharmacies';
+  clinic: string;
+  city: string;
+  phone: string | null;
+  email: string | null;
+  stage: string;
+  priority: string;
+  source: string | null;
+  assignedMRId: number | null;
+  nextFollowUp: string | null;
+  createdAt: string;
 };
 
-const LEADS: Lead[] = [
-  { id: '1', name: 'Amit Kumar', company: 'Acme Corp',           status: 'NEW',       priority: 'High Priority', lastContact: '2h ago', category: 'Doctors' },
-  { id: '2', name: 'Amit Kumar', company: 'Globex International', status: 'CONTACTED', priority: 'Med Priority',  lastContact: 'Yesterday', category: 'Doctors' },
-  { id: '3', name: 'Amit Kumar', company: 'TechFlow Systems',    status: 'QUALIFIED',  priority: 'High Priority', lastContact: '3 days ago', category: 'Doctors' },
-  { id: '4', name: 'Amit Kumar', company: 'Summit Agency',       status: 'CONVERTED',  priority: 'Low Priority',  lastContact: 'Oct 12', category: 'Doctors' },
-  { id: '5', name: 'City Health Pharma', company: 'Acme Corp',   status: 'NEW',       priority: 'High Priority', lastContact: '2h ago', category: 'Pharmacies' },
-  { id: '6', name: 'Wellness Apothecary', company: 'Globex',     status: 'CONTACTED', priority: 'Med Priority',  lastContact: 'Yesterday', category: 'Pharmacies' },
-];
-
-const STATUS_CONFIG: Record<LeadStatus, { bg: string; color: string }> = {
-  NEW:       { bg: '#F0F0F0', color: '#666666' },
-  CONTACTED: { bg: '#E8EEF9', color: COLORS.buttonBlue },
-  QUALIFIED: { bg: '#FFF3E0', color: '#E65100' },
-  CONVERTED: { bg: '#E8F5E9', color: '#2E7D32' },
+const STAGE_COLORS: Record<string, { bg: string; color: string }> = {
+  New:         { bg: '#F0F0F0', color: '#666666' },
+  Contacted:   { bg: '#E8EEF9', color: COLORS.buttonBlue },
+  Qualified:   { bg: '#FFF3E0', color: '#E65100' },
+  Proposal:    { bg: '#E8F5E9', color: '#2E7D32' },
+  Negotiation: { bg: '#FDE8FF', color: '#7B1FA2' },
+  'Sent to MR':{ bg: '#E3F2FD', color: '#1565C0' },
+  Converted:   { bg: '#E8F5E9', color: '#2E7D32' },
+  Lost:        { bg: '#FDECEA', color: '#C62828' },
 };
 
-const PRIORITY_CONFIG: Record<Priority, { bg: string; color: string }> = {
-  'High Priority': { bg: '#FDECEA', color: '#C62828' },
-  'Med Priority':  { bg: '#FFF3E0', color: '#E65100' },
-  'Low Priority':  { bg: '#F0F0F0', color: '#666666' },
+const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
+  High:   { bg: '#FDECEA', color: '#C62828' },
+  Medium: { bg: '#FFF3E0', color: '#E65100' },
+  Low:    { bg: '#F0F0F0', color: '#666666' },
 };
 
 /* ─── Lead Card ──────────────────────────────────────────────────── */
 const LeadCard = ({ item }: { item: Lead }) => {
-  const status = STATUS_CONFIG[item.status];
-  const priority = PRIORITY_CONFIG[item.priority];
+  const stageStyle = STAGE_COLORS[item.stage] ?? { bg: '#F0F0F0', color: '#666666' };
+  const priorityStyle = PRIORITY_COLORS[item.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const navigation = useNavigation<NavProp>();
 
   return (
@@ -61,20 +60,28 @@ const LeadCard = ({ item }: { item: Lead }) => {
       <View style={styles.cardTop}>
         <View style={styles.cardTitleBlock}>
           <Text style={styles.leadName}>{item.name}</Text>
-          <Text style={styles.leadCompany}>{item.company}</Text>
+          <Text style={styles.leadCompany}>{item.clinic || item.city || '—'}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-          <Text style={[styles.statusText, { color: status.color }]}>{item.status}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: stageStyle.bg }]}>
+          <Text style={[styles.statusText, { color: stageStyle.color }]}>
+            {item.stage.toUpperCase()}
+          </Text>
         </View>
       </View>
 
-      {/* Priority + Last contact */}
+      {/* Priority + city */}
       <View style={styles.metaRow}>
-        <View style={[styles.priorityBadge, { backgroundColor: priority.bg }]}>
-          <Text style={[styles.priorityText, { color: priority.color }]}>{item.priority}</Text>
+        <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg }]}>
+          <Text style={[styles.priorityText, { color: priorityStyle.color }]}>
+            {item.priority} Priority
+          </Text>
         </View>
-        <Text style={styles.dot}> • </Text>
-        <Text style={styles.lastContact}>Last contact: {item.lastContact}</Text>
+        {item.city ? (
+          <>
+            <Text style={styles.dot}> • </Text>
+            <Text style={styles.lastContact}>{item.city}</Text>
+          </>
+        ) : null}
       </View>
 
       <View style={styles.divider} />
@@ -82,16 +89,25 @@ const LeadCard = ({ item }: { item: Lead }) => {
       {/* Actions row */}
       <View style={styles.actionsRow}>
         <View style={styles.iconBtns}>
-          <TouchableOpacity style={styles.iconBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            activeOpacity={0.8}
+            onPress={() => item.phone && undefined /* tel link placeholder */}
+          >
             <PhoneIconOutline width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            activeOpacity={0.8}
+            onPress={() => item.email && undefined /* email link placeholder */}
+          >
             <EmailIcon width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => {
-          navigation.navigate('LeadDetails', { leadId: item.id, category: item.category });
-        }}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('LeadDetails', { leadId: String(item.id), category: 'Doctors' })}
+        >
           <Text style={styles.detailsLink}>Details {'>'}</Text>
         </TouchableOpacity>
       </View>
@@ -100,17 +116,43 @@ const LeadCard = ({ item }: { item: Lead }) => {
 };
 
 /* ─── Screen ─────────────────────────────────────────────────────── */
-/* ─── Screen ─────────────────────────────────────────────────────── */
 const LeadsScreen = () => {
   const navigation = useNavigation<NavProp>();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'Doctors' | 'Pharmacies'>('Doctors');
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filtered = LEADS.filter(l =>
-    (l.name.toLowerCase().includes(search.toLowerCase()) ||
-    l.company.toLowerCase().includes(search.toLowerCase())) &&
-    l.category === activeTab
+  const fetchLeads = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const res = await apiClient.get<Lead[]>('/leads');
+      setLeads(res.data);
+    } catch {
+      // silently fail — list stays empty
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Refresh list every time this screen comes into focus (e.g. after adding a lead)
+  useFocusEffect(
+    useCallback(() => {
+      fetchLeads();
+    }, [fetchLeads])
   );
+
+  const filteredDoctors = leads.filter(l => {
+    const q = search.toLowerCase();
+    return (
+      l.name.toLowerCase().includes(q) ||
+      (l.clinic || '').toLowerCase().includes(q) ||
+      (l.city || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <View style={styles.container}>
@@ -133,41 +175,79 @@ const LeadsScreen = () => {
       {/* Tabs */}
       <View style={styles.tabsContainer}>
         <View style={styles.tabsWrapper}>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'Doctors' && styles.tabButtonActive]} 
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'Doctors' && styles.tabButtonActive]}
             activeOpacity={0.8}
             onPress={() => setActiveTab('Doctors')}
           >
-            <Text style={[styles.tabText, activeTab === 'Doctors' && styles.tabTextActive]}>Doctors</Text>
+            <Text style={[styles.tabText, activeTab === 'Doctors' && styles.tabTextActive]}>
+              Doctors
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'Pharmacies' && styles.tabButtonActive]} 
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'Pharmacies' && styles.tabButtonActive]}
             activeOpacity={0.8}
             onPress={() => setActiveTab('Pharmacies')}
           >
-            <Text style={[styles.tabText, activeTab === 'Pharmacies' && styles.tabTextActive]}>Pharmacies</Text>
+            <Text style={[styles.tabText, activeTab === 'Pharmacies' && styles.tabTextActive]}>
+              Pharmacies
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={i => i.id}
-        renderItem={({ item }) => <LeadCard item={item} />}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {activeTab === 'Doctors' ? (
+        loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredDoctors}
+            keyExtractor={i => String(i.id)}
+            renderItem={({ item }) => <LeadCard item={item} />}
+            contentContainerStyle={[
+              styles.listContent,
+              filteredDoctors.length === 0 && styles.listEmpty,
+            ]}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchLeads(true)}
+                tintColor={COLORS.buttonBlue}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  {search ? 'No leads match your search.' : 'No doctor leads yet. Add your first lead!'}
+                </Text>
+              </View>
+            }
+          />
+        )
+      ) : (
+        /* Pharmacies tab — not yet implemented */
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>Pharmacy leads coming soon.</Text>
+        </View>
+      )}
 
       {/* Fixed Bottom Button */}
       <View style={styles.fixedBottomContainer}>
         <Text style={styles.addTitle}>ADD LEADS</Text>
-        <TouchableOpacity 
-          style={styles.addBtn} 
-          activeOpacity={0.85} 
-          onPress={() => activeTab === 'Doctors' ? navigation.navigate('AddDoctorLead') : navigation.navigate('AddPharmacyLead')}
+        <TouchableOpacity
+          style={styles.addBtn}
+          activeOpacity={0.85}
+          onPress={() =>
+            activeTab === 'Doctors'
+              ? navigation.navigate('AddDoctorLead')
+              : navigation.navigate('AddPharmacyLead')
+          }
         >
           <Text style={styles.addBtnText}>
-            {activeTab === 'Doctors' ? '+ Add Doctor Leads' : '+ Add Pharmacy Leads'}
+            {activeTab === 'Doctors' ? '+ Add Doctor Lead' : '+ Add Pharmacy Lead'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -199,6 +279,16 @@ const styles = StyleSheet.create({
   },
 
   listContent: { paddingHorizontal: 16, gap: 14, paddingBottom: 24 },
+  listEmpty: { flex: 1 },
+
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
 
   card: {
     borderWidth: 1,
@@ -224,11 +314,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   statusText: {
     fontSize: FONTS.size.xs,
     fontFamily: FONTS.family.bold,
@@ -267,10 +353,7 @@ const styles = StyleSheet.create({
     color: COLORS.buttonBlue,
   },
 
-  tabsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
+  tabsContainer: { paddingHorizontal: 16, paddingBottom: 12 },
   tabsWrapper: {
     flexDirection: 'row',
     backgroundColor: '#F5F5F5',
@@ -283,17 +366,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 24,
   },
-  tabButtonActive: {
-    backgroundColor: COLORS.buttonBlue,
-  },
+  tabButtonActive: { backgroundColor: COLORS.buttonBlue },
   tabText: {
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.semibold,
     color: COLORS.textSecondary,
   },
-  tabTextActive: {
-    color: COLORS.white,
-  },
+  tabTextActive: { color: COLORS.white },
 
   fixedBottomContainer: {
     paddingHorizontal: 16,
@@ -317,7 +396,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  addBtnDark: { backgroundColor: '#1E3A8A' },
   addBtnText: {
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,

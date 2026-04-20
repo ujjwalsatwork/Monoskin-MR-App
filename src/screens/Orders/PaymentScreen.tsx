@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -15,14 +17,13 @@ import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { BankIcon, CardIcon, ShieldIcon, UpiIcon } from '@/assets/images';
+import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type RouteProps = RouteProp<AppStackParamList, 'Payment'>;
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
 type PaymentMethod = 'card' | 'upi' | 'netbanking';
-
-const GST_RATE = 0.12;
- 
 
 const RadioButton = ({ selected }: { selected: boolean }) => (
   <View style={[styles.radio, selected && styles.radioSelected]}>
@@ -33,15 +34,20 @@ const RadioButton = ({ selected }: { selected: boolean }) => (
 const PaymentScreen = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavProp>();
-  const { subtotal, orderNumber } = route.params;
+  const { subtotal, orderNumber, orderCreateData } = route.params;
 
-  const tax = parseFloat((subtotal * GST_RATE).toFixed(2));
+  const tax = parseFloat(
+    (orderCreateData.items ?? [])
+      .reduce((sum: number, item: any) => sum + parseFloat(item.tax || '0'), 0)
+      .toFixed(2)
+  );
   const total = parseFloat((subtotal + tax).toFixed(2));
 
   const [method, setMethod] = useState<PaymentMethod>('card');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const formatCardNumber = (val: string) => {
     const digits = val.replace(/\D/g, '').slice(0, 16);
@@ -72,9 +78,77 @@ const PaymentScreen = () => {
       now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const handleProceed = () => {
+  const handleProceed = async () => {
+    setLoading(true);
+    try {
+      // Step 1: Create the order (without items)
+      const orderPayload = {
+        doctorId: orderCreateData.doctorId,
+        pharmacyId: orderCreateData.pharmacyId,
+        warehouseId: orderCreateData.warehouseId,
+        shippingAddress: orderCreateData.shippingAddress,
+        notes: orderCreateData.notes,
+        reasonTag: orderCreateData.reasonTag,
+        status: 'Draft',
+        subtotal: subtotal.toFixed(2),
+        discount: '0',
+        tax: tax.toFixed(2),
+        total: total.toFixed(2),
+        orderNumber: orderNumber,
+      };
+      
+      const orderRes = await apiClient.post(ENDPOINTS.orders.create, orderPayload);
+      console.log('🚀 ~ handleProceed ~ orderRes:', orderRes);
+      
+      const createdOrderId = orderRes.data?.id;
+      const apiOrderNumber: string = orderRes.data?.orderNumber ?? orderNumber;
+
+      // Step 2: Add items to the order
+      if (createdOrderId && orderCreateData.items && orderCreateData.items.length > 0) {
+        try {
+          const itemPromises = orderCreateData.items.map((item: any) =>
+            apiClient.post(ENDPOINTS.orders.addItems(createdOrderId), {
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              discount: item.discount,
+              tax: item.tax,
+              total: item.total,
+            })
+          );
+          
+          await Promise.all(itemPromises);
+          console.log('🚀 ~ handleProceed ~ Items added successfully');
+        } catch (itemError) {
+          console.log('🚀 ~ handleProceed ~ itemError:', itemError);
+          // Items failed but order was created, still proceed but show warning
+          Alert.alert(
+            'Partial Success',
+            'Order was created but some items failed to add. Please try again or contact support.',
+            [
+              {
+                text: 'Continue',
+                onPress: () => navigateToSuccess(createdOrderId, apiOrderNumber),
+              },
+            ]
+          );
+          return;
+        }
+      }
+
+      navigateToSuccess(createdOrderId, apiOrderNumber);
+    } catch (err) {
+      console.log('🚀 ~ handleProceed ~ err:', err);
+      Alert.alert('Order Failed', 'Could not place your order. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const navigateToSuccess = (createdOrderId: number, apiOrderNumber: string) => {
     navigation.navigate('PaymentSuccess', {
-      orderNumber,
+      orderId: createdOrderId,
+      orderNumber: apiOrderNumber,
       totalAmount: total,
       paymentMethod: getPaymentMethodLabel(),
       last4: getLast4(),
@@ -105,7 +179,7 @@ const PaymentScreen = () => {
             <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryKey}>Tax (GST 12%)</Text>
+            <Text style={styles.summaryKey}>Tax (GST)</Text>
             <Text style={styles.summaryValue}>₹{tax.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryDivider} />

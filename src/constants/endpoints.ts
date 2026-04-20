@@ -15,6 +15,16 @@ export const ENDPOINTS = {
         pharmacies: '/pharmacies',
         pharmacyDetail: (id: string) => `/pharmacies/${id}`,
     },
+    products: {
+        list: '/products',
+        detail: (id: number) => `/products/${id}`,
+    },
+    orders: {
+        create: '/orders',
+        addItems: (orderId: number) => `/orders/${orderId}/items`,
+        detail: (orderId: number) => `/orders/${orderId}`,
+        items: (orderId: number) => `/orders/${orderId}/items`,
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',
