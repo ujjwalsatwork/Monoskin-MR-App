@@ -8,7 +8,7 @@ import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import {
-  ProfileIcon, InfoIcon, PhoneSmallIcon, Down, Camera,
+  InfoIcon, PhoneSmallIcon, Down,
 } from '@/assets/images';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -161,6 +161,7 @@ const AddLeadScreen = () => {
       const timestamp = Date.now().toString().slice(-6);
       const payload: Record<string, unknown> = {
         ...form,
+        leadType: 'doctor',
         nextFollowUp: followUpDate ? followUpDate.toISOString().split('T')[0] : undefined,
       };
 
@@ -194,23 +195,6 @@ const AddLeadScreen = () => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Avatar upload */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarWrapper}>
-            <View style={styles.avatarCircle}>
-              <ProfileIcon width={72} height={72} />
-            </View>
-            <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
-              <Camera />
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.uploadText}>Upload Profile Photo</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.divider} />
-
         {/* Section header */}
         <View style={styles.sectionHeader}>
           <InfoIcon width={16} height={16} />
@@ -448,7 +432,7 @@ const AddLeadScreen = () => {
           />
         </Field>
 
-        <View style={{ height: 24 }} />
+        <View style={styles.spacer} />
       </ScrollView>
 
       {/* Save button */}
@@ -520,40 +504,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
 
   scroll: { paddingHorizontal: 16, paddingTop: 8 },
-
-  avatarSection: { alignItems: 'center', paddingVertical: 20 },
-  avatarWrapper: { position: 'relative', marginBottom: 10 },
-  avatarCircle: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 3,
-    borderColor: COLORS.buttonBlue,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  cameraBtn: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.buttonBlue,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.white,
-  },
-  uploadText: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.semibold,
-    color: COLORS.buttonBlue,
-  },
-
-  divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 16 },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -631,6 +581,8 @@ const styles = StyleSheet.create({
   dropdownSelected: {
     color: COLORS.textDark,
   },
+
+  spacer: { height: 24 },
 
   footer: {
     paddingHorizontal: 16,

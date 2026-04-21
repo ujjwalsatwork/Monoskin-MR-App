@@ -27,6 +27,17 @@ export interface User {
     email: string;
     name: string;
     role: string;
+    employeeId?: string;
+    phone?: string;
+    territory?: string;
+    region?: string;
+    reportingManager?: string;
+    managerRole?: string;
+    leadsAssigned?: number;
+    conversions?: number;
+    revenueAttributed?: string;
+    status?: string;
+    joiningDate?: string;
 }
 
 interface AuthState {
@@ -80,6 +91,7 @@ export const checkSession = createAsyncThunk<User>(
                 method: 'GET',
                 url: ENDPOINTS.auth.me,
             });
+            console.log('🚀 ~ response:', response)
             return response.data;
         } catch (error) {
             return rejectWithValue(extractErrorMessage(error, 'Session expired'));

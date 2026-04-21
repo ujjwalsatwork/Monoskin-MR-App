@@ -18,6 +18,8 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 /* ─── Types ──────────────────────────────────────────────────────── */
 type Lead = {
   id: number;
+  code: string;
+  leadType: 'doctor' | 'pharmacy';
   name: string;
   clinic: string;
   city: string;
@@ -106,7 +108,7 @@ const LeadCard = ({ item }: { item: Lead }) => {
         </View>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => navigation.navigate('LeadDetails', { leadId: String(item.id), category: 'Doctors' })}
+          onPress={() => navigation.navigate('LeadDetails', { leadId: String(item.id) })}
         >
           <Text style={styles.detailsLink}>Details {'>'}</Text>
         </TouchableOpacity>
@@ -147,11 +149,17 @@ const LeadsScreen = () => {
 
   const filteredDoctors = leads.filter(l => {
     const q = search.toLowerCase();
-    return (
+    const matchesSearch = (
       l.name.toLowerCase().includes(q) ||
       (l.clinic || '').toLowerCase().includes(q) ||
       (l.city || '').toLowerCase().includes(q)
     );
+    
+    if (activeTab === 'Doctors') {
+      return l.leadType === 'doctor' && matchesSearch;
+    } else {
+      return l.leadType === 'pharmacy' && matchesSearch;
+    }
   });
 
   return (
@@ -221,17 +229,44 @@ const LeadsScreen = () => {
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>
-                  {search ? 'No leads match your search.' : 'No doctor leads yet. Add your first lead!'}
+                  {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
                 </Text>
               </View>
             }
           />
         )
       ) : (
-        /* Pharmacies tab — not yet implemented */
-        <View style={styles.centered}>
-          <Text style={styles.emptyText}>Pharmacy leads coming soon.</Text>
-        </View>
+        /* Pharmacies tab */
+        loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredDoctors}
+            keyExtractor={i => String(i.id)}
+            renderItem={({ item }) => <LeadCard item={item} />}
+            contentContainerStyle={[
+              styles.listContent,
+              filteredDoctors.length === 0 && styles.listEmpty,
+            ]}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchLeads(true)}
+                tintColor={COLORS.buttonBlue}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
+                </Text>
+              </View>
+            }
+          />
+        )
       )}
 
       {/* Fixed Bottom Button */}

@@ -83,6 +83,7 @@ export type AppStackParamList = {
     LeadDetails: { leadId: string; category?: 'Doctors' | 'Pharmacies' };
     Notifications: undefined;
     Profile: undefined;
+    EditProfile: undefined;
     RouteMapScreen: {
         routeData: {
             origin: { lat: number, lng: number };

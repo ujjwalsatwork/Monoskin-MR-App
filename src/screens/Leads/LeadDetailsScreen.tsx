@@ -28,6 +28,8 @@ type RoutePropType = RouteProp<AppStackParamList, 'LeadDetails'>;
 
 type Lead = {
   id: number;
+  code: string;
+  leadType: 'doctor' | 'pharmacy';
   name: string;
   designation?: string | null;
   specialization?: string | null;
@@ -148,7 +150,7 @@ const LeadDetailsScreen = () => {
         </View>
         <TouchableOpacity
           onPress={() => {
-            if (category === 'Pharmacies') {
+            if (lead.leadType === 'pharmacy') {
               navigation.navigate('AddPharmacyLead', { editMode: true, leadData: lead });
             } else {
               navigation.navigate('AddDoctorLead', { editMode: true, leadData: lead });

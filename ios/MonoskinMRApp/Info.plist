@@ -65,5 +65,9 @@
 		<string>DMSans-Light.ttf</string>
 		<string>DMSans-Italic.ttf</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow Monoskin MR to take a profile photo</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow Monoskin MR to select a profile photo from your library</string>
 </dict>
 </plist>

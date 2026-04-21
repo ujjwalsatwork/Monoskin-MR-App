@@ -25,6 +25,9 @@ export const ENDPOINTS = {
         detail: (orderId: number) => `/orders/${orderId}`,
         items: (orderId: number) => `/orders/${orderId}/items`,
     },
+    profile: {
+        me: '/profile/me',
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',
