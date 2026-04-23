@@ -37,7 +37,7 @@ export type MainTabParamList = {
 export type AppStackParamList = {
     Auth: undefined;
     Main: undefined;
-    VisitDetail: { visitId: string };
+    VisitDetail: { doctorId: string; visitId?: string };
     CreateOrder: { doctorId: string };
     ProductDetail: { productId: string; productName: string; productTime: string };
     Payment: { subtotal: number; orderNumber: string; orderCreateData: OrderCreateData };
@@ -86,17 +86,18 @@ export type AppStackParamList = {
     EditProfile: undefined;
     RouteMapScreen: {
         routeData: {
-            origin: { lat: number, lng: number };
+            readOnly: boolean;
+            origin: { lat: number; lng: number };
             stops: Array<{
                 id: number;
                 name: string;
                 lat: number;
                 lng: number;
-                status: 'done' | 'target' | 'upcoming';
+                status: 'DONE' | 'TARGET' | 'UPCOMING';
                 distanceStr: string;
                 timeStr: string;
                 address: string;
-                phone: string;
+                phone?: string;
             }>;
         };
     };

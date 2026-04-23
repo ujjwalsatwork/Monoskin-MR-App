@@ -71,6 +71,9 @@ export type Doctor = {
     name: string;
     specialty: string;
     hospital: string;
+    address: string;
+    city: string;
+    state: string;
     category: Category;
     priority?: string;
     followUpToday: boolean;
@@ -107,6 +110,9 @@ const mapApiDoctorToUI = (d: ApiDoctor): Doctor => {
         name: d.name,
         specialty: d.specialization,
         hospital: d.clinic,
+        address: d.address,
+        city: d.city,
+        state: d.state,
         category,
         priority: d.importance ? `${d.importance} Priority` : undefined,
         followUpToday: true, // mocked — backend field not available yet

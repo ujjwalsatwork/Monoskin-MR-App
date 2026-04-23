@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/redux/store';
@@ -265,6 +266,20 @@ const PharmacyCard = ({
   );
 };
 
+/* ─── Empty List Component ────────────────────────────────────── */
+const EmptyList = ({ tab }: { tab: Tab }) => (
+  <View style={emptyStyles.container}>
+    <Text style={emptyStyles.title}>
+      {tab === 'Doctors' ? 'No Doctors Found' : 'No Pharmacies Found'}
+    </Text>
+    <Text style={emptyStyles.subtitle}>
+      {tab === 'Doctors'
+        ? 'Try adjusting your search or pull down to refresh'
+        : 'Try adjusting your search or pull down to refresh'}
+    </Text>
+  </View>
+);
+
 /* ─── Screen ──────────────────────────────────────────────────── */
 const PortfolioScreen = () => {
   const navigation = useNavigation<NavProp>();
@@ -272,6 +287,7 @@ const PortfolioScreen = () => {
 
   const [activeTab, setActiveTab] = useState<Tab>('Doctors');
   const [searchText, setSearchText] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const { doctors, doctorsLoading, pharmacies, pharmaciesLoading } = useSelector(
     (state: RootState) => state.portfolio,
@@ -287,15 +303,26 @@ const PortfolioScreen = () => {
     }
   }, [activeTab, dispatch, pharmacies.length]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (activeTab === 'Doctors') {
+      await dispatch(fetchDoctors());
+    } else {
+      await dispatch(fetchPharmacies());
+    }
+    setRefreshing(false);
+  }, [activeTab, dispatch]);
+
+  const query = searchText.toLowerCase();
+
   const filteredDoctors = doctors.filter(d =>
-    d?.name?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
-    d?.specialty?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
-    d?.hospital?.toLowerCase()?.includes(searchText?.toLowerCase()),
+    [d?.name, d?.specialty, d?.hospital, d?.address, d?.city, d?.state]
+      .some(field => field?.toLowerCase().includes(query)),
   );
 
   const filteredPharmacies = pharmacies.filter(p =>
-    p?.name?.toLowerCase()?.includes(searchText?.toLowerCase()) ||
-    p?.location?.toLowerCase()?.includes(searchText?.toLowerCase()),
+    [p?.name, p?.location]
+      .some(field => field?.toLowerCase().includes(query)),
   );
 
   const renderDoctor = ({ item }: { item: Doctor }) => (
@@ -310,7 +337,7 @@ const PortfolioScreen = () => {
         },
       })}
       onCreateOrder={() => navigation.navigate('CreateOrder', { doctorId: item.id })}
-      onViewDetail={() => navigation.navigate('VisitDetail', { visitId: item.id })}
+      onViewDetail={() => navigation.navigate('VisitDetail', { visitId: item.id, doctorId: item.id })}
     />
   );
 
@@ -381,7 +408,7 @@ const PortfolioScreen = () => {
 
       {/* List */}
       {activeTab === 'Doctors' ? (
-        doctorsLoading ? (
+        doctorsLoading && !refreshing ? (
           <View style={styles.loaderContainer}>
             <ActivityIndicator size="large" color={COLORS.buttonBlue} />
           </View>
@@ -390,12 +417,21 @@ const PortfolioScreen = () => {
             data={filteredDoctors}
             keyExtractor={item => item.id}
             renderItem={renderDoctor}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, filteredDoctors.length === 0 && styles.listContentEmpty]}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={<EmptyList tab="Doctors" />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[COLORS.buttonBlue]}
+                tintColor={COLORS.buttonBlue}
+              />
+            }
           />
         )
       ) : (
-        pharmaciesLoading ? (
+        pharmaciesLoading && !refreshing ? (
           <View style={styles.loaderContainer}>
             <ActivityIndicator size="large" color={COLORS.buttonBlue} />
           </View>
@@ -404,8 +440,17 @@ const PortfolioScreen = () => {
             data={filteredPharmacies}
             keyExtractor={item => item.id}
             renderItem={renderPharmacy}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, filteredPharmacies.length === 0 && styles.listContentEmpty]}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={<EmptyList tab="Pharmacies" />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[COLORS.buttonBlue]}
+                tintColor={COLORS.buttonBlue}
+              />
+            }
           />
         )
       )}
@@ -512,6 +557,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 32,
     gap: 14,
+  },
+  listContentEmpty: {
+    flexGrow: 1,
   },
   loaderContainer: {
     flex: 1,
@@ -769,6 +817,30 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   pharmProgressTrack: { marginBottom: 0 },
+});
+
+const emptyStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 40,
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });
 
 export default PortfolioScreen;

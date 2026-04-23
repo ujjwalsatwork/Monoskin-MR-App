@@ -21,7 +21,7 @@ import MapPinOutlineIcon from '@/assets/images/MapPinOutlineIcon.svg';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { AppStackParamList } from '@/navigation/types';
 
-const GOOGLE_API_KEY = 'dummy-maps-key'; // Note: Actual integrations demand live mapping strings
+const GOOGLE_API_KEY = 'dummy-maps-key';
 
 type RouteMapScreenRouteProp = RouteProp<AppStackParamList, 'RouteMapScreen'>;
 
@@ -33,39 +33,35 @@ const RouteMapScreen = () => {
   const mapRef = useRef<MapView>(null);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
 
-  const targetStop =
-    routeData.stops.find(s => s.status === 'target') || routeData.stops[0];
+  const targetStop = routeData.stops.find(s => s.status === 'TARGET') ?? null;
 
   const handleBack = () => navigation.goBack();
 
   const handleStartNavigation = () => {
-    if (targetStop) {
-      const url = Platform.select({
-        ios: `maps:0,0?q=${targetStop.lat},${targetStop.lng}`,
-        android: `google.navigation:q=${targetStop.lat},${targetStop.lng}`,
-      });
-      if (url) Linking.openURL(url);
-    }
+    if (!targetStop || routeData.readOnly) return;
+    const url = Platform.select({
+      ios: `maps:0,0?q=${targetStop.lat},${targetStop.lng}`,
+      android: `google.navigation:q=${targetStop.lat},${targetStop.lng}`,
+    });
+    if (url) Linking.openURL(url);
   };
 
   const handleCall = () => {
-    if (targetStop && targetStop.phone) {
+    if (targetStop?.phone) {
       Linking.openURL(`tel:${targetStop.phone}`);
     }
   };
 
   const handleRecenter = () => {
-    if (mapRef.current && routeData.origin) {
-      mapRef.current.animateToRegion(
-        {
-          latitude: routeData.origin.lat,
-          longitude: routeData.origin.lng,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        },
-        1000,
-      );
-    }
+    mapRef.current?.animateToRegion(
+      {
+        latitude: routeData.origin.lat,
+        longitude: routeData.origin.lng,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      },
+      1000,
+    );
   };
 
   const waypoints = routeData.stops.map(stop => ({
@@ -86,23 +82,24 @@ const RouteMapScreen = () => {
           longitudeDelta: 0.03,
         }}
       >
-        {/* Animated real-world map trace mapping */}
-        <MapViewDirections
-          origin={{
-            latitude: routeData.origin.lat,
-            longitude: routeData.origin.lng,
-          }}
-          destination={waypoints[waypoints.length - 1]}
-          waypoints={waypoints}
-          apikey={GOOGLE_API_KEY}
-          strokeWidth={4}
-          strokeColor="#2E50B2"
-          optimizeWaypoints={true}
-        />
+        {waypoints.length > 0 && (
+          <MapViewDirections
+            origin={{
+              latitude: routeData.origin.lat,
+              longitude: routeData.origin.lng,
+            }}
+            destination={waypoints[waypoints.length - 1]}
+            waypoints={waypoints.slice(0, -1)}
+            apikey={GOOGLE_API_KEY}
+            strokeWidth={4}
+            strokeColor="#2E50B2"
+            optimizeWaypoints={true}
+          />
+        )}
 
         {routeData.stops.map(stop => {
-          const isDone = stop.status === 'done';
-          const isTarget = stop.status === 'target';
+          const isDone = stop.status === 'DONE';
+          const isTarget = stop.status === 'TARGET';
 
           return (
             <Marker
@@ -135,7 +132,6 @@ const RouteMapScreen = () => {
         })}
       </MapView>
 
-      {/* Core UI Interactivity Layout */}
       <View style={styles.topOverlay}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <BackArrowIcon stroke="#FFFFFF" />
@@ -146,7 +142,7 @@ const RouteMapScreen = () => {
         <TouchableOpacity
           style={styles.controlButton}
           onPress={() =>
-            setMapType(mapType === 'standard' ? 'satellite' : 'standard')
+            setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'))
           }
         >
           <LayersIcon />
@@ -162,7 +158,9 @@ const RouteMapScreen = () => {
             <View style={styles.nextStopBadge}>
               <Text style={styles.nextStopText}>NEXT STOP</Text>
             </View>
-            <Text style={styles.distanceText}>In {targetStop.distanceStr}</Text>
+            {!!targetStop.distanceStr && (
+              <Text style={styles.distanceText}>In {targetStop.distanceStr}</Text>
+            )}
           </View>
 
           <View style={styles.infoRow}>
@@ -173,23 +171,31 @@ const RouteMapScreen = () => {
                 <Text style={styles.addressText}>{targetStop.address}</Text>
               </View>
             </View>
-            <View style={styles.timeBlock}>
-              <Text style={styles.timeValue}>{targetStop.timeStr}</Text>
-              <Text style={styles.timeLabel}>MINS</Text>
-            </View>
+            {!!targetStop.timeStr && (
+              <View style={styles.timeBlock}>
+                <Text style={styles.timeValue}>{targetStop.timeStr}</Text>
+                <Text style={styles.timeLabel}>MINS</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={[
+                styles.primaryButton,
+                routeData.readOnly && styles.buttonDisabled,
+              ]}
               onPress={handleStartNavigation}
+              disabled={routeData.readOnly}
             >
               <SendArrowIcon />
               <Text style={styles.primaryButtonText}>Start Navigation</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.callButton} onPress={handleCall}>
-              <PhoneIconOutline />
-            </TouchableOpacity>
+            {targetStop.phone && (
+              <TouchableOpacity style={styles.callButton} onPress={handleCall}>
+                <PhoneIconOutline />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       )}
@@ -362,6 +368,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 16,
     borderRadius: 30,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
   },
   primaryButtonText: {
     color: '#FFFFFF',

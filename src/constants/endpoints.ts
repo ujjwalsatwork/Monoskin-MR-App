@@ -7,6 +7,7 @@ export const ENDPOINTS = {
     },
     attendance: {
         log: '/mr-attendance',
+        today: '/mr-attendance/today',
         history: (mrId: number) => `/mrs/${mrId}/attendance`,
     },
     portfolio: {
@@ -27,6 +28,12 @@ export const ENDPOINTS = {
     },
     profile: {
         me: '/profile/me',
+    },
+    mrVisits: {
+        create: '/mr-visits',
+    },
+    mrRoutes: {
+        list: '/mr-routes',
     },
     // user: {
     //     profile: '/user/profile',

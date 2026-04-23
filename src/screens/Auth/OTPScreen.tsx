@@ -18,7 +18,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
-import { verifyOtp, sendOtp } from '@/redux/slices/authSlice';
+import { verifyOtp, sendOtp, logout } from '@/redux/slices/authSlice';
+
+const MR_ROLE = 'Medical Representative';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
 
@@ -66,6 +68,16 @@ const OTPScreen = ({ route, navigation }: Props) => {
       verifyOtp({ phone: mobileNumber, otp: otpValue }),
     );
     if (verifyOtp.fulfilled.match(result)) {
+      if (result.payload.role !== MR_ROLE) {
+        dispatch(logout());
+        Alert.alert(
+          'Access Denied',
+          'No MR found with this account.',
+          [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
+          { cancelable: false },
+        );
+        return;
+      }
       navigation.navigate('DeviceBinding');
     } else {
       const errorMsg =

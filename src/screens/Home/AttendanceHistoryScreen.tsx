@@ -1,387 +1,536 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  FlatList,
-  ActivityIndicator,
-  Platform,
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    ScrollView,
+    FlatList,
+    ActivityIndicator,
+    Platform,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { ENDPOINTS } from '@/constants/endpoints';
 import Header from '@/components/common/Header';
 import { LoginTimeIcon, LogoutTimeIcon } from '@/assets/images';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/redux/store';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState, AppDispatch } from '@/redux/store';
 import apiClient from '@/services/apiClient';
+import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import {
-  transformAttendanceData,
-  AttendanceApiRecord,
-  AttendanceHistoryItem,
+    transformAttendanceDays,
+    AttendanceApiRecord,
+    AttendanceDayItem,
+    PairedSession,
 } from '@/utils/attendanceFormatter';
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const FILTERS = ['All Time', 'This Week', 'October', 'September'];
 const PAGE_LIMIT = 20;
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const getStatusStyle = (status: string) => {
-  switch (status) {
-    case 'PRESENT':
-      return { bg: '#E8F5E9', text: '#388E3C', dot: '#388E3C' };
-    case 'LATE':
-      return { bg: '#FFF3E0', text: '#F57C00', dot: '#F57C00' };
-    case 'ABSENT':
-      return { bg: '#FFEBEE', text: '#D32F2F', dot: '#D32F2F' };
-    default:
-      return { bg: '#F5F5F5', text: '#9E9E9E', dot: '#9E9E9E' };
-  }
+    switch (status) {
+        case 'PRESENT':
+            return { bg: '#E8F5E9', text: '#388E3C', dot: '#388E3C' };
+        case 'LATE':
+            return { bg: '#FFF3E0', text: '#F57C00', dot: '#F57C00' };
+        case 'ABSENT':
+            return { bg: '#FFEBEE', text: '#D32F2F', dot: '#D32F2F' };
+        default:
+            return { bg: '#F5F5F5', text: '#9E9E9E', dot: '#9E9E9E' };
+    }
 };
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-const AttendanceCard = React.memo(({ item }: { item: AttendanceHistoryItem }) => {
-  const statusStyle = getStatusStyle(item.status);
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View>
-          {item.isToday && <Text style={styles.todayLabel}>TODAY</Text>}
-          <Text style={styles.dateText}>{item.date}</Text>
-          <Text style={styles.dayText}>{item.day}</Text>
+const SessionTimeline = ({ sessions }: { sessions: PairedSession[] }) => {
+    if (sessions.length <= 1) return null;
+    return (
+        <View style={styles.timeline}>
+            {sessions.map((session, index) => (
+                <View key={index} style={styles.timelineRow}>
+                    <View style={styles.timelineIndicator}>
+                        <View style={[styles.timelineDot, session.isActive && styles.timelineDotActive]} />
+                        {index < sessions.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+                    <View style={styles.timelineContent}>
+                        <Text style={styles.timelineSessionLabel}>Session {index + 1}</Text>
+                        <View style={styles.timelineTimeRow}>
+                            <View style={styles.timelineTimeBlock}>
+                                <LoginTimeIcon />
+                                <Text style={styles.timelineTime}>{session.checkIn ?? '--:-- --'}</Text>
+                            </View>
+                            <Text style={styles.timelineArrow}>→</Text>
+                            <View style={styles.timelineTimeBlock}>
+                                <LogoutTimeIcon />
+                                <Text style={[styles.timelineTime, session.isActive && styles.timelineTimeActive]}>
+                                    {session.checkOut ?? (session.isActive ? 'Active' : '--:-- --')}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            ))}
         </View>
-        <View style={[styles.statusPill, { backgroundColor: statusStyle.bg }]}>
-          <View style={[styles.statusDot, { backgroundColor: statusStyle.dot }]} />
-          <Text style={[styles.statusText, { color: statusStyle.text }]}>{item.status}</Text>
-        </View>
-      </View>
+    );
+};
 
-      <View style={styles.divider} />
+const AttendanceCard = React.memo(({ item }: { item: AttendanceDayItem }) => {
+    const statusStyle = getStatusStyle(item.status);
+    const hasMultipleSessions = item.sessions.length > 1;
 
-      <View style={styles.timeRow}>
-        <View style={styles.timeBlock}>
-          <Text style={styles.timeLabel}>TIME IN</Text>
-          <View style={styles.timeValueRow}>
-            <LoginTimeIcon />
-            <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>
-              {item.timeIn}
-            </Text>
-          </View>
-        </View>
+    return (
+        <View style={styles.card}>
+            <View style={styles.cardHeader}>
+                <View>
+                    {item.isToday && <Text style={styles.todayLabel}>TODAY</Text>}
+                    <Text style={styles.dateText}>{item.date}</Text>
+                    <Text style={styles.dayText}>{item.day}</Text>
+                    {hasMultipleSessions && (
+                        <Text style={styles.sessionCountLabel}>
+                            {item.sessions.length} sessions
+                        </Text>
+                    )}
+                </View>
+                <View style={[styles.statusPill, { backgroundColor: statusStyle.bg }]}>
+                    <View style={[styles.statusDot, { backgroundColor: statusStyle.dot }]} />
+                    <Text style={[styles.statusText, { color: statusStyle.text }]}>
+                        {item.status}
+                    </Text>
+                </View>
+            </View>
 
-        <View style={[styles.timeBlock, styles.timeBlockRight]}>
-          <Text style={styles.timeLabel}>TIME OUT</Text>
-          <View style={styles.timeValueRow}>
-            <LogoutTimeIcon />
-            <Text style={[styles.timeValue, item.status === 'ABSENT' && styles.timeValueAbsent]}>
-              {item.timeOut}
-            </Text>
-          </View>
+            <View style={styles.divider} />
+
+            {hasMultipleSessions ? (
+                <SessionTimeline sessions={item.sessions} />
+            ) : (
+                <View style={styles.timeRow}>
+                    <View style={styles.timeBlock}>
+                        <Text style={styles.timeLabel}>TIME IN</Text>
+                        <View style={styles.timeValueRow}>
+                            <LoginTimeIcon />
+                            <Text
+                                style={[
+                                    styles.timeValue,
+                                    item.status === 'ABSENT' && styles.timeValueAbsent,
+                                ]}
+                            >
+                                {item.firstCheckIn}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={[styles.timeBlock, styles.timeBlockRight]}>
+                        <Text style={styles.timeLabel}>TIME OUT</Text>
+                        <View style={styles.timeValueRow}>
+                            <LogoutTimeIcon />
+                            <Text
+                                style={[
+                                    styles.timeValue,
+                                    item.status === 'ABSENT' && styles.timeValueAbsent,
+                                ]}
+                            >
+                                {item.lastCheckOut}
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            )}
         </View>
-      </View>
-    </View>
-  );
+    );
 });
 
 const EmptyList = () => (
-  <View style={styles.emptyContainer}>
-    <Text style={styles.emptyText}>No attendance records found.</Text>
-  </View>
+    <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No attendance records found.</Text>
+    </View>
 );
 
 const FooterLoader = () => (
-  <View style={styles.footerLoader}>
-    <ActivityIndicator size="small" color={COLORS.buttonBlue} />
-  </View>
+    <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+    </View>
 );
 
-// ─── Screen ────────────────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 const AttendanceHistoryScreen = () => {
-  const userId = useSelector((state: RootState) => state.auth.user?.id);
+    const dispatch = useDispatch<AppDispatch>();
+    const mrId = useSelector((state: RootState) => state.profile.data?.id);
+    const profileLoading = useSelector((state: RootState) => state.profile.isLoading);
 
-  const [activeFilter, setActiveFilter] = useState('All Time');
-  const [records, setRecords] = useState<AttendanceHistoryItem[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+    const [activeFilter, setActiveFilter] = useState('All Time');
+    const [records, setRecords] = useState<AttendanceDayItem[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadingMoreRef = useRef(false);
+    // Refs prevent stale-closure races: isFetchingRef covers both initial load
+    // and load-more so onEndReached can never fire a second concurrent request.
+    const isFetchingRef = useRef(false);
+    const hasMoreRef = useRef(true);
+    const pageRef = useRef(1);
+    // Gate that opens only on a real scroll gesture (drag or momentum).
+    // Prevents onEndReached from firing on layout-triggered threshold crosses
+    // (e.g. footer loader appearing) and iOS momentum re-fires.
+    const allowLoadMoreRef = useRef(false);
 
-  useEffect(() => {
-    if (!userId) return;
+    // Ensure profile (and thus the correct mrId) is loaded
+    useEffect(() => {
+        if (!mrId && !profileLoading) {
+            dispatch(fetchMyProfile());
+        }
+    }, [dispatch, mrId, profileLoading]);
 
-    setLoading(true);
-    setPage(1);
-    setHasMore(true);
-    setRecords([]);
+    const doFetch = useCallback(
+        async (pageNum: number, replace: boolean) => {
+            if (!mrId || isFetchingRef.current) return;
+            if (!replace && !hasMoreRef.current) return;
 
-    apiClient
-      .get<AttendanceApiRecord[]>(ENDPOINTS.attendance.history(userId), {
-        params: { page: 1, limit: PAGE_LIMIT },
-      })
-      .then((response) => {
-        const raw: AttendanceApiRecord[] = Array.isArray(response.data)
-          ? response.data
-          : [];
-        if (raw.length < PAGE_LIMIT) setHasMore(false);
-        setRecords(transformAttendanceData(raw));
-      })
-      .catch(() => {
-        setHasMore(false);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [userId]);
+            isFetchingRef.current = true;
+            if (replace) setLoading(true);
+            else setLoadingMore(true);
 
-  const handleLoadMore = useCallback(() => {
-    if (!hasMore || loadingMoreRef.current || !userId) return;
-
-    const nextPage = page + 1;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    setPage(nextPage);
-
-    apiClient
-      .get<AttendanceApiRecord[]>(ENDPOINTS.attendance.history(userId), {
-        params: { page: nextPage, limit: PAGE_LIMIT },
-      })
-      .then((response) => {
-        const raw: AttendanceApiRecord[] = Array.isArray(response.data)
-          ? response.data
-          : [];
-        if (raw.length < PAGE_LIMIT) setHasMore(false);
-        const transformed = transformAttendanceData(raw);
-        setRecords((prev) => {
-          const existingIds = new Set(prev.map((r) => r.id));
-          return [...prev, ...transformed.filter((r) => !existingIds.has(r.id))];
-        });
-      })
-      .catch(() => {
-        setHasMore(false);
-      })
-      .finally(() => {
-        loadingMoreRef.current = false;
-        setLoadingMore(false);
-      });
-  }, [hasMore, page, userId]);
-
-  const renderItem = useCallback(
-    ({ item }: { item: AttendanceHistoryItem }) => <AttendanceCard item={item} />,
-    [],
-  );
-
-  const keyExtractor = useCallback((item: AttendanceHistoryItem) => item.id, []);
-
-  const listFooter = loadingMore ? <FooterLoader /> : null;
-
-  if (loading) {
-    return (
-      <View style={styles.mainContainer}>
-        <Header title="Attendance History" showBack showNotification showProfile />
-        <View style={styles.fullScreenLoader}>
-          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
-        </View>
-      </View>
+            try {
+                const { data } = await apiClient.get<AttendanceApiRecord[]>(
+                    ENDPOINTS.attendance.history(mrId),
+                    { params: { page: pageNum, limit: PAGE_LIMIT } },
+                );
+                const raw = Array.isArray(data) ? data : [];
+                if (raw.length < PAGE_LIMIT) {
+                    hasMoreRef.current = false;
+                }
+                const transformed = transformAttendanceDays(raw);
+                if (replace) {
+                    setRecords(transformed);
+                } else {
+                    setRecords((prev) => {
+                        const existingIds = new Set(prev.map((r) => r.id));
+                        return [...prev, ...transformed.filter((r) => !existingIds.has(r.id))];
+                    });
+                }
+                pageRef.current = pageNum;
+            } catch {
+                hasMoreRef.current = false;
+            } finally {
+                isFetchingRef.current = false;
+                if (replace) setLoading(false);
+                else setLoadingMore(false);
+            }
+        },
+        [mrId],
     );
-  }
 
-  return (
-    <View style={styles.mainContainer}>
-      <Header title="Attendance History" showBack showNotification showProfile />
+    // Initial load — re-runs only when mrId becomes available (profile loaded)
+    useEffect(() => {
+        if (!mrId) return;
+        hasMoreRef.current = true;
+        pageRef.current = 1;
+        setRecords([]);
+        doFetch(1, true);
+    }, [mrId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-      <View style={styles.filterContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {FILTERS.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[styles.filterPill, activeFilter === item && styles.filterPillActive]}
-              onPress={() => setActiveFilter(item)}
-            >
-              <Text style={[styles.filterText, activeFilter === item && styles.filterTextActive]}>
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+    const handleLoadMore = useCallback(() => {
+        if (!allowLoadMoreRef.current || !hasMoreRef.current || isFetchingRef.current) return;
+        allowLoadMoreRef.current = false;
+        doFetch(pageRef.current + 1, false);
+    }, [doFetch]);
 
-      <FlatList
-        data={records}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        ListEmptyComponent={EmptyList}
-        ListFooterComponent={listFooter}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.4}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={10}
-        windowSize={5}
-        removeClippedSubviews={Platform.OS === 'android'}
-      />
-    </View>
-  );
+    const renderItem = useCallback(
+        ({ item }: { item: AttendanceDayItem }) => <AttendanceCard item={item} />,
+        [],
+    );
+
+    const keyExtractor = useCallback((item: AttendanceDayItem) => item.id, []);
+
+    const listFooter = loadingMore ? <FooterLoader /> : null;
+
+    if (loading) {
+        return (
+            <View style={styles.mainContainer}>
+                <Header title="Attendance History" showBack showNotification showProfile />
+                <View style={styles.fullScreenLoader}>
+                    <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+                </View>
+            </View>
+        );
+    }
+
+    return (
+        <View style={styles.mainContainer}>
+            <Header title="Attendance History" showBack showNotification showProfile />
+
+            <View style={styles.filterContainer}>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filterScroll}
+                >
+                    {FILTERS.map((item) => (
+                        <TouchableOpacity
+                            key={item}
+                            style={[
+                                styles.filterPill,
+                                activeFilter === item && styles.filterPillActive,
+                            ]}
+                            onPress={() => setActiveFilter(item)}
+                        >
+                            <Text
+                                style={[
+                                    styles.filterText,
+                                    activeFilter === item && styles.filterTextActive,
+                                ]}
+                            >
+                                {item}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+
+            <FlatList
+                data={records}
+                keyExtractor={keyExtractor}
+                renderItem={renderItem}
+                ListEmptyComponent={EmptyList}
+                ListFooterComponent={listFooter}
+                onEndReached={handleLoadMore}
+                onEndReachedThreshold={0.1}
+                onScrollBeginDrag={() => { allowLoadMoreRef.current = true; }}
+                onMomentumScrollBegin={() => { allowLoadMoreRef.current = true; }}
+                contentContainerStyle={styles.listContainer}
+                showsVerticalScrollIndicator={false}
+                initialNumToRender={10}
+                windowSize={5}
+                removeClippedSubviews={Platform.OS === 'android'}
+            />
+        </View>
+    );
 };
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  fullScreenLoader: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filterContainer: {
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  filterScroll: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  filterPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    backgroundColor: '#FFFFFF',
-  },
-  filterPillActive: {
-    backgroundColor: COLORS.buttonBlue,
-    borderColor: COLORS.buttonBlue,
-  },
-  filterText: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-    fontFamily: FONTS.family.bold,
-  },
-  listContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  todayLabel: {
-    fontSize: 10,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.primary,
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  dateText: {
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-    marginBottom: 2,
-  },
-  dayText: {
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 10,
-    fontFamily: FONTS.family.bold,
-    letterSpacing: 0.5,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginBottom: 16,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timeBlock: {
-    width: '45%',
-  },
-  timeBlockRight: {
-    alignItems: 'flex-end',
-  },
-  timeLabel: {
-    fontSize: 10,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textSecondary,
-    marginBottom: 6,
-    letterSpacing: 0.5,
-  },
-  timeValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  timeValue: {
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-  },
-  timeValueAbsent: {
-    color: '#B0B0B0',
-    fontFamily: FONTS.family.regular,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    marginTop: 60,
-  },
-  emptyText: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-  },
-  footerLoader: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
+    mainContainer: {
+        flex: 1,
+        backgroundColor: '#FFFFFF',
+    },
+    fullScreenLoader: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    filterContainer: {
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    filterScroll: {
+        paddingHorizontal: 20,
+        gap: 12,
+    },
+    filterPill: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        backgroundColor: '#FFFFFF',
+    },
+    filterPillActive: {
+        backgroundColor: COLORS.buttonBlue,
+        borderColor: COLORS.buttonBlue,
+    },
+    filterText: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.medium,
+        color: COLORS.textSecondary,
+    },
+    filterTextActive: {
+        color: '#FFFFFF',
+        fontFamily: FONTS.family.bold,
+    },
+    listContainer: {
+        padding: 20,
+        paddingBottom: 40,
+    },
+    card: {
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+    todayLabel: {
+        fontSize: 10,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.primary,
+        letterSpacing: 0.5,
+        marginBottom: 4,
+    },
+    dateText: {
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+        marginBottom: 2,
+    },
+    dayText: {
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.regular,
+        color: COLORS.textSecondary,
+    },
+    sessionCountLabel: {
+        fontSize: 10,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.buttonBlue,
+        marginTop: 4,
+        letterSpacing: 0.3,
+    },
+    statusPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    statusDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginRight: 6,
+    },
+    statusText: {
+        fontSize: 10,
+        fontFamily: FONTS.family.bold,
+        letterSpacing: 0.5,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: '#E0E0E0',
+        marginBottom: 16,
+    },
+    // Single-session time row
+    timeRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    timeBlock: {
+        width: '45%',
+    },
+    timeBlockRight: {
+        alignItems: 'flex-end',
+    },
+    timeLabel: {
+        fontSize: 10,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        marginBottom: 6,
+        letterSpacing: 0.5,
+    },
+    timeValueRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    timeValue: {
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
+    timeValueAbsent: {
+        color: '#B0B0B0',
+        fontFamily: FONTS.family.regular,
+    },
+    // Multi-session timeline
+    timeline: {
+        paddingTop: 4,
+    },
+    timelineRow: {
+        flexDirection: 'row',
+        marginBottom: 8,
+    },
+    timelineIndicator: {
+        width: 20,
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    timelineDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: COLORS.buttonBlue,
+        marginTop: 4,
+    },
+    timelineDotActive: {
+        backgroundColor: COLORS.success,
+    },
+    timelineLine: {
+        width: 2,
+        flex: 1,
+        backgroundColor: '#E0E0E0',
+        marginTop: 4,
+        marginBottom: -4,
+        alignSelf: 'center',
+    },
+    timelineContent: {
+        flex: 1,
+        paddingBottom: 8,
+    },
+    timelineSessionLabel: {
+        fontSize: 10,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        letterSpacing: 0.4,
+        marginBottom: 6,
+    },
+    timelineTimeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    timelineTimeBlock: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    timelineArrow: {
+        fontSize: FONTS.size.sm,
+        color: COLORS.textSecondary,
+    },
+    timelineTime: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
+    timelineTimeActive: {
+        color: COLORS.success,
+        fontFamily: FONTS.family.medium,
+    },
+    emptyContainer: {
+        flex: 1,
+        alignItems: 'center',
+        marginTop: 60,
+    },
+    emptyText: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.regular,
+        color: COLORS.textSecondary,
+    },
+    footerLoader: {
+        paddingVertical: 16,
+        alignItems: 'center',
+    },
 });
 
 export default AttendanceHistoryScreen;

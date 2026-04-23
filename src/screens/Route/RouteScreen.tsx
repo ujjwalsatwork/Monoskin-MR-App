@@ -1,182 +1,378 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
-import { DoctorBagIcon, PillIcon, MapPinOutlineIcon, PlayIcon, MapIcon, CheckCircleIcon, ClockIcon } from '@/assets/images';
-
+import {
+  DoctorBagIcon,
+  PillIcon,
+  MapPinOutlineIcon,
+  PlayIcon,
+  MapIcon,
+  CheckCircleIcon,
+  ClockIcon,
+} from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { apiCall } from '@/services/apiService';
+import { ENDPOINTS } from '@/constants/endpoints';
 
-// Generic dummy route routing for mock API data
-const DUMMY_ROUTE_DATA = {
-    origin: { lat: 22.7196, lng: 75.8577 },
-    stops: [
-       { id: 1, name: 'Dr. Amit Mishta', lat: 22.7200, lng: 75.8600, status: 'done' as const, distanceStr: '0 km', timeStr: '0', address: "St. Mary's Clinic, Indore", phone: '1234567890' },
-       { id: 2, name: 'Dr. Anil Sharma', lat: 22.7300, lng: 75.8700, status: 'target' as const, distanceStr: '1.2 km', timeStr: '5', address: "City General Hospital, Indore", phone: '0987654321' },
-       { id: 3, name: 'Dr. Rajesh Kumar', lat: 22.7400, lng: 75.8800, status: 'upcoming' as const, distanceStr: '3.4 km', timeStr: '15', address: "Apollo Health, Indore", phone: '1122334455' },
-       { id: 4, name: 'Dr. Suresh Verma', lat: 22.7500, lng: 75.8900, status: 'upcoming' as const, distanceStr: '5.1 km', timeStr: '22', address: "Medanta Super Specialty, Indore", phone: '5544332211' }
-    ]
+interface RouteStop {
+  id: number;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  status: 'DONE' | 'TARGET' | 'UPCOMING';
+  isActionAllowed: boolean;
+  plannedTime: string;
+  distanceStr: string;
+  timeStr: string;
+  phone?: string;
+}
+
+interface RouteData {
+  readOnly: boolean;
+  origin: { lat: number; lng: number };
+  summary: {
+    totalDoctors: number;
+    totalChemists: number;
+    completed: number;
+    total: number;
+  };
+  stops: RouteStop[];
+}
+
+const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+const getWeekDays = () => {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  return DAY_LABELS.map((label, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return { label, date: d };
+  });
 };
 
-const DAYS = [
-  { day: 'MON', date: '23' },
-  { day: 'TUE', date: '24' },
-  { day: 'WED', date: '25' },
-  { day: 'THU', date: '26' },
-  { day: 'FRI', date: '27' },
-];
+const formatDateForApi = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
-const TIMELINE_DATA = [
-  {
-    id: 1,
-    type: 'done',
-    title: 'Dr. Amit Mishta',
-    subtitle: "St. Mary's Clinic, Indore",
-  },
-  {
-    id: 2,
-    type: 'pending',
-    step: 2,
-    distance: '1.2 km',
-    title: 'Dr. Anil Sharma',
-    subtitle: 'City General Hospital, Indore',
-    timeLabel: 'Planned for 10:30 AM',
-  }
-];
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
 
 type RouteScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
 const RouteScreen = () => {
-  const [selectedDate, setSelectedDate] = useState('23');
   const navigation = useNavigation<RouteScreenNavigationProp>();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [routeData, setRouteData] = useState<RouteData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [startingVisitId, setStartingVisitId] = useState<number | null>(null);
+
+  const weekDays = getWeekDays();
+
+  const fetchRoute = useCallback(async (date: Date) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiCall<RouteData>({
+        method: 'GET',
+        endpoint: ENDPOINTS.mrRoutes.list,
+        params: { date: formatDateForApi(date) },
+      });
+      setRouteData(response.data);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to load route');
+      setRouteData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRoute(selectedDate);
+  }, [selectedDate, fetchRoute]);
+
+  const handleStartVisit = async (stop: RouteStop) => {
+    if (startingVisitId !== null) return;
+    setStartingVisitId(stop.id);
+    try {
+      await apiCall({
+        method: 'POST',
+        endpoint: ENDPOINTS.mrVisits.create,
+        data: { routeStopId: stop.id },
+      });
+      await fetchRoute(selectedDate);
+    } catch {
+      // Silently fail — user can retry
+    } finally {
+      setStartingVisitId(null);
+    }
+  };
+
+  const handleViewMap = () => {
+    if (!routeData) return;
+    navigation.navigate('RouteMapScreen', {
+      routeData: {
+        readOnly: routeData.readOnly,
+        origin: routeData.origin,
+        stops: routeData.stops,
+      },
+    });
+  };
+
+  const progress =
+    routeData && routeData.summary.total > 0
+      ? routeData.summary.completed / routeData.summary.total
+      : 0;
+
+  const allDone =
+    routeData != null &&
+    routeData.stops.length > 0 &&
+    routeData.stops.every(s => s.status === 'DONE');
+
+  const buildStepMap = (stops: RouteStop[]): Record<number, number> => {
+    const map: Record<number, number> = {};
+    let counter = 0;
+    stops.forEach(s => {
+      if (s.status !== 'DONE') {
+        counter += 1;
+        map[s.id] = counter;
+      }
+    });
+    return map;
+  };
 
   return (
     <View style={styles.mainContainer}>
       <Header title="Today's Route Plan" showBack showNotification showProfile />
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Date Selector */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateScroll}>
-          {DAYS.map((item, index) => {
-             const isActive = selectedDate === item.date;
-             return (
-               <TouchableOpacity 
-                 key={index} 
-                 style={[styles.dateCard, isActive && styles.dateCardActive]}
-                 onPress={() => setSelectedDate(item.date)}
-               >
-                 <Text style={[styles.dayText, isActive && styles.dayTextActive]}>{item.day}</Text>
-                 <Text style={[styles.dateText, isActive && styles.dateTextActive]}>{item.date}</Text>
-               </TouchableOpacity>
-             );
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateScroll}
+        >
+          {weekDays.map((item, index) => {
+            const isActive = isSameDay(selectedDate, item.date);
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[styles.dateCard, isActive && styles.dateCardActive]}
+                onPress={() => setSelectedDate(item.date)}
+              >
+                <Text style={[styles.dayText, isActive && styles.dayTextActive]}>
+                  {item.label}
+                </Text>
+                <Text style={[styles.dateText, isActive && styles.dateTextActive]}>
+                  {item.date.getDate()}
+                </Text>
+              </TouchableOpacity>
+            );
           })}
         </ScrollView>
 
-        {/* Summary Metric Cards */}
-        <View style={styles.summaryRow}>
-          <View style={styles.metricCard}>
-             <View style={styles.metricCardHeader}>
-                <DoctorBagIcon />
-                <Text style={styles.metricLabel}>Doctors</Text>
-             </View>
-             <Text style={styles.metricValue}>8</Text>
+        {loading && (
+          <View style={styles.centeredContainer}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
           </View>
-          <View style={styles.metricCard}>
-             <View style={styles.metricCardHeader}>
-                <PillIcon />
-                <Text style={styles.metricLabel}>Chemists</Text>
-             </View>
-             <Text style={styles.metricValue}>4</Text>
+        )}
+
+        {!loading && error && (
+          <View style={styles.centeredContainer}>
+            <Text style={styles.emptyText}>{error}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => fetchRoute(selectedDate)}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        )}
 
-        {/* Daily Progress */}
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-             <Text style={styles.progressTitle}>Daily Progress</Text>
-             <Text style={styles.progressCountText}>2/12 Completed</Text>
+        {!loading && !error && !routeData && (
+          <View style={styles.centeredContainer}>
+            <Text style={styles.emptyText}>No route planned for this date</Text>
           </View>
-          <View style={styles.progressBarBG}>
-             <View style={[styles.progressBarFill, { width: '16.6%' }]} />
-          </View>
-        </View>
+        )}
 
-        {/* Map Placeholder Card */}
-        <View style={styles.mapCard}>
-           {/* Purely emulating the styling format for mockup precision */}
-           <View style={styles.mapTextureLayer}>
-               <View style={styles.mapIconCircle}>
-                  <MapIcon />
-               </View>
-           </View>
-           <TouchableOpacity 
-              style={styles.viewMapButton}
-              onPress={() => navigation.navigate('RouteMapScreen', { routeData: DUMMY_ROUTE_DATA })}
-           >
-              <MapIcon height={14}/>
-              <Text style={styles.viewMapButtonText}>View Full Route Map</Text>
-           </TouchableOpacity>
-        </View>
-
-        {/* Timeline Section */}
-        <Text style={styles.timelineTitle}>TIMELINE OF VISITS</Text>
-        
-        <View style={styles.timelineContainer}>
-           <View style={styles.timelineLine} />
-           
-           {TIMELINE_DATA.map((item, index) => (
-              <View key={index} style={styles.timelineRow}>
-                 {/* Node */}
-                 <View style={styles.nodeWrapper}>
-                    {item.type === 'done' ? (
-                       <View style={styles.doneNode}>
-                          {/* Inner Checkmark simulation */}
-                          <CheckCircleIcon height={28}/>
-                       </View>
-                    ) : (
-                       <View style={styles.pendingNode}>
-                          <Text style={styles.pendingNodeText}>{item.step}</Text>
-                       </View>
-                    )}
-                 </View>
-
-                 {/* Information Box */}
-                 <View style={styles.timelineCard}>
-                    <View style={styles.timelineCardHeader}>
-                       <Text style={styles.timelineCardTitle}>{item.title}</Text>
-                       {item.type === 'done' && (
-                          <View style={styles.donePill}>
-                             <Text style={styles.donePillText}>DONE</Text>
-                          </View>
-                       )}
-                       {item.distance && (
-                          <View style={styles.distancePill}>
-                             <MapPinOutlineIcon />
-                             <Text style={styles.distanceText}>{item.distance}</Text>
-                          </View>
-                       )}
-                    </View>
-                    <Text style={styles.timelineCardSubtitle}>{item.subtitle}</Text>
-                    
-                    {item.timeLabel && (
-                       <View style={styles.timeLabelRow}>
-                          <ClockIcon height={12} width={12}/>
-                          {/* <Text style={styles.timeLabelSymbol}>🕒</Text> */}
-                          <Text style={styles.timeLabelText}>{item.timeLabel}</Text>
-                       </View>
-                    )}
-
-                    {item.type === 'pending' && (
-                       <TouchableOpacity style={styles.startVisitButton}>
-                          <PlayIcon />
-                          <Text style={styles.startVisitButtonText}>Start Visit</Text>
-                       </TouchableOpacity>
-                    )}
-                 </View>
+        {!loading && routeData && (
+          <>
+            {/* Summary Cards */}
+            <View style={styles.summaryRow}>
+              <View style={styles.metricCard}>
+                <View style={styles.metricCardHeader}>
+                  <DoctorBagIcon />
+                  <Text style={styles.metricLabel}>Doctors</Text>
+                </View>
+                <Text style={styles.metricValue}>{routeData.summary.totalDoctors}</Text>
               </View>
-           ))}
-        </View>
+              <View style={styles.metricCard}>
+                <View style={styles.metricCardHeader}>
+                  <PillIcon />
+                  <Text style={styles.metricLabel}>Chemists</Text>
+                </View>
+                <Text style={styles.metricValue}>{routeData.summary.totalChemists}</Text>
+              </View>
+            </View>
+
+            {/* Daily Progress */}
+            <View style={styles.progressCard}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressTitle}>Daily Progress</Text>
+                <Text style={styles.progressCountText}>
+                  {routeData.summary.completed}/{routeData.summary.total} Completed
+                </Text>
+              </View>
+              <View style={styles.progressBarBG}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${Math.round(progress * 100)}%` },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Map Card */}
+            <View style={styles.mapCard}>
+              <View style={styles.mapTextureLayer}>
+                <View style={styles.mapIconCircle}>
+                  <MapIcon />
+                </View>
+              </View>
+              <TouchableOpacity style={styles.viewMapButton} onPress={handleViewMap}>
+                <MapIcon height={14} />
+                <Text style={styles.viewMapButtonText}>View Full Route Map</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Timeline Section */}
+            <Text style={styles.timelineTitle}>TIMELINE OF VISITS</Text>
+
+            {allDone ? (
+              <View style={styles.completedBanner}>
+                <CheckCircleIcon height={24} />
+                <Text style={styles.completedBannerText}>All visits completed</Text>
+              </View>
+            ) : null}
+
+            {routeData.stops.length === 0 ? (
+              <View style={styles.centeredContainer}>
+                <Text style={styles.emptyText}>No stops on this route</Text>
+              </View>
+            ) : (
+              (() => {
+                const stepMap = buildStepMap(routeData.stops);
+                return (
+                  <View style={styles.timelineContainer}>
+                    <View style={styles.timelineLine} />
+                    {routeData.stops.map(stop => (
+                      <View key={stop.id} style={styles.timelineRow}>
+                        <View style={styles.nodeWrapper}>
+                          {stop.status === 'DONE' ? (
+                            <View style={styles.doneNode}>
+                              <CheckCircleIcon height={28} />
+                            </View>
+                          ) : (
+                            <View
+                              style={[
+                                styles.pendingNode,
+                                stop.status === 'UPCOMING' && styles.upcomingNode,
+                              ]}
+                            >
+                              <Text style={styles.pendingNodeText}>
+                                {stepMap[stop.id]}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <View style={styles.timelineCard}>
+                          <View style={styles.timelineCardHeader}>
+                            <Text style={styles.timelineCardTitle} numberOfLines={1}>
+                              {stop.name}
+                            </Text>
+                            {stop.status === 'DONE' && (
+                              <View style={styles.donePill}>
+                                <Text style={styles.donePillText}>DONE</Text>
+                              </View>
+                            )}
+                            {stop.status !== 'DONE' && !!stop.distanceStr && (
+                              <View style={styles.distancePill}>
+                                <MapPinOutlineIcon />
+                                <Text style={styles.distanceText}>
+                                  {stop.distanceStr}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <Text style={styles.timelineCardSubtitle}>{stop.address}</Text>
+
+                          {stop.status !== 'DONE' && !!stop.plannedTime && (
+                            <View style={styles.timeLabelRow}>
+                              <ClockIcon height={12} width={12} />
+                              <Text style={styles.timeLabelText}>
+                                Planned for {stop.plannedTime}
+                              </Text>
+                            </View>
+                          )}
+
+                          {stop.status === 'TARGET' &&
+                            stop.isActionAllowed &&
+                            !routeData.readOnly && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.startVisitButton,
+                                  startingVisitId !== null &&
+                                    styles.startVisitButtonDisabled,
+                                ]}
+                                onPress={() => handleStartVisit(stop)}
+                                disabled={startingVisitId !== null}
+                              >
+                                {startingVisitId === stop.id ? (
+                                  <ActivityIndicator color="#FFFFFF" size="small" />
+                                ) : (
+                                  <>
+                                    <PlayIcon />
+                                    <Text style={styles.startVisitButtonText}>
+                                      Start Visit
+                                    </Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+                            )}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()
+            )}
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -217,7 +413,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   dayTextActive: {
-    color: '#D1D5DB', // Light grey for contrast inside active
+    color: '#D1D5DB',
   },
   dateText: {
     fontSize: FONTS.size.xl,
@@ -226,6 +422,29 @@ const styles = StyleSheet.create({
   },
   dateTextActive: {
     color: '#FFFFFF',
+  },
+  centeredContainer: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: COLORS.buttonBlue,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -299,7 +518,7 @@ const styles = StyleSheet.create({
     height: 200,
     marginHorizontal: 20,
     borderRadius: 16,
-    backgroundColor: '#4B5563', // Mimicking the dark gray box for the map image mock
+    backgroundColor: '#4B5563',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -317,7 +536,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(37,99,235,0.2)', // translucent blue
+    backgroundColor: 'rgba(37,99,235,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -348,13 +567,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     letterSpacing: 0.5,
   },
+  completedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  completedBannerText: {
+    color: '#10B981',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+  },
   timelineContainer: {
     paddingHorizontal: 20,
     position: 'relative',
   },
   timelineLine: {
     position: 'absolute',
-    left: 41, // Half of 42px offset + padding left
+    left: 41,
     top: 24,
     bottom: 0,
     width: 1,
@@ -402,6 +636,9 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginTop: 4,
   },
+  upcomingNode: {
+    backgroundColor: '#9CA3AF',
+  },
   pendingNodeText: {
     color: '#FFFFFF',
     fontSize: FONTS.size.sm,
@@ -422,9 +659,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   timelineCardTitle: {
+    flex: 1,
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
     color: '#000',
+    marginRight: 8,
   },
   donePill: {
     backgroundColor: '#ECFDF5',
@@ -458,11 +697,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  timeLabelSymbol: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginRight: 6,
-  },
   timeLabelText: {
     color: COLORS.textSecondary,
     fontSize: FONTS.size.sm,
@@ -476,6 +710,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderRadius: 24,
+  },
+  startVisitButtonDisabled: {
+    opacity: 0.6,
   },
   startVisitButtonText: {
     color: '#FFFFFF',

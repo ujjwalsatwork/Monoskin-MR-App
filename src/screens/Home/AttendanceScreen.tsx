@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    Alert,
+    ScrollView,
+    ActivityIndicator,
+} from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Geolocation from '@react-native-community/geolocation';
@@ -12,510 +20,631 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
-import { logAttendance } from '@/redux/slices/attendanceSlice';
+import { logAttendance, fetchTodayStatus, clearAttendanceError, AttendanceError } from '@/redux/slices/attendanceSlice';
 
-const AttendanceScreen = () => {
-  const [currentDate, setCurrentDate] = useState(dayjs());
-  const [location, setLocation] = useState<{ lat: number; long: number } | null>(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [breakActive, setBreakActive] = useState(false);
-  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const dispatch = useDispatch<AppDispatch>();
-  const { checkInLoading, checkOutLoading } = useSelector(
-    (state: RootState) => state.attendance,
-  );
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  // Update time every minute
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentDate(dayjs());
-    }, 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          long: position.coords.longitude,
-        });
-      },
-      (error) => {
-        setErrorMsg(error.message);
-        Alert.alert('Location Error', error.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  }, []);
-
-  const locationString = location
-    ? `${location.lat.toFixed(6)}, ${location.long.toFixed(6)}`
-    : 'Unknown';
-
-  const handleCheckIn = async () => {
-    const result = await dispatch(
-      logAttendance({ type: 'checkIn', location: locationString }),
-    );
-    console.log('🚀 ~ handleCheckIn ~ result:', result)
-    if (logAttendance.fulfilled.match(result)) {
-      navigation.navigate('CheckInSuccess', {
-        time: currentDate.format('hh:mm A'),
-        locationText: '123 Pharma Heights, Indore',
-        subLocationText: 'Zone 4 • West District',
-      });
-    } else {
-      const msg = typeof result.payload === 'string'
-        ? result.payload
-        : 'Failed to log check-in';
-      Alert.alert('Error', msg);
+const friendlyError = (err: AttendanceError, action: 'check-in' | 'check-out'): string => {
+    if (err.status === 409) {
+        return action === 'check-in'
+            ? 'You already have an active check-in session. Please check out first.'
+            : 'No active session found. Please check in first.';
     }
-  };
-
-  const handleCheckOut = async () => {
-    const result = await dispatch(
-      logAttendance({ type: 'checkOut', location: locationString }),
-    );
-    console.log('🚀 ~ handleCheckOut ~ result:', result)
-    if (logAttendance.fulfilled.match(result)) {
-      navigation.navigate('CheckOutSuccess', {
-        time: currentDate.format('hh:mm A'),
-        doctorName: 'Dr. Anil Sharma',
-        doctorLocation: 'Zone 4 • West District',
-        pharmacyName: 'United Pharmacy',
-        pharmacyLocation: 'Zone 4 • West District',
-      });
-    } else {
-      const msg = typeof result.payload === 'string'
-        ? result.payload
-        : 'Failed to log check-out';
-      Alert.alert('Error', msg);
-    }
-  };
-
-  return (
-    <View style={styles.mainContainer}>
-      <Header 
-        title="Today's Attendance" 
-        // showBack
-        showNotification 
-        showProfile 
-      />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Time & Clock */}
-      <View style={styles.timeContainer}>
-        <Text style={styles.timeText}>{currentDate.format('hh:mm A')}</Text>
-        <Text style={styles.dateText}>{currentDate.format('dddd, DD MMMM YYYY')}</Text>
-        <View style={styles.gpsPill}>
-           <View style={styles.gpsDot} />
-           <Text style={styles.gpsText}>GPS ACTIVE</Text>
-        </View>
-      </View>
-
-      {/* Status Card */}
-      <View style={styles.statusCard}>
-         <View style={styles.infoIconWrapper}>
-            <InfoIcon />
-         </View>
-         <View>
-            <Text style={styles.statusLabel}>CURRENT STATE</Text>
-            <Text style={styles.statusValue}>Status: Not Checked-In</Text>
-         </View>
-      </View>
-
-      {/* Map Card */}
-      <View style={styles.mapCard}>
-         <View style={styles.mapContainer}>
-             {location ? (
-                 <MapView
-                    provider={PROVIDER_DEFAULT}
-                    style={styles.map}
-                    initialRegion={{
-                      latitude: location.lat,
-                      longitude: location.long,
-                      latitudeDelta: 0.005,
-                      longitudeDelta: 0.005,
-                    }}
-                 >
-                    <Marker coordinate={{ latitude: location.lat, longitude: location.long }} />
-                 </MapView>
-             ) : (
-                <View style={styles.mapPlaceholder}>
-                   <Text style={{color: '#999'}}>{errorMsg || 'Locating...'}</Text>
-                </View>
-             )}
-         </View>
-         <View style={styles.locationInfoContainer}>
-            <Text style={styles.locLabel}>COORDINATES</Text>
-            <Text style={styles.locValue}>Lat: {location ? location.lat.toFixed(4) : '--'}° N, Long: {location ? location.long.toFixed(4) : '--'}° E</Text>
-            
-            <Text style={[styles.locLabel, { marginTop: 12 }]}>CURRENT ADDRESS</Text>
-            <Text style={styles.locValue}>123 Pharma Heights, Indore, 452000</Text>
-         </View>
-      </View>
-
-      {/* Check-In / Check-Out — side by side */}
-      <View style={styles.actionButtonsContainer}>
-         <TouchableOpacity
-            style={[styles.primaryButton, styles.halfButton, checkInLoading && styles.buttonDisabled]}
-            onPress={handleCheckIn}
-            disabled={checkInLoading || checkOutLoading}
-            activeOpacity={0.8}
-         >
-            <CheckInIcon />
-            <Text style={styles.primaryButtonText}>
-               {checkInLoading ? 'Logging...' : 'Check-In'}
-            </Text>
-         </TouchableOpacity>
-         <TouchableOpacity
-            style={[styles.outlineButton, styles.halfButton, checkOutLoading && styles.buttonDisabled]}
-            onPress={handleCheckOut}
-            disabled={checkInLoading || checkOutLoading}
-            activeOpacity={0.8}
-         >
-            <CheckOutIcon />
-            <Text style={styles.outlineButtonText}>
-               {checkOutLoading ? 'Logging...' : 'Check-Out'}
-            </Text>
-         </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-            style={[{marginHorizontal: 20},styles.outlineButton, styles.halfButton, checkOutLoading && styles.buttonDisabled]}
-            onPress={() => navigation.navigate('AttendanceHistory')}
-            disabled={checkInLoading || checkOutLoading}
-            activeOpacity={0.8}
-         >
-            <Text style={styles.outlineButtonText}>
-               View Attendance History
-            </Text>
-         </TouchableOpacity>
-      <View style={{ height: 12 }} />
-
-      {/* Break Timer */}
-      <View style={styles.breakCard}>
-         <View style={styles.breakLeft}>
-            <View style={styles.breakIconContainer}>
-               <CoffeeIcon />
-            </View>
-            <View>
-               <Text style={styles.breakTitle}>Break Timer</Text>
-               <Text style={styles.breakSubtitle}>Log lunch breaks or{'\n'}transport gaps</Text>
-            </View>
-         </View>
-         <TouchableOpacity
-            style={styles.breakButton}
-            onPress={() => setBreakActive(prev => !prev)}
-            activeOpacity={0.8}
-         >
-            <PauseIcon />
-            <Text style={styles.breakButtonText}>{breakActive ? 'END\nBREAK' : 'START\nBREAK'}</Text>
-         </TouchableOpacity>
-      </View>
-
-      {/* Show Today's Visits */}
-      <View style={styles.visitsSection}>
-         <TouchableOpacity
-            style={styles.visitsButton}
-            onPress={() => navigation.navigate('TodayVisits')}
-            activeOpacity={0.85}
-         >
-            <VisitsIcon />
-            <Text style={styles.visitsButtonText}>Show Today's Visit</Text>
-         </TouchableOpacity>
-         <Text style={styles.visitsSubText}>12 visits planned today</Text>
-      </View>
-
-      {/* Quick Stats */}
-      <View style={styles.statsSection}>
-         <Text style={styles.statsTitle}>QUICK STATS</Text>
-         <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-               <Text style={styles.statLabel}>PLANNED CALLS</Text>
-               <Text style={styles.statValue}>12</Text>
-            </View>
-            <View style={styles.statCard}>
-               <Text style={styles.statLabel}>COMPLETED</Text>
-               <Text style={styles.statValue}>0</Text>
-            </View>
-         </View>
-      </View>
-      </ScrollView>
-    </View>
-  );
+    if (err.status === 401) return 'Session expired. Please log in again.';
+    return err.message || `Failed to ${action}. Please try again.`;
 };
 
+// Handles ISO datetime ("2026-04-23T09:15:00Z"), "HH:mm:ss", or "HH:mm"
+const parseSessionTime = (value: string | null | undefined): string => {
+    if (!value) return '';
+    let d = dayjs(value);
+    if (!d.isValid()) d = dayjs(`2000-01-01 ${value}`);
+    return d.isValid() ? d.format('hh:mm A') : '';
+};
+
+const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
+            { headers: { 'Accept-Language': 'en' } },
+        );
+        const json = await res.json();
+        const a = json.address ?? {};
+        const parts = [
+            a.road ?? a.pedestrian ?? a.footway,
+            a.suburb ?? a.neighbourhood ?? a.quarter,
+            a.city ?? a.town ?? a.village ?? a.county,
+        ].filter(Boolean);
+        return parts.length > 0 ? parts.join(', ') : (json.display_name as string ?? '');
+    } catch {
+        return '';
+    }
+};
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
+const AttendanceScreen = () => {
+    const [currentDate, setCurrentDate] = useState(dayjs());
+    const [location, setLocation] = useState<{ lat: number; long: number } | null>(null);
+    const [addressText, setAddressText] = useState('');
+    const [locationError, setLocationError] = useState('');
+    const [breakActive, setBreakActive] = useState(false);
+
+    const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+    const dispatch = useDispatch<AppDispatch>();
+
+    const {
+        checkInLoading,
+        checkOutLoading,
+        todayLoading,
+        isCheckedIn,
+        currentSession,
+    } = useSelector((state: RootState) => state.attendance);
+
+    const isActionLoading = checkInLoading || checkOutLoading;
+
+    // Clock
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentDate(dayjs()), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // GPS + reverse geocode
+    useEffect(() => {
+        Geolocation.getCurrentPosition(
+            async (position) => {
+                const lat = position.coords.latitude;
+                const long = position.coords.longitude;
+                setLocation({ lat, long });
+                const addr = await reverseGeocode(lat, long);
+                setAddressText(addr || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
+            },
+            (err) => {
+                setLocationError(err.message);
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+        );
+    }, []);
+
+    // Fetch today's attendance state
+    useEffect(() => {
+        dispatch(fetchTodayStatus());
+    }, [dispatch]);
+
+    // Coordinates string for display; address text used in the API payload
+    const coordsString = location
+        ? `${location.lat.toFixed(6)}, ${location.long.toFixed(6)}`
+        : 'Unknown';
+
+    const handleCheckIn = useCallback(async () => {
+        dispatch(clearAttendanceError());
+        const result = await dispatch(
+            logAttendance({
+                action: 'check-in',
+                location: addressText || coordsString,
+            }),
+        );
+        if (logAttendance.fulfilled.match(result)) {
+            navigation.navigate('CheckInSuccess', {
+                time: currentDate.format('hh:mm A'),
+                locationText: addressText || coordsString,
+                subLocationText: 'GPS Location',
+            });
+        } else {
+            const payload = result.payload as AttendanceError | undefined;
+            Alert.alert(
+                'Check-In Failed',
+                friendlyError(payload ?? { message: 'Unknown error' }, 'check-in'),
+            );
+        }
+    }, [dispatch, addressText, coordsString, currentDate, navigation]);
+
+    const handleCheckOut = useCallback(async () => {
+        dispatch(clearAttendanceError());
+        const result = await dispatch(
+            logAttendance({
+                action: 'check-out',
+                location: addressText || coordsString,
+            }),
+        );
+        if (logAttendance.fulfilled.match(result)) {
+            navigation.navigate('CheckOutSuccess', {
+                time: currentDate.format('hh:mm A'),
+                doctorName: 'Dr. Anil Sharma',
+                doctorLocation: 'Zone 4 • West District',
+                pharmacyName: 'United Pharmacy',
+                pharmacyLocation: 'Zone 4 • West District',
+            });
+        } else {
+            const payload = result.payload as AttendanceError | undefined;
+            Alert.alert(
+                'Check-Out Failed',
+                friendlyError(payload ?? { message: 'Unknown error' }, 'check-out'),
+            );
+        }
+    }, [dispatch, addressText, coordsString, currentDate, navigation]);
+
+    // ─── Status card ─────────────────────────────────────────────────────────
+
+    const checkedInTime = parseSessionTime(currentSession?.checkIn);
+    const statusLabel = todayLoading
+        ? 'Loading...'
+        : isCheckedIn
+        ? `Checked-In${checkedInTime ? ` at ${checkedInTime}` : ''}`
+        : 'Not Checked-In';
+
+    const statusBg = isCheckedIn ? '#E8F5E9' : '#FFF3E0';
+
+    return (
+        <View style={styles.mainContainer}>
+            <Header
+                title="Today's Attendance"
+                showNotification
+                showProfile
+            />
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* Time & Clock */}
+                <View style={styles.timeContainer}>
+                    <Text style={styles.timeText}>{currentDate.format('hh:mm A')}</Text>
+                    <Text style={styles.dateText}>{currentDate.format('dddd, DD MMMM YYYY')}</Text>
+                    <View style={styles.gpsPill}>
+                        <View style={[styles.gpsDot, !location && styles.gpsDotInactive]} />
+                        <Text style={styles.gpsText}>{location ? 'GPS ACTIVE' : 'LOCATING...'}</Text>
+                    </View>
+                </View>
+
+                {/* Status Card */}
+                <View style={[styles.statusCard, { backgroundColor: statusBg }]}>
+                    <View style={styles.infoIconWrapper}>
+                        {todayLoading ? (
+                            <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : (
+                            <InfoIcon />
+                        )}
+                    </View>
+                    <View style={styles.statusTextContainer}>
+                        <Text style={styles.statusLabel}>CURRENT STATE</Text>
+                        <Text style={styles.statusValue}>{statusLabel}</Text>
+                    </View>
+                </View>
+
+                {/* Map Card */}
+                <View style={styles.mapCard}>
+                    <View style={styles.mapContainer}>
+                        {location ? (
+                            <MapView
+                                provider={PROVIDER_DEFAULT}
+                                style={styles.map}
+                                initialRegion={{
+                                    latitude: location.lat,
+                                    longitude: location.long,
+                                    latitudeDelta: 0.005,
+                                    longitudeDelta: 0.005,
+                                }}
+                            >
+                                <Marker
+                                    coordinate={{ latitude: location.lat, longitude: location.long }}
+                                />
+                            </MapView>
+                        ) : (
+                            <View style={styles.mapPlaceholder}>
+                                <Text style={styles.mapPlaceholderText}>
+                                    {locationError || 'Locating...'}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={styles.locationInfoContainer}>
+                        <Text style={styles.locLabel}>COORDINATES</Text>
+                        <Text style={styles.locValue}>
+                            Lat: {location ? location.lat.toFixed(4) : '--'}° N,{' '}
+                            Long: {location ? location.long.toFixed(4) : '--'}° E
+                        </Text>
+                        <Text style={[styles.locLabel, { marginTop: 12 }]}>CURRENT ADDRESS</Text>
+                        <Text style={styles.locValue}>
+                            {addressText || (location ? 'Resolving address…' : '--')}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Check-In / Check-Out */}
+                <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity
+                        style={[
+                            styles.primaryButton,
+                            styles.halfButton,
+                            (isActionLoading || isCheckedIn) && styles.buttonDisabled,
+                        ]}
+                        onPress={handleCheckIn}
+                        disabled={isActionLoading || isCheckedIn}
+                        activeOpacity={0.8}
+                    >
+                        {checkInLoading ? (
+                            <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                            <CheckInIcon />
+                        )}
+                        <Text style={styles.primaryButtonText}>
+                            {checkInLoading ? 'Logging...' : 'Check-In'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[
+                            styles.outlineButton,
+                            styles.halfButton,
+                            (isActionLoading || !isCheckedIn) && styles.buttonDisabled,
+                        ]}
+                        onPress={handleCheckOut}
+                        disabled={isActionLoading || !isCheckedIn}
+                        activeOpacity={0.8}
+                    >
+                        {checkOutLoading ? (
+                            <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : (
+                            <CheckOutIcon />
+                        )}
+                        <Text style={styles.outlineButtonText}>
+                            {checkOutLoading ? 'Logging...' : 'Check-Out'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                    style={[styles.outlineButton, styles.viewHistoryButton]}
+                    onPress={() => navigation.navigate('AttendanceHistory')}
+                    activeOpacity={0.8}
+                >
+                    <Text style={styles.outlineButtonText}>View Attendance History</Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 12 }} />
+
+                {/* Break Timer */}
+                <View style={styles.breakCard}>
+                    <View style={styles.breakLeft}>
+                        <View style={styles.breakIconContainer}>
+                            <CoffeeIcon />
+                        </View>
+                        <View>
+                            <Text style={styles.breakTitle}>Break Timer</Text>
+                            <Text style={styles.breakSubtitle}>
+                                Log lunch breaks or{'\n'}transport gaps
+                            </Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.breakButton}
+                        onPress={() => setBreakActive((prev) => !prev)}
+                        activeOpacity={0.8}
+                    >
+                        <PauseIcon />
+                        <Text style={styles.breakButtonText}>
+                            {breakActive ? 'END\nBREAK' : 'START\nBREAK'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Show Today's Visits */}
+                <View style={styles.visitsSection}>
+                    <TouchableOpacity
+                        style={styles.visitsButton}
+                        onPress={() => navigation.navigate('TodayVisits')}
+                        activeOpacity={0.85}
+                    >
+                        <VisitsIcon />
+                        <Text style={styles.visitsButtonText}>Show Today's Visit</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.visitsSubText}>12 visits planned today</Text>
+                </View>
+
+                {/* Quick Stats */}
+                <View style={styles.statsSection}>
+                    <Text style={styles.statsTitle}>QUICK STATS</Text>
+                    <View style={styles.statsRow}>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statLabel}>PLANNED CALLS</Text>
+                            <Text style={styles.statValue}>12</Text>
+                        </View>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statLabel}>COMPLETED</Text>
+                            <Text style={styles.statValue}>0</Text>
+                        </View>
+                    </View>
+                </View>
+            </ScrollView>
+        </View>
+    );
+};
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  scrollContent: {
-    paddingBottom: 24,
-  },
-  timeContainer: {
-    alignItems: 'center',
-    paddingVertical: 24,
-  },
-  timeText: {
-    fontSize: FONTS.size.xxxl,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-    marginBottom: 4,
-  },
-  dateText: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    marginBottom: 16,
-  },
-  gpsPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 20,
-  },
-  gpsDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.success,
-    marginRight: 6,
-  },
-  gpsText: {
-    fontSize: 11,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-  },
-  statusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  infoIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#FFF3E0', // Light orange
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  statusLabel: {
-    fontSize: 11,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  statusValue: {
-    fontSize: 15,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-  },
-  mapCard: {
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 24,
-  },
-  mapContainer: {
-    height: 180,
-    width: '100%',
-    backgroundColor: '#F5F5F5',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationInfoContainer: {
-    padding: 16,
-    backgroundColor: '#FFF',
-  },
-  locLabel: {
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-    letterSpacing: 0.5,
-  },
-  locValue: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    gap: 12,
-  },
-  halfButton: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  primaryButton: {
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row',
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#FFF',
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-    marginLeft: 6,
-  },
-  outlineButton: {
-    backgroundColor: '#FFF',
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    flexDirection: 'row',
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  outlineButtonText: {
-    color: COLORS.primary,
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-    marginLeft: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-
-  // Break Timer
-  breakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  breakLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  breakIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(46, 80, 178, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  breakTitle: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.buttonBlue,
-    marginBottom: 2,
-  },
-  breakSubtitle: {
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    lineHeight: 16,
-  },
-  breakButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  breakButtonText: {
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.buttonBlue,
-    textAlign: 'center',
-    lineHeight: 14,
-  },
-
-  // Show Today's Visits
-  visitsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  visitsButton: {
-    backgroundColor: COLORS.buttonBlue,
-    height: 52,
-    borderRadius: 26,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    gap: 8,
-    marginBottom: 8,
-  },
-  visitsButtonText: {
-    color: '#FFF',
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-  },
-  visitsSubText: {
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-  },
-  statsSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  statsTitle: {
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-    marginBottom: 12,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: '48%',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    padding: 16,
-  },
-  statLabel: {
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.textSecondary,
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontFamily: FONTS.family.bold,
-    color: '#000',
-  },
+    mainContainer: {
+        flex: 1,
+        backgroundColor: '#FFFFFF',
+    },
+    scrollContent: {
+        paddingBottom: 24,
+    },
+    timeContainer: {
+        alignItems: 'center',
+        paddingVertical: 24,
+    },
+    timeText: {
+        fontSize: FONTS.size.xxxl,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+        marginBottom: 4,
+    },
+    dateText: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.regular,
+        color: COLORS.textSecondary,
+        marginBottom: 16,
+    },
+    gpsPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 20,
+    },
+    gpsDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: COLORS.success,
+        marginRight: 6,
+    },
+    gpsDotInactive: {
+        backgroundColor: '#9E9E9E',
+    },
+    gpsText: {
+        fontSize: 11,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
+    statusCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 12,
+        marginBottom: 20,
+    },
+    infoIconWrapper: {
+        width: 40,
+        height: 40,
+        borderRadius: 8,
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    statusTextContainer: {
+        flex: 1,
+    },
+    statusLabel: {
+        fontSize: 11,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        marginBottom: 4,
+    },
+    statusValue: {
+        fontSize: 15,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
+    mapCard: {
+        marginHorizontal: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: 24,
+    },
+    mapContainer: {
+        height: 180,
+        width: '100%',
+        backgroundColor: '#F5F5F5',
+    },
+    map: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+    },
+    mapPlaceholder: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    mapPlaceholderText: {
+        color: '#999',
+    },
+    locationInfoContainer: {
+        padding: 16,
+        backgroundColor: '#FFF',
+    },
+    locLabel: {
+        fontSize: FONTS.size.xs,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        marginBottom: 4,
+        letterSpacing: 0.5,
+    },
+    locValue: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
+    actionButtonsContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        marginBottom: 16,
+        gap: 12,
+    },
+    halfButton: {
+        flex: 1,
+        marginBottom: 0,
+    },
+    viewHistoryButton: {
+        marginHorizontal: 20,
+    },
+    primaryButton: {
+        backgroundColor: COLORS.primary,
+        flexDirection: 'row',
+        height: 52,
+        borderRadius: 26,
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+    },
+    primaryButtonText: {
+        color: '#FFF',
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+    },
+    outlineButton: {
+        backgroundColor: '#FFF',
+        borderWidth: 1.5,
+        borderColor: COLORS.primary,
+        flexDirection: 'row',
+        height: 52,
+        borderRadius: 26,
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+    },
+    outlineButtonText: {
+        color: COLORS.primary,
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+    },
+    buttonDisabled: {
+        opacity: 0.45,
+    },
+    breakCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginHorizontal: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 20,
+    },
+    breakLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    breakIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(46, 80, 178, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    breakTitle: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.buttonBlue,
+        marginBottom: 2,
+    },
+    breakSubtitle: {
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.regular,
+        color: COLORS.textSecondary,
+        lineHeight: 16,
+    },
+    breakButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        gap: 6,
+    },
+    breakButtonText: {
+        fontSize: FONTS.size.xs,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.buttonBlue,
+        textAlign: 'center',
+        lineHeight: 14,
+    },
+    visitsSection: {
+        paddingHorizontal: 20,
+        marginBottom: 24,
+        alignItems: 'center',
+    },
+    visitsButton: {
+        backgroundColor: COLORS.buttonBlue,
+        height: 52,
+        borderRadius: 26,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: '100%',
+        gap: 8,
+        marginBottom: 8,
+    },
+    visitsButtonText: {
+        color: '#FFF',
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+    },
+    visitsSubText: {
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.regular,
+        color: COLORS.textSecondary,
+    },
+    statsSection: {
+        paddingHorizontal: 20,
+        paddingBottom: 40,
+    },
+    statsTitle: {
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+        marginBottom: 12,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    statCard: {
+        width: '48%',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 12,
+        padding: 16,
+    },
+    statLabel: {
+        fontSize: FONTS.size.xs,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        marginBottom: 8,
+    },
+    statValue: {
+        fontSize: 20,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+    },
 });
 
 export default AttendanceScreen;
