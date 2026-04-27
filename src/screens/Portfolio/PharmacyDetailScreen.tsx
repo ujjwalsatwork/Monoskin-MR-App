@@ -19,6 +19,9 @@ import {
   MapPinOutlineIcon,
   CameraUploadIcon,
   LinkChainIcon,
+  RxIcon,
+  StoreIcon,
+  PillIcon,
   Up,
   Down,
   AddPeople,
@@ -51,7 +54,11 @@ type PharmacyDetails = {
   lastVisit?: string;
   avgTime?: string;
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
-  interactionHistory?: string[];
+  interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+  preferredProducts?: Array<{ id: string; name: string; totalQuantity?: number }>;
+  unpreferredProducts?: Array<{ id: string; name: string }>;
+  pharmacyNetwork?: Array<{ id: string; name: string; type: 'primary' | 'linked' }>;
+  nearbyPharmacies?: Array<{ id: string; name: string; distance: string }>;
 };
 
 type CatalogueItem = {
@@ -140,6 +147,8 @@ const PharmacyDetailScreen = () => {
 
   const [sampleExpanded, setSampleExpanded] = useState(true);
   const [orderExpanded, setOrderExpanded] = useState(true);
+  const [prefExpanded, setPrefExpanded] = useState(false);
+  const [unprefExpanded, setUnprefExpanded] = useState(false);
 
   useEffect(() => {
     fetchPharmacyDetails();
@@ -404,6 +413,144 @@ const PharmacyDetailScreen = () => {
             <Text style={styles.statValue}>{pharmacyData?.avgTime ?? '—'}</Text>
           </View>
         </View>
+
+        {/* Preferred Products */}
+        <CollapsibleSection
+          title="Preferred Products"
+          expanded={prefExpanded}
+          onToggle={() => setPrefExpanded(p => !p)}
+        >
+          {pharmacyData?.preferredProducts && pharmacyData.preferredProducts.length > 0 ? (
+            pharmacyData.preferredProducts.map((prod, i) => (
+              <View
+                key={prod.id}
+                style={[styles.productRow, i < pharmacyData.preferredProducts!.length - 1 && styles.productRowBorder]}
+              >
+                <View style={styles.productIconRow}>
+                  <PillIcon width={16} height={16} />
+                  <Text style={styles.productTime}>  {prod.name}</Text>
+                </View>
+                {prod.totalQuantity !== undefined && (
+                  <View style={styles.qtyBadge}>
+                    <Text style={styles.qtyBadgeText}>x{prod.totalQuantity}</Text>
+                  </View>
+                )}
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyRow}>
+              <Text style={styles.emptyText}>No preferred products on record.</Text>
+            </View>
+          )}
+        </CollapsibleSection>
+
+        {/* Unpreferred Products */}
+        <CollapsibleSection
+          title="Unpreferred Products"
+          expanded={unprefExpanded}
+          onToggle={() => setUnprefExpanded(p => !p)}
+        >
+          {pharmacyData?.unpreferredProducts && pharmacyData.unpreferredProducts.length > 0 ? (
+            pharmacyData.unpreferredProducts.map((prod, i) => (
+              <View
+                key={prod.id}
+                style={[styles.productRow, i < pharmacyData.unpreferredProducts!.length - 1 && styles.productRowBorder]}
+              >
+                <View style={styles.productIconRow}>
+                  <PillIcon width={16} height={16} />
+                  <Text style={styles.productName}>  {prod.name}</Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyRow}>
+              <Text style={styles.emptyText}>No unpreferred products on record.</Text>
+            </View>
+          )}
+        </CollapsibleSection>
+
+        {/* Pharmacy Network */}
+        {pharmacyData?.pharmacyNetwork && pharmacyData.pharmacyNetwork.length > 0 && (
+          <>
+            <View style={styles.sectionLabelRow}>
+              <Text style={styles.sectionLabel}>PHARMACY NETWORK</Text>
+              <View style={styles.activeNodesBadge}>
+                <Text style={styles.activeNodesText}>
+                  {pharmacyData.pharmacyNetwork.length} ACTIVE NODES
+                </Text>
+              </View>
+            </View>
+            {pharmacyData.pharmacyNetwork.map((ph, i) => (
+              <View key={ph.id} style={[styles.pharmacyNetCard, i > 0 && { marginTop: 10 }]}>
+                <View style={styles.pharmacyNetRow}>
+                  <View style={styles.pharmacyIconBox}>
+                    {ph.type === 'primary'
+                      ? <RxIcon width={22} height={22} />
+                      : <LinkChainIcon width={22} height={22} />}
+                  </View>
+                  <View style={styles.pharmacyTextBlock}>
+                    <Text style={styles.pharmacyNetName}>{ph.name}</Text>
+                    <Text style={styles.pharmacyNetType}>
+                      {ph.type === 'primary' ? 'PRIMARY PHARMACY' : 'LINKED PHARMACY'}
+                    </Text>
+                  </View>
+                  {ph.type === 'primary'
+                    ? <View style={styles.primaryBadge}><Text style={styles.primaryBadgeText}>PRIMARY</Text></View>
+                    : <Text style={styles.linkedText}>LINKED</Text>}
+                </View>
+              </View>
+            ))}
+            <View style={{ marginBottom: 16 }} />
+          </>
+        )}
+
+        {/* Nearby Pharmacies */}
+        {pharmacyData?.nearbyPharmacies && pharmacyData.nearbyPharmacies.length > 0 && (
+          <>
+            <Text style={[styles.sectionLabel, { marginBottom: 10 }]}>NEARBY PHARMACIES</Text>
+            <View style={styles.nearbyGrid}>
+              {pharmacyData.nearbyPharmacies.map((place, i) => (
+                <View key={i} style={styles.nearbyCard}>
+                  <View style={styles.nearbyIconBox}>
+                    <StoreIcon width={20} height={20} />
+                  </View>
+                  <Text style={styles.nearbyName}>{place.name}</Text>
+                  <Text style={styles.nearbyDist}>{place.distance}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Interaction History */}
+        {pharmacyData?.interactionHistory && pharmacyData.interactionHistory.length > 0 && (
+          <>
+            <Text style={[styles.sectionLabel, { marginBottom: 10 }]}>INTERACTION HISTORY</Text>
+            <View style={styles.timelineContainer}>
+              {pharmacyData.interactionHistory.map((item, i) => (
+                <View key={i} style={styles.timelineRow}>
+                  <View style={styles.timelineDotWrapper}>
+                    <View style={styles.timelineDot} />
+                    {i < pharmacyData.interactionHistory!.length - 1 && (
+                      <View style={styles.timelineLine} />
+                    )}
+                  </View>
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineDate}>{item.date}</Text>
+                    {(item.type || item.outcome) && (
+                      <Text style={styles.timelineSubText}>
+                        {[item.type, item.outcome].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
+                    {item.notes ? (
+                      <Text style={styles.timelineNotes} numberOfLines={2}>{item.notes}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Visit Type */}
         <Text style={styles.sectionLabel}>VISIT TYPE</Text>
@@ -763,6 +910,7 @@ const styles = StyleSheet.create({
   // Product rows
   productRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   productRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  productIconRow: { flexDirection: 'row', alignItems: 'center' },
   productTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   productName: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
   qtyBadge: { backgroundColor: 'rgba(46,80,178,0.1)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
@@ -772,6 +920,38 @@ const styles = StyleSheet.create({
 
   // Section label
   sectionLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark, letterSpacing: 0.5, marginBottom: 10 },
+  sectionLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+
+  // Pharmacy Network
+  activeNodesBadge: { backgroundColor: 'rgba(46,80,178,0.1)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  activeNodesText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  pharmacyNetCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 4 },
+  pharmacyNetRow: { flexDirection: 'row', alignItems: 'center' },
+  pharmacyIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(46,80,178,0.08)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  pharmacyTextBlock: { flex: 1 },
+  pharmacyNetName: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
+  pharmacyNetType: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4 },
+  primaryBadge: { backgroundColor: COLORS.buttonBlue, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  primaryBadgeText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.white },
+  linkedText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.success },
+
+  // Nearby Pharmacies
+  nearbyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  nearbyCard: { width: '47%', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 12 },
+  nearbyIconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(46,80,178,0.08)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  nearbyName: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 4 },
+  nearbyDist: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+
+  // Interaction History
+  timelineContainer: { marginBottom: 16 },
+  timelineRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  timelineDotWrapper: { alignItems: 'center', width: 20, marginRight: 10 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.buttonBlue, marginTop: 4 },
+  timelineLine: { width: 2, flex: 1, backgroundColor: COLORS.buttonBlue, minHeight: 24, opacity: 0.3, marginTop: 2 },
+  timelineContent: { flex: 1, paddingBottom: 14 },
+  timelineDate: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark, lineHeight: 20 },
+  timelineSubText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, marginTop: 2 },
+  timelineNotes: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textMuted, marginTop: 2 },
 
   // Visit notes
   notesInput: {

@@ -64,6 +64,11 @@ export type ApiDoctor = {
     nextVisitNotes: string;
     createdAt: string;
     updatedAt: string;
+    preferredProducts?: Array<{ id: number; name: string; totalQuantity: number }>;
+    unpreferredProducts?: Array<{ id: number; name: string }>;
+    interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+    pharmacyNetwork?: Array<{ id: number; name: string; type: 'primary' | 'linked' }>;
+    nearbyPharmacies?: Array<{ id: number; name: string; distance: number }>;
 };
 
 export type Doctor = {
@@ -152,6 +157,11 @@ export type ApiPharmacy = {
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
+    preferredProducts?: Array<{ id: number; name: string; totalQuantity: number }>;
+    unpreferredProducts?: Array<{ id: number; name: string }>;
+    interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+    pharmacyNetwork?: Array<{ id: number; name: string; type: 'primary' | 'linked' }>;
+    nearbyPharmacies?: Array<{ id: number; name: string; distance: number }>;
 };
 
 export type Pharmacy = {

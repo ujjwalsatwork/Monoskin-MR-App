@@ -1,112 +1,152 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
-import {
-  MapPinOutlineIcon,
-} from '@/assets/images';
+import { MapPinOutlineIcon } from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { AppDispatch, RootState } from '@/redux/store';
+import { fetchTodayRoute, RouteStop } from '@/redux/slices/routeSlice';
 
-type Visit = {
-  id: string;
-  time: string;
-  name: string;
-  address: string;
-  status: 'in_progress' | 'upcoming' | 'completed';
-};
+type StopStatus = 'in_progress' | 'upcoming' | 'completed';
 
-const VISITS: Visit[] = [
-  { id: '1', time: '09:00 AM', name: 'City General Hospital',  address: '123 Pharma Heights, Indore, 452000', status: 'in_progress' },
-  { id: '2', time: '10:15 AM', name: "St. Mary's Clinic",      address: 'Zone 4 • West District',             status: 'upcoming' },
-  { id: '3', time: '11:30 AM', name: 'Apollo Diagnostics',     address: 'Zone 2 • East District',             status: 'upcoming' },
-  { id: '4', time: '12:45 PM', name: 'Sunrise Medical Center', address: 'Zone 1 • North District',            status: 'upcoming' },
-  { id: '5', time: '02:00 PM', name: 'MedPlus Pharmacy',       address: 'Zone 3 • South District',            status: 'upcoming' },
-  { id: '6', time: '03:15 PM', name: 'LifeCare Hospital',      address: 'Zone 5 • Central',                   status: 'upcoming' },
-];
-
-const PLANNED_TOTAL = 12;
-const COMPLETED = 0;
-
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<StopStatus, { label: string; bg: string; color: string }> = {
   in_progress: { label: 'IN PROGRESS', bg: 'rgba(46, 80, 178, 0.12)', color: COLORS.buttonBlue },
   upcoming:    { label: 'UPCOMING',    bg: '#F0F0F0',                  color: '#666666' },
   completed:   { label: 'COMPLETED',   bg: 'rgba(56, 142, 60, 0.12)', color: COLORS.success },
 };
 
+const mapStatus = (s: RouteStop['status']): StopStatus => {
+  if (s === 'DONE') return 'completed';
+  if (s === 'TARGET') return 'in_progress';
+  return 'upcoming';
+};
+
 const TodayVisitsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const dispatch = useDispatch<AppDispatch>();
 
-  const renderVisit = ({ item }: { item: Visit }) => {
-    const config = STATUS_CONFIG[item.status];
+  const { data, loading, error } = useSelector((state: RootState) => state.route.today);
+
+  useEffect(() => {
+    dispatch(fetchTodayRoute());
+  }, [dispatch]);
+
+  const stops = data?.stops ?? [];
+  const completed = data?.summary.completed ?? 0;
+  const total = data?.summary.total ?? 0;
+
+  const handleStopPress = (stop: RouteStop) => {
+    navigation.navigate('VisitDetail', {
+      doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
+      pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+      routeStopId: stop.id,
+    });
+  };
+
+  const renderStop = ({ item }: { item: RouteStop }) => {
+    const uiStatus = mapStatus(item.status);
+    const config = STATUS_CONFIG[uiStatus];
     return (
       <TouchableOpacity
         style={styles.visitCard}
-        onPress={() => navigation.navigate('VisitDetail', { visitId: item.id })}
+        onPress={() => handleStopPress(item)}
         activeOpacity={0.8}
       >
         <View style={styles.visitCardTop}>
-          <Text style={[styles.visitTime, item.status === 'in_progress' && styles.visitTimeActive]}>
-            {item.time}
+          <Text
+            style={[
+              styles.visitTime,
+              uiStatus === 'in_progress' && styles.visitTimeActive,
+            ]}
+          >
+            {item.plannedTime || '—'}
           </Text>
           <View style={[styles.statusBadge, { backgroundColor: config.bg }]}>
-            <Text style={[styles.statusText, { color: config.color }]}>{config.label}</Text>
+            <Text style={[styles.statusText, { color: config.color }]}>
+              {config.label}
+            </Text>
           </View>
         </View>
-        <Text style={styles.visitName}>{item.name}</Text>
-        <View style={styles.visitAddressRow}>
-          <MapPinOutlineIcon />
-          <Text style={styles.visitAddress}> {item.address}</Text>
-        </View>
+        <Text style={styles.visitName} numberOfLines={1}>{item.name}</Text>
+        {!!item.address && (
+          <View style={styles.visitAddressRow}>
+            <MapPinOutlineIcon />
+            <Text style={styles.visitAddress} numberOfLines={1}> {item.address}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
 
-  const remaining = PLANNED_TOTAL - VISITS.length;
+  if (loading) {
+    return (
+      <View style={styles.safeArea}>
+        <Header title="Today's Visits" showBack showNotification showProfile />
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.safeArea}>
+        <Header title="Today's Visits" showBack showNotification showProfile />
+        <View style={styles.centerState}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => dispatch(fetchTodayRoute())}
+          >
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.safeArea}>
       <Header title="Today's Visits" showBack showNotification showProfile />
 
       <FlatList
-        data={VISITS}
-        keyExtractor={item => item.id}
-        renderItem={renderVisit}
+        data={stops}
+        keyExtractor={item => String(item.id)}
+        renderItem={renderStop}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
-          /* Daily Progress Card */
           <View style={styles.progressCard}>
             <View style={styles.progressLeft}>
               <Text style={styles.progressMeta}>Daily Progress</Text>
-              <Text style={styles.progressCount}>{PLANNED_TOTAL} Planned{'\n'}Calls</Text>
+              <Text style={styles.progressCount}>{total} Planned{'\n'}Calls</Text>
             </View>
             <View style={styles.progressRight}>
-              <Text style={styles.completedCount}>{COMPLETED}</Text>
+              <Text style={styles.completedCount}>{completed}</Text>
               <Text style={styles.completedLabel}>Completed</Text>
             </View>
           </View>
         }
-        ListFooterComponent={
-          remaining > 0 ? (
-            <Text style={styles.moreVisits}>+ {remaining} more visits scheduled</Text>
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.centerState}>
+              <Text style={styles.emptyText}>No visits planned for today</Text>
+            </View>
           ) : null
         }
       />
-
-      {/* FAB */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.85}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
     </View>
   );
 };
@@ -116,17 +156,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
   },
-
-
-  // List
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    paddingVertical: 48,
+  },
+  errorText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.error,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    backgroundColor: COLORS.buttonBlue,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  retryBtnText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 100,
     gap: 12,
   },
-
-  // Progress card
   progressCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -161,8 +227,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
   },
-
-  // Visit card
   visitCard: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -209,40 +273,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
     flex: 1,
-  },
-
-  // Footer
-  moreVisits: {
-    textAlign: 'center',
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    marginTop: 8,
-  },
-
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 24,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.buttonBlue,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  fabText: {
-    color: COLORS.white,
-    fontSize: 30,
-    fontFamily: FONTS.family.regular,
-    lineHeight: 34,
-    marginTop: -2,
   },
 });
 

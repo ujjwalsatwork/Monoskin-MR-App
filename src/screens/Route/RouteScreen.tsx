@@ -6,7 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -22,34 +24,14 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
-import { apiCall } from '@/services/apiService';
-import { ENDPOINTS } from '@/constants/endpoints';
-
-interface RouteStop {
-  id: number;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  status: 'DONE' | 'TARGET' | 'UPCOMING';
-  isActionAllowed: boolean;
-  plannedTime: string;
-  distanceStr: string;
-  timeStr: string;
-  phone?: string;
-}
-
-interface RouteData {
-  readOnly: boolean;
-  origin: { lat: number; lng: number };
-  summary: {
-    totalDoctors: number;
-    totalChemists: number;
-    completed: number;
-    total: number;
-  };
-  stops: RouteStop[];
-}
+import { AppDispatch, RootState } from '@/redux/store';
+import {
+  fetchRoute,
+  setSelectedDate,
+  clearRouteError,
+  RouteStop,
+} from '@/redux/slices/routeSlice';
+import { startVisit, clearVisitError } from '@/redux/slices/visitSlice';
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
@@ -81,50 +63,59 @@ type RouteScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
 const RouteScreen = () => {
   const navigation = useNavigation<RouteScreenNavigationProp>();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [routeData, setRouteData] = useState<RouteData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [startingVisitId, setStartingVisitId] = useState<number | null>(null);
+  const dispatch = useDispatch<AppDispatch>();
+
+  const [selectedDate, setLocalSelectedDate] = useState<Date>(new Date());
+
+  const { data: routeData, loading, error } = useSelector(
+    (state: RootState) => state.route,
+  );
+  const { creating, error: visitError } = useSelector(
+    (state: RootState) => state.visits,
+  );
 
   const weekDays = getWeekDays();
 
-  const fetchRoute = useCallback(async (date: Date) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await apiCall<RouteData>({
-        method: 'GET',
-        endpoint: ENDPOINTS.mrRoutes.list,
-        params: { date: formatDateForApi(date) },
-      });
-      setRouteData(response.data);
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to load route');
-      setRouteData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadRoute = useCallback(
+    (date: Date) => {
+      dispatch(fetchRoute({ date: formatDateForApi(date) }));
+    },
+    [dispatch],
+  );
 
   useEffect(() => {
-    fetchRoute(selectedDate);
-  }, [selectedDate, fetchRoute]);
+    loadRoute(selectedDate);
+  }, [selectedDate, loadRoute]);
+
+  useEffect(() => {
+    if (visitError) {
+      Alert.alert('Visit Error', visitError);
+      dispatch(clearVisitError());
+    }
+  }, [visitError, dispatch]);
+
+  const handleDateSelect = (date: Date) => {
+    setLocalSelectedDate(date);
+    dispatch(setSelectedDate(formatDateForApi(date)));
+    dispatch(clearRouteError());
+  };
 
   const handleStartVisit = async (stop: RouteStop) => {
-    if (startingVisitId !== null) return;
-    setStartingVisitId(stop.id);
-    try {
-      await apiCall({
-        method: 'POST',
-        endpoint: ENDPOINTS.mrVisits.create,
-        data: { routeStopId: stop.id },
+    if (creating) return;
+    const result = await dispatch(startVisit({
+      routeStopId: stop.id,
+      doctorId: stop.doctorId,
+      pharmacyId: stop.pharmacyId,
+    }));
+    if (startVisit.fulfilled.match(result)) {
+      const visitRecord = result.payload;
+      navigation.navigate('VisitDetail', {
+        doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
+        pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+        routeStopId: stop.id,
+        visitId: String(visitRecord.id),
       });
-      await fetchRoute(selectedDate);
-    } catch {
-      // Silently fail — user can retry
-    } finally {
-      setStartingVisitId(null);
+      loadRoute(selectedDate);
     }
   };
 
@@ -161,6 +152,12 @@ const RouteScreen = () => {
     return map;
   };
 
+  const getReadOnlyBannerText = (): string => {
+    if (!routeData) return '';
+    const today = formatDateForApi(new Date());
+    return routeData.date < today ? 'Past date — view only' : 'Future date — view only';
+  };
+
   return (
     <View style={styles.mainContainer}>
       <Header title="Today's Route Plan" showBack showNotification showProfile />
@@ -180,7 +177,7 @@ const RouteScreen = () => {
               <TouchableOpacity
                 key={index}
                 style={[styles.dateCard, isActive && styles.dateCardActive]}
-                onPress={() => setSelectedDate(item.date)}
+                onPress={() => handleDateSelect(item.date)}
               >
                 <Text style={[styles.dayText, isActive && styles.dayTextActive]}>
                   {item.label}
@@ -204,21 +201,30 @@ const RouteScreen = () => {
             <Text style={styles.emptyText}>{error}</Text>
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => fetchRoute(selectedDate)}
+              onPress={() => loadRoute(selectedDate)}
             >
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {!loading && !error && !routeData && (
+        {!loading && !error && (!routeData || routeData.stops.length === 0) && (
           <View style={styles.centeredContainer}>
             <Text style={styles.emptyText}>No route planned for this date</Text>
           </View>
         )}
 
-        {!loading && routeData && (
+        {!loading && routeData && routeData.stops.length > 0 && (
           <>
+            {/* Read-only banner */}
+            {routeData.readOnly && (
+              <View style={styles.readOnlyBanner}>
+                <Text style={styles.readOnlyBannerText}>
+                  {getReadOnlyBannerText()}
+                </Text>
+              </View>
+            )}
+
             {/* Summary Cards */}
             <View style={styles.summaryRow}>
               <View style={styles.metricCard}>
@@ -329,7 +335,11 @@ const RouteScreen = () => {
                             )}
                           </View>
 
-                          <Text style={styles.timelineCardSubtitle}>{stop.address}</Text>
+                          {!!stop.address && (
+                            <Text style={styles.timelineCardSubtitle}>
+                              {stop.address}
+                            </Text>
+                          )}
 
                           {stop.status !== 'DONE' && !!stop.plannedTime && (
                             <View style={styles.timeLabelRow}>
@@ -346,13 +356,12 @@ const RouteScreen = () => {
                               <TouchableOpacity
                                 style={[
                                   styles.startVisitButton,
-                                  startingVisitId !== null &&
-                                    styles.startVisitButtonDisabled,
+                                  creating && styles.startVisitButtonDisabled,
                                 ]}
                                 onPress={() => handleStartVisit(stop)}
-                                disabled={startingVisitId !== null}
+                                disabled={creating}
                               >
-                                {startingVisitId === stop.id ? (
+                                {creating ? (
                                   <ActivityIndicator color="#FFFFFF" size="small" />
                                 ) : (
                                   <>
@@ -446,6 +455,22 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.bold,
   },
+  readOnlyBanner: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  readOnlyBannerText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: '#92400E',
+    textAlign: 'center',
+  },
   summaryRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -526,7 +551,11 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   mapTextureLayer: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#6B7280',
     opacity: 0.6,
     justifyContent: 'center',

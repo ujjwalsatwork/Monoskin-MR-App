@@ -159,7 +159,7 @@ const RouteMapScreen = () => {
               <Text style={styles.nextStopText}>NEXT STOP</Text>
             </View>
             {!!targetStop.distanceStr && (
-              <Text style={styles.distanceText}>In {targetStop.distanceStr}</Text>
+              <Text style={styles.distanceText}>In {targetStop.distanceStr ?? ''}</Text>
             )}
           </View>
 

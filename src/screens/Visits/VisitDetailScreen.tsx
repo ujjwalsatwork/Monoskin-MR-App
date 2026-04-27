@@ -110,8 +110,8 @@ const VisitDetailScreen = () => {
   const [visitNote, setVisitNote] = useState('');
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [visitType, setVisitType] = useState('');
-  const [outcome, setOutcome] = useState('');
+  const [visitType, setVisitType] = useState('Lead Visit');
+  const [outcome, setOutcome] = useState('Follow-up Required');
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
   const [slotVisible, setSlotVisible] = useState(false);
@@ -128,7 +128,11 @@ const VisitDetailScreen = () => {
   const [orderExpanded, setOrderExpanded] = useState(true);
 
   useEffect(() => {
-    fetchDoctorDetails();
+    if (doctorId) {
+      fetchDoctorDetails();
+    } else {
+      setLoading(false);
+    }
     Geolocation.getCurrentPosition(
       async pos => {
         const lat = String(pos.coords.latitude);
@@ -154,7 +158,7 @@ const VisitDetailScreen = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.get(ENDPOINTS.portfolio.doctorDetail(doctorId));
+      const res = await apiClient.get(ENDPOINTS.portfolio.doctorDetail(doctorId!));
       setDoctorData(res.data);
     } catch(fetchErr) {
       console.log('🚀 ~ fetchDoctorDetails ~ error:', fetchErr);
@@ -267,7 +271,7 @@ const VisitDetailScreen = () => {
 
     const payload: Record<string, any> = {
       mrId,
-      doctorId: Number(doctorId),
+      doctorId: doctorId ? Number(doctorId) : undefined,
       visitType,
       outcome,
       notes: visitNote,
