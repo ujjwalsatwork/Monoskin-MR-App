@@ -21,6 +21,7 @@ import { AppStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { logAttendance, fetchTodayStatus, clearAttendanceError, AttendanceError } from '@/redux/slices/attendanceSlice';
+import { fetchMyProfile } from '@/redux/slices/profileSlice';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,16 @@ const AttendanceScreen = () => {
         currentSession,
     } = useSelector((state: RootState) => state.attendance);
 
+    const profileLoaded = useSelector((state: RootState) => !!state.profile.data);
+
     const isActionLoading = checkInLoading || checkOutLoading;
+
+    // Ensure profile is loaded so logAttendance can read mrId
+    useEffect(() => {
+        if (!profileLoaded) {
+            dispatch(fetchMyProfile());
+        }
+    }, [dispatch, profileLoaded]);
 
     // Clock
     useEffect(() => {
