@@ -120,6 +120,7 @@ const RouteScreen = () => {
   };
 
   const handleViewMap = () => {
+    console.log('🚀 ~ handleViewMap ~ routeData:', routeData)
     if (!routeData) return;
     navigation.navigate('RouteMapScreen', {
       routeData: {

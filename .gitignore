@@ -76,3 +76,8 @@ yarn-error.log
 
 # Custom files
 MR_Mobile_App_API_Guide.md
+
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.production

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import MapViewDirections from 'react-native-maps-directions';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import Geolocation from '@react-native-community/geolocation';
 import { FONTS } from '@/constants/fonts';
 import {
   SendArrowIcon,
@@ -20,10 +21,110 @@ import BackArrowIcon from '@/assets/images/BackArrowIcon.svg';
 import MapPinOutlineIcon from '@/assets/images/MapPinOutlineIcon.svg';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { AppStackParamList } from '@/navigation/types';
+import Config from 'react-native-config';
 
-const GOOGLE_API_KEY = 'dummy-maps-key';
+const GOOGLE_API_KEY = Config.GOOGLE_MAPS_API_KEY ?? '';
 
+type RouteStop = AppStackParamList['RouteMapScreen']['routeData']['stops'][number];
 type RouteMapScreenRouteProp = RouteProp<AppStackParamList, 'RouteMapScreen'>;
+
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+interface MapCoord {
+  latitude: number;
+  longitude: number;
+}
+
+function hasCoords(stop: RouteStop): boolean {
+  return stop.lat !== 0 || stop.lng !== 0;
+}
+
+// Decode a Google encoded polyline string into map coordinates
+/* eslint-disable no-bitwise */
+function decodePolyline(encoded: string): MapCoord[] {
+  const coords: MapCoord[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    coords.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return coords;
+}
+/* eslint-enable no-bitwise */
+
+async function geocodeAddress(address: string): Promise<LatLng | null> {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.status === 'OK' && json.results.length > 0) {
+      const { lat, lng } = json.results[0].geometry.location;
+      return { lat, lng };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch a driving route from Google Routes API (new) and return decoded polyline coords
+async function fetchRoutePolyline(
+  origin: LatLng,
+  destination: LatLng,
+  intermediates: LatLng[],
+): Promise<MapCoord[]> {
+  try {
+    const body = {
+      origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+      destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+      intermediates: intermediates.map(p => ({
+        location: { latLng: { latitude: p.lat, longitude: p.lng } },
+      })),
+      travelMode: 'DRIVE',
+      optimizeWaypointOrder: true,
+    };
+
+    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_API_KEY,
+        'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const json = await res.json();
+    const encoded: string | undefined = json?.routes?.[0]?.polyline?.encodedPolyline;
+    return encoded ? decodePolyline(encoded) : [];
+  } catch {
+    return [];
+  }
+}
 
 const RouteMapScreen = () => {
   const navigation = useNavigation();
@@ -32,15 +133,72 @@ const RouteMapScreen = () => {
 
   const mapRef = useRef<MapView>(null);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
+  const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
+  const [resolvedStops, setResolvedStops] = useState<RouteStop[]>(routeData.stops);
+  const [geocoding, setGeocoding] = useState(false);
+  const [routeCoords, setRouteCoords] = useState<MapCoord[]>([]);
 
-  const targetStop = routeData.stops.find(s => s.status === 'TARGET') ?? null;
+  // Fetch device GPS location — used as map centre and directions origin
+  useEffect(() => {
+    Geolocation.getCurrentPosition(
+      pos => {
+        setCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => {
+        const o = routeData.origin;
+        if (o.lat !== 0 || o.lng !== 0) {
+          setCurrentLocation(o);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    );
+  }, [routeData.origin]);
+
+  // Geocode any stops that are missing coordinates
+  useEffect(() => {
+    const needsGeocode = routeData.stops.some(s => !hasCoords(s) && s.address);
+    if (!needsGeocode) return;
+
+    setGeocoding(true);
+    Promise.all(
+      routeData.stops.map(async stop => {
+        if (hasCoords(stop) || !stop.address) return stop;
+        const coords = await geocodeAddress(stop.address);
+        return coords ? { ...stop, lat: coords.lat, lng: coords.lng } : stop;
+      }),
+    ).then(resolved => {
+      setResolvedStops(resolved);
+      setGeocoding(false);
+    });
+  }, [routeData.stops]);
+
+  const targetStop = resolvedStops.find(s => s.status === 'TARGET') ?? null;
+
+  // Use current GPS as origin; fall back to routeData.origin if available
+  const origin: LatLng | null =
+    currentLocation ??
+    (routeData.origin.lat !== 0 || routeData.origin.lng !== 0 ? routeData.origin : null);
+
+  const validStops = resolvedStops.filter(hasCoords);
+
+  // Fetch route polyline from Google Routes API whenever origin or resolved stops change
+  useEffect(() => {
+    if (!origin || validStops.length === 0) return;
+
+    const destination = validStops[validStops.length - 1];
+    const intermediates = validStops.slice(0, -1).map(s => ({ lat: s.lat, lng: s.lng }));
+
+    fetchRoutePolyline(origin, { lat: destination.lat, lng: destination.lng }, intermediates)
+      .then(setRouteCoords);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin, resolvedStops]);
 
   const handleBack = () => navigation.goBack();
 
   const handleStartNavigation = () => {
-    if (!targetStop || routeData.readOnly) return;
+    if (!targetStop || routeData.readOnly || !hasCoords(targetStop)) return;
     const url = Platform.select({
-      ios: `maps:0,0?q=${targetStop.lat},${targetStop.lng}`,
+      ios: `maps://maps.apple.com/?daddr=${targetStop.lat},${targetStop.lng}&dirflg=d`,
       android: `google.navigation:q=${targetStop.lat},${targetStop.lng}`,
     });
     if (url) Linking.openURL(url);
@@ -53,10 +211,11 @@ const RouteMapScreen = () => {
   };
 
   const handleRecenter = () => {
+    if (!origin) return;
     mapRef.current?.animateToRegion(
       {
-        latitude: routeData.origin.lat,
-        longitude: routeData.origin.lng,
+        latitude: origin.lat,
+        longitude: origin.lng,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       },
@@ -64,10 +223,14 @@ const RouteMapScreen = () => {
     );
   };
 
-  const waypoints = routeData.stops.map(stop => ({
-    latitude: stop.lat,
-    longitude: stop.lng,
-  }));
+  // Show a spinner until we know the map centre
+  if (!origin) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#2E50B2" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -75,29 +238,25 @@ const RouteMapScreen = () => {
         ref={mapRef}
         style={styles.map}
         mapType={mapType}
+        showsUserLocation
+        followsUserLocation={false}
         initialRegion={{
-          latitude: routeData.origin.lat,
-          longitude: routeData.origin.lng,
-          latitudeDelta: 0.03,
-          longitudeDelta: 0.03,
+          latitude: origin.lat,
+          longitude: origin.lng,
+          latitudeDelta: 0.08,
+          longitudeDelta: 0.08,
         }}
       >
-        {waypoints.length > 0 && (
-          <MapViewDirections
-            origin={{
-              latitude: routeData.origin.lat,
-              longitude: routeData.origin.lng,
-            }}
-            destination={waypoints[waypoints.length - 1]}
-            waypoints={waypoints.slice(0, -1)}
-            apikey={GOOGLE_API_KEY}
+        {routeCoords.length > 0 && (
+          <Polyline
+            coordinates={routeCoords}
             strokeWidth={4}
             strokeColor="#2E50B2"
-            optimizeWaypoints={true}
           />
         )}
 
-        {routeData.stops.map(stop => {
+        {resolvedStops.map(stop => {
+          if (!hasCoords(stop)) return null;
           const isDone = stop.status === 'DONE';
           const isTarget = stop.status === 'TARGET';
 
@@ -131,6 +290,13 @@ const RouteMapScreen = () => {
           );
         })}
       </MapView>
+
+      {geocoding && (
+        <View style={styles.geocodingBanner}>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+          <Text style={styles.geocodingText}>Locating stops…</Text>
+        </View>
+      )}
 
       <View style={styles.topOverlay}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
@@ -183,10 +349,10 @@ const RouteMapScreen = () => {
             <TouchableOpacity
               style={[
                 styles.primaryButton,
-                routeData.readOnly && styles.buttonDisabled,
+                (routeData.readOnly || !hasCoords(targetStop)) && styles.buttonDisabled,
               ]}
               onPress={handleStartNavigation}
-              disabled={routeData.readOnly}
+              disabled={routeData.readOnly || !hasCoords(targetStop)}
             >
               <SendArrowIcon />
               <Text style={styles.primaryButtonText}>Start Navigation</Text>
@@ -205,7 +371,25 @@ const RouteMapScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E5E7EB' },
+  centered: { justifyContent: 'center', alignItems: 'center' },
   map: { ...StyleSheet.absoluteFillObject },
+  geocodingBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 70,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+  },
+  geocodingText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+  },
   markerContainer: { alignItems: 'center' },
   markerBubble: {
     width: 32,
