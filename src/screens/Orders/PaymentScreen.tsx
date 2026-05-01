@@ -5,25 +5,28 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Platform,
   Alert,
-  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import RazorpayCheckout from 'react-native-razorpay';
+import Config from 'react-native-config';
+import { useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
-import { BankIcon, CardIcon, ShieldIcon, UpiIcon } from '@/assets/images';
+import { BankIcon, ShieldIcon, UpiIcon } from '@/assets/images';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import { RootState } from '@/redux/rootReducer';
 
 type RouteProps = RouteProp<AppStackParamList, 'Payment'>;
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
-type PaymentMethod = 'card' | 'upi' | 'netbanking';
+type PaymentMethod = 'upi' | 'netbanking';
 
 const RadioButton = ({ selected }: { selected: boolean }) => (
   <View style={[styles.radio, selected && styles.radioSelected]}>
@@ -36,6 +39,8 @@ const PaymentScreen = () => {
   const navigation = useNavigation<NavProp>();
   const { subtotal, orderNumber, orderCreateData } = route.params;
 
+  const profile = useSelector((state: RootState) => state.profile.data);
+
   const tax = parseFloat(
     (orderCreateData.items ?? [])
       .reduce((sum: number, item: any) => sum + parseFloat(item.tax || '0'), 0)
@@ -43,117 +48,144 @@ const PaymentScreen = () => {
   );
   const total = parseFloat((subtotal + tax).toFixed(2));
 
-  const [method, setMethod] = useState<PaymentMethod>('card');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
+  const [method, setMethod] = useState<PaymentMethod>('upi');
   const [loading, setLoading] = useState(false);
-
-  const formatCardNumber = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 16);
-    return digits.replace(/(.{4})/g, '$1 ').trim();
-  };
-
-  const formatExpiry = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 4);
-    if (digits.length >= 3) return `${digits.slice(0, 2)} / ${digits.slice(2)}`;
-    return digits;
-  };
-
-  const getPaymentMethodLabel = () => {
-    if (method === 'card') return 'Visa';
-    if (method === 'upi') return 'UPI';
-    return 'Net Banking';
-  };
-
-  const getLast4 = () => {
-    const digits = cardNumber.replace(/\s/g, '');
-    return digits.length >= 4 ? digits.slice(-4) : '0000';
-  };
 
   const getFormattedDateTime = () => {
     const now = new Date();
-    return now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    return (
+      now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
       ' - ' +
-      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    );
+  };
+
+  const createInternalOrder = async () => {
+    const orderPayload = {
+      doctorId: orderCreateData.doctorId,
+      pharmacyId: orderCreateData.pharmacyId,
+      ...(orderCreateData.warehouseId !== undefined && { warehouseId: orderCreateData.warehouseId }),
+      shippingAddress: orderCreateData.shippingAddress,
+      notes: orderCreateData.notes,
+      reasonTag: orderCreateData.reasonTag,
+      status: 'Draft',
+      subtotal: subtotal.toFixed(2),
+      discount: '0',
+      tax: tax.toFixed(2),
+      total: total.toFixed(2),
+      orderNumber,
+    };
+    console.log('🚀 ~ createInternalOrder ~ orderPayload:', orderPayload)
+
+    const orderRes = await apiClient.post(ENDPOINTS.orders.create, orderPayload);
+    const createdOrderId: number = orderRes.data?.id;
+    const apiOrderNumber: string = orderRes.data?.orderNumber ?? orderNumber;
+
+    if (createdOrderId && orderCreateData.items?.length > 0) {
+      const itemPromises = orderCreateData.items.map((item: any) =>
+        apiClient.post(ENDPOINTS.orders.addItems(createdOrderId), {
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount,
+          tax: item.tax,
+          total: item.total,
+        })
+      );
+      await Promise.all(itemPromises);
+    }
+
+    return { createdOrderId, apiOrderNumber };
   };
 
   const handleProceed = async () => {
+    if (loading) return;
     setLoading(true);
-    try {
-      // Step 1: Create the order (without items)
-      const orderPayload = {
-        doctorId: orderCreateData.doctorId,
-        pharmacyId: orderCreateData.pharmacyId,
-        warehouseId: orderCreateData.warehouseId,
-        shippingAddress: orderCreateData.shippingAddress,
-        notes: orderCreateData.notes,
-        reasonTag: orderCreateData.reasonTag,
-        status: 'Draft',
-        subtotal: subtotal.toFixed(2),
-        discount: '0',
-        tax: tax.toFixed(2),
-        total: total.toFixed(2),
-        orderNumber: orderNumber,
-      };
-      
-      const orderRes = await apiClient.post(ENDPOINTS.orders.create, orderPayload);
-      console.log('🚀 ~ handleProceed ~ orderRes:', orderRes);
-      
-      const createdOrderId = orderRes.data?.id;
-      const apiOrderNumber: string = orderRes.data?.orderNumber ?? orderNumber;
 
-      // Step 2: Add items to the order
-      if (createdOrderId && orderCreateData.items && orderCreateData.items.length > 0) {
-        try {
-          const itemPromises = orderCreateData.items.map((item: any) =>
-            apiClient.post(ENDPOINTS.orders.addItems(createdOrderId), {
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discount: item.discount,
-              tax: item.tax,
-              total: item.total,
-            })
-          );
-          
-          await Promise.all(itemPromises);
-          console.log('🚀 ~ handleProceed ~ Items added successfully');
-        } catch (itemError) {
-          console.log('🚀 ~ handleProceed ~ itemError:', itemError);
-          // Items failed but order was created, still proceed but show warning
-          Alert.alert(
-            'Partial Success',
-            'Order was created but some items failed to add. Please try again or contact support.',
-            [
-              {
-                text: 'Continue',
-                onPress: () => navigateToSuccess(createdOrderId, apiOrderNumber),
-              },
-            ]
-          );
-          return;
-        }
+    try {
+      // Step 1: Create internal order + items
+      const { createdOrderId, apiOrderNumber } = await createInternalOrder();
+
+      // Step 2: Create Razorpay order on backend
+      const razorpayOrderRes = await apiClient.post(ENDPOINTS.payments.createOrder, {
+        amount: Math.round(total * 100), // paise
+        currency: 'INR',
+        orderId: createdOrderId,
+      });
+
+      const { razorpayOrderId, amount } = razorpayOrderRes.data;
+
+      // Step 3: Open Razorpay Checkout
+      const options = {
+        description: 'Order Payment',
+        currency: 'INR',
+        key: Config.RAZORPAY_KEY_ID ?? '',
+        amount: String(amount),
+        order_id: razorpayOrderId,
+        name: 'Monoskin',
+        prefill: {
+          contact: profile?.phone ?? '',
+          email: profile?.email ?? '',
+          name: profile?.name ?? '',
+        },
+        theme: { color: '#2E50B2' },
+      };
+      console.log('🚀 ~ handleProceed ~ options:', options)
+
+      let paymentData: any;
+      try {
+        paymentData = await RazorpayCheckout.open(options);
+      } catch (razorpayError: any) {
+        console.log('🚀 ~ handleProceed ~ razorpayError:', razorpayError)
+        // Step 5: Payment failed / dismissed
+        const reason =
+          razorpayError?.description ?? razorpayError?.error?.description ?? 'Payment was not completed.';
+        Alert.alert('Payment Failed', reason, [{ text: 'Try Again' }]);
+        return;
       }
 
-      navigateToSuccess(createdOrderId, apiOrderNumber);
-    } catch (err) {
-      console.log('🚀 ~ handleProceed ~ err:', err);
-      Alert.alert('Order Failed', 'Could not place your order. Please try again.');
+      // Step 4: Verify payment with backend
+      await apiClient.post(ENDPOINTS.payments.verify, {
+        razorpay_payment_id: paymentData.razorpay_payment_id,
+        razorpay_order_id: paymentData.razorpay_order_id,
+        razorpay_signature: paymentData.razorpay_signature,
+        orderId: createdOrderId,
+      });
+
+      // Navigate to success only after backend verification
+      navigation.navigate('PaymentSuccess', {
+        orderId: createdOrderId,
+        orderNumber: apiOrderNumber,
+        totalAmount: total,
+        paymentMethod: method === 'upi' ? 'UPI' : 'Net Banking',
+        last4: '0000',
+        dateTime: getFormattedDateTime(),
+      });
+    } catch (err: any) {
+      console.log('Payment flow error:', err);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const navigateToSuccess = (createdOrderId: number, apiOrderNumber: string) => {
-    navigation.navigate('PaymentSuccess', {
-      orderId: createdOrderId,
-      orderNumber: apiOrderNumber,
-      totalAmount: total,
-      paymentMethod: getPaymentMethodLabel(),
-      last4: getLast4(),
-      dateTime: getFormattedDateTime(),
-    });
+  const handlePayViaLink = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.post(ENDPOINTS.payments.createLink, {
+        amount: Math.round(total * 100),
+        currency: 'INR',
+      });
+      const paymentLink: string = res.data?.paymentLink;
+      if (paymentLink) {
+        await Linking.openURL(paymentLink);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Could not generate payment link. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -192,68 +224,6 @@ const PaymentScreen = () => {
         {/* Payment Method */}
         <Text style={[styles.sectionLabel, { marginTop: 20 }]}>SELECT PAYMENT METHOD</Text>
 
-        {/* Credit / Debit Card */}
-        <TouchableOpacity
-          style={[styles.methodRow, method === 'card' && styles.methodRowSelected]}
-          onPress={() => setMethod('card')}
-          activeOpacity={0.8}
-        >
-          <CardIcon />
-          <View style={styles.methodInfo}>
-            <Text style={styles.methodName}>Credit / Debit Card</Text>
-            <Text style={styles.methodSub}>Visa, Mastercard, Amex</Text>
-          </View>
-          <RadioButton selected={method === 'card'} />
-        </TouchableOpacity>
-
-        {method === 'card' && (
-          <View style={styles.cardFields}>
-            <Text style={styles.fieldLabel}>Card Number</Text>
-            <View style={styles.cardNumberBox}>
-              <TextInput
-                style={styles.cardNumberInput}
-                placeholder="0000 0000 0000 0000"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="numeric"
-                value={cardNumber}
-                onChangeText={t => setCardNumber(formatCardNumber(t))}
-                maxLength={19}
-              />
-            </View>
-            <View style={styles.cardRowTwo}>
-              <View style={styles.cardRowTwoField}>
-                <Text style={styles.fieldLabel}>Expiry (MM/YY)</Text>
-                <View style={styles.cardInputBox}>
-                  <TextInput
-                    style={styles.cardInput}
-                    placeholder="MM / YY"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="numeric"
-                    value={expiry}
-                    onChangeText={t => setExpiry(formatExpiry(t))}
-                    maxLength={7}
-                  />
-                </View>
-              </View>
-              <View style={styles.cardRowTwoField}>
-                <Text style={styles.fieldLabel}>CVV</Text>
-                <View style={styles.cardInputBox}>
-                  <TextInput
-                    style={styles.cardInput}
-                    placeholder="***"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="numeric"
-                    secureTextEntry
-                    value={cvv}
-                    onChangeText={t => setCvv(t.replace(/\D/g, '').slice(0, 4))}
-                    maxLength={4}
-                  />
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
         {/* UPI */}
         <TouchableOpacity
           style={[styles.methodRow, method === 'upi' && styles.methodRowSelected]}
@@ -282,6 +252,16 @@ const PaymentScreen = () => {
           <RadioButton selected={method === 'netbanking'} />
         </TouchableOpacity>
 
+        {/* Pay via Link */}
+        <TouchableOpacity
+          style={styles.linkBtn}
+          onPress={handlePayViaLink}
+          activeOpacity={0.8}
+          disabled={loading}
+        >
+          <Text style={styles.linkBtnText}>Pay via Link</Text>
+        </TouchableOpacity>
+
         {/* SSL */}
         <View style={styles.sslRow}>
           <View style={{ marginRight: 6 }}>
@@ -295,8 +275,15 @@ const PaymentScreen = () => {
 
       {/* Bottom */}
       <View style={styles.bottom}>
-        <TouchableOpacity style={styles.proceedBtn} onPress={handleProceed} activeOpacity={0.85}>
-          <Text style={styles.proceedBtnText}>Proceed to Pay ₹{total.toFixed(2)}  →</Text>
+        <TouchableOpacity
+          style={[styles.proceedBtn, loading && styles.proceedBtnDisabled]}
+          onPress={handleProceed}
+          activeOpacity={0.85}
+          disabled={loading}
+        >
+          <Text style={styles.proceedBtnText}>
+            {loading ? 'Processing…' : `Proceed to Pay ₹${total.toFixed(2)}  →`}
+          </Text>
         </TouchableOpacity>
         <Text style={styles.termsText}>
           By clicking "Proceed to Pay", you agree to the merchant's{' '}
@@ -338,7 +325,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // Summary card
   summaryCard: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -378,7 +364,6 @@ const styles = StyleSheet.create({
     color: COLORS.buttonBlue,
   },
 
-  // Payment method rows
   methodRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -394,13 +379,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(46,80,178,0.04)',
     borderColor: COLORS.buttonBlue,
   },
-  methodIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   methodInfo: { flex: 1 },
   methodName: {
     fontSize: FONTS.size.md,
@@ -414,7 +392,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // Radio
   radio: {
     width: 22,
     height: 22,
@@ -432,59 +409,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.buttonBlue,
   },
 
-  // Card fields
-  cardFields: {
-    marginTop: -4,
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  fieldLabel: {
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-    marginBottom: 6,
-  },
-  cardNumberBox: {
-    flexDirection: 'row',
+  linkBtn: {
+    borderWidth: 1.5,
+    borderColor: COLORS.buttonBlue,
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: 16,
   },
-  lockIcon: { fontSize: 15 },
-  cardNumberInput: {
-    flex: 1,
+  linkBtnText: {
     fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textDark,
-    padding: 0,
-    letterSpacing: 1,
-  },
-  cardRowTwo: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 4,
-  },
-  cardRowTwoField: { flex: 1 },
-  cardInputBox: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
-  },
-  cardInput: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textDark,
-    padding: 0,
+    fontFamily: FONTS.family.semibold,
+    color: COLORS.buttonBlue,
   },
 
-  // SSL
   sslRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -499,7 +437,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Bottom
   bottom: {
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -515,6 +452,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  proceedBtnDisabled: {
+    opacity: 0.6,
   },
   proceedBtnText: {
     fontSize: FONTS.size.lg,

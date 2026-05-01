@@ -82,6 +82,7 @@ export type Doctor = {
     category: Category;
     priority?: string;
     followUpToday: boolean;
+    tags: string[];
     weeklyTarget: number;
     amount: string;
     paymentStatus: PaymentStatus;
@@ -121,6 +122,7 @@ const mapApiDoctorToUI = (d: ApiDoctor): Doctor => {
         category,
         priority: d.importance ? `${d.importance} Priority` : undefined,
         followUpToday: true, // mocked — backend field not available yet
+        tags: d.tags ?? [],
         weeklyTarget: 0,     // mocked — backend field not available yet
         amount: `₹${d.totalSalesValue || '0.00'}`,
         paymentStatus,
@@ -252,6 +254,21 @@ export const fetchDoctors = createAsyncThunk<Doctor[], void>(
     },
 );
 
+export const updateDoctorTags = createAsyncThunk<
+    { id: string; tags: string[] },
+    { id: string; tags: string[] }
+>(
+    'portfolio/updateDoctorTags',
+    async ({ id, tags }, { rejectWithValue }) => {
+        try {
+            await apiClient.patch(ENDPOINTS.portfolio.doctorDetail(id), { tags });
+            return { id, tags };
+        } catch (error) {
+            return rejectWithValue(extractErrorMessage(error, 'Failed to update tags'));
+        }
+    },
+);
+
 export const fetchPharmacies = createAsyncThunk<Pharmacy[], void>(
     'portfolio/fetchPharmacies',
     async (_, { rejectWithValue }) => {
@@ -284,6 +301,14 @@ const portfolioSlice = createSlice({
             .addCase(fetchDoctors.rejected, (state, action) => {
                 state.doctorsLoading = false;
                 state.doctorsError = (action.payload as string) ?? 'Failed to fetch doctors';
+            })
+            // Update doctor tags
+            .addCase(updateDoctorTags.fulfilled, (state, action) => {
+                const { id, tags } = action.payload;
+                const doctor = state.doctors.find(d => d.id === id);
+                if (doctor) {
+                    doctor.tags = tags;
+                }
             })
             // Pharmacies
             .addCase(fetchPharmacies.pending, (state) => {

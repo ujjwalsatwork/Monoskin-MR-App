@@ -49,9 +49,9 @@ type ApiProduct = {
   mrp: string;
   gst: string;
   hsnCode: string;
-  shelfLife: number;
-  description: string;
-  isActive: boolean;
+  availableQty: number;
+  warehouseId: number;
+  warehouseName: string;
 };
 
 type Product = {
@@ -199,7 +199,7 @@ const CreateOrderScreen = () => {
   const fetchCatalogue = async () => {
     setCatalogueLoading(true);
     try {
-      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.list);
+      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.available);
       const items: CatalogueItem[] = res.data.map(p => ({
         id: String(p.id),
         name: p.name,
@@ -307,7 +307,6 @@ const CreateOrderScreen = () => {
       orderNumber,
       orderCreateData: {
         doctorId: parseInt(doctorId, 10),
-        warehouseId: 1,
         shippingAddress,
         notes,
         reasonTag: 'Doctor Request',

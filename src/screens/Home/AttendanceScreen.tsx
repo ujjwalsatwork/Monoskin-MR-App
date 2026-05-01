@@ -7,6 +7,7 @@ import {
     Alert,
     ScrollView,
     ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -15,13 +16,14 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
 import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon } from '@/assets/images';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { logAttendance, fetchTodayStatus, clearAttendanceError, AttendanceError } from '@/redux/slices/attendanceSlice';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
+import { fetchTodayRoute } from '@/redux/slices/routeSlice';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ const AttendanceScreen = () => {
     const [addressText, setAddressText] = useState('');
     const [locationError, setLocationError] = useState('');
     const [breakActive, setBreakActive] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const dispatch = useDispatch<AppDispatch>();
@@ -83,6 +86,10 @@ const AttendanceScreen = () => {
     } = useSelector((state: RootState) => state.attendance);
 
     const profileLoaded = useSelector((state: RootState) => !!state.profile.data);
+
+    const { data: routeData } = useSelector((state: RootState) => state.route.today);
+    const plannedCalls = routeData?.summary.total ?? 0;
+    const completedCalls = routeData?.summary.completed ?? 0;
 
     const isActionLoading = checkInLoading || checkOutLoading;
 
@@ -116,10 +123,29 @@ const AttendanceScreen = () => {
         );
     }, []);
 
+    const refetchAll = useCallback(async () => {
+        await Promise.all([
+            dispatch(fetchTodayStatus()),
+            dispatch(fetchTodayRoute()),
+        ]);
+    }, [dispatch]);
+
     // Fetch today's attendance state
     useEffect(() => {
-        dispatch(fetchTodayStatus());
-    }, [dispatch]);
+        refetchAll();
+    }, [refetchAll]);
+
+    useFocusEffect(
+        useCallback(() => {
+            refetchAll();
+        }, [refetchAll]),
+    );
+
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await refetchAll();
+        setRefreshing(false);
+    }, [refetchAll]);
 
     // Coordinates string for display; address text used in the API payload
     const coordsString = location
@@ -195,6 +221,9 @@ const AttendanceScreen = () => {
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[COLORS.buttonBlue]} tintColor={COLORS.buttonBlue} />
+                }
             >
                 {/* Time & Clock */}
                 <View style={styles.timeContainer}>
@@ -348,7 +377,7 @@ const AttendanceScreen = () => {
                         <VisitsIcon />
                         <Text style={styles.visitsButtonText}>Show Today's Visit</Text>
                     </TouchableOpacity>
-                    <Text style={styles.visitsSubText}>12 visits planned today</Text>
+                    <Text style={styles.visitsSubText}>{plannedCalls} visits planned today</Text>
                 </View>
 
                 {/* Quick Stats */}
@@ -357,11 +386,11 @@ const AttendanceScreen = () => {
                     <View style={styles.statsRow}>
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>PLANNED CALLS</Text>
-                            <Text style={styles.statValue}>12</Text>
+                            <Text style={styles.statValue}>{plannedCalls}</Text>
                         </View>
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>COMPLETED</Text>
-                            <Text style={styles.statValue}>0</Text>
+                            <Text style={styles.statValue}>{completedCalls}</Text>
                         </View>
                     </View>
                 </View>

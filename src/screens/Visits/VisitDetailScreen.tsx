@@ -33,7 +33,9 @@ import {
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch } from '@/redux/store';
+import { setRouteNeedsRefresh } from '@/redux/slices/routeSlice';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -67,6 +69,20 @@ type DoctorDetails = {
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
 };
 
+type PharmacyDetails = {
+  id: string;
+  name: string;
+  type: string;
+  address: string;
+  phone?: string;
+  lastVisit?: string;
+  avgTime?: string;
+  preferredProducts?: Array<{ id: string; name: string }>;
+  unpreferredProducts?: Array<{ id: string; name: string }>;
+  interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+  orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
+};
+
 type CatalogueItem = {
   id: string;
   name: string;
@@ -87,17 +103,32 @@ type SampleProduct = {
 
 type Attachment = { uri: string; type: string; name: string };
 
+const formatDateTime = (raw: string): string => {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) { return raw; }
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${dd}-${mm}-${yyyy}, ${hours}:${minutes} ${ampm}`;
+};
+
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
 const VisitDetailScreen = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
-  const { doctorId } = route.params;
+  const dispatch = useDispatch<AppDispatch>();
+  const { doctorId, pharmacyId, routeStopId } = route.params;
   const profile = useSelector((state: any) => state.profile.data);
   const authUser = useSelector((state: any) => state.auth.user);
   const mrId = profile?.id ?? authUser?.id;
 
   const [doctorData, setDoctorData] = useState<DoctorDetails | null>(null);
+  const [pharmacyData, setPharmacyData] = useState<PharmacyDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -108,6 +139,9 @@ const VisitDetailScreen = () => {
   const [addSampleVisible, setAddSampleVisible] = useState(false);
 
   const [visitNote, setVisitNote] = useState('');
+  const [clinicConsultationTime, setClinicConsultationTime] = useState('');
+  const [mrInteractionTime, setMrInteractionTime] = useState('');
+  const [doctorArrivalTime, setDoctorArrivalTime] = useState('');
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [visitType, setVisitType] = useState('Lead Visit');
@@ -130,6 +164,8 @@ const VisitDetailScreen = () => {
   useEffect(() => {
     if (doctorId) {
       fetchDoctorDetails();
+    } else if (pharmacyId) {
+      fetchPharmacyDetails();
     } else {
       setLoading(false);
     }
@@ -152,7 +188,7 @@ const VisitDetailScreen = () => {
       { enableHighAccuracy: false, timeout: 10000 },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doctorId]);
+  }, [doctorId, pharmacyId]);
 
   const fetchDoctorDetails = async () => {
     try {
@@ -163,6 +199,20 @@ const VisitDetailScreen = () => {
     } catch(fetchErr) {
       console.log('🚀 ~ fetchDoctorDetails ~ error:', fetchErr);
       setError('Failed to load doctor details. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPharmacyDetails = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.get(ENDPOINTS.portfolio.pharmacyDetail(pharmacyId!));
+      setPharmacyData(res.data);
+    } catch(fetchErr) {
+      console.log('🚀 ~ fetchPharmacyDetails ~ error:', fetchErr);
+      setError('Failed to load pharmacy details. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -272,9 +322,14 @@ const VisitDetailScreen = () => {
     const payload: Record<string, any> = {
       mrId,
       doctorId: doctorId ? Number(doctorId) : undefined,
+      pharmacyId: pharmacyId ? Number(pharmacyId) : undefined,
+      routeStopId: routeStopId ?? undefined,
       visitType,
       outcome,
       notes: visitNote,
+      clinicConsultationTime: clinicConsultationTime || undefined,
+      mrInteractionTime: mrInteractionTime || undefined,
+      doctorArrivalTime: doctorArrivalTime || undefined,
       objections,
       sampleProducts: sampleProducts.map(s => ({ productId: Number(s.productId), quantity: s.quantity })),
       attachments,
@@ -293,6 +348,7 @@ const VisitDetailScreen = () => {
       setSubmitting(true);
       console.log('🚀 ~ handleSubmit ~ payload:', payload)
       await apiClient.post(ENDPOINTS.mrVisits.create, payload);
+      dispatch(setRouteNeedsRefresh(true));
       Alert.alert('Success', 'Visit report submitted successfully.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -350,7 +406,10 @@ const VisitDetailScreen = () => {
         <Header title="Visit Details" showBack showNotification showProfile />
         <View style={styles.centerState}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchDoctorDetails}>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={pharmacyId ? fetchPharmacyDetails : fetchDoctorDetails}
+          >
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -358,11 +417,12 @@ const VisitDetailScreen = () => {
     );
   }
 
-  const initials = doctorData?.name
+  const entityName = doctorData?.name ?? pharmacyData?.name;
+  const initials = entityName
     ?.split(' ')
     .map(w => w[0])
     .slice(0, 2)
-    .join('') ?? 'DR';
+    .join('') ?? (pharmacyId ? 'PH' : 'DR');
 
   return (
     <View style={styles.safeArea}>
@@ -370,7 +430,7 @@ const VisitDetailScreen = () => {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        {/* Doctor Profile Card */}
+        {/* Profile Card */}
         <View style={styles.doctorCard}>
           <View style={styles.doctorAvatarWrapper}>
             <View style={styles.doctorAvatar}>
@@ -379,11 +439,15 @@ const VisitDetailScreen = () => {
             <View style={styles.onlineDot} />
           </View>
           <View style={styles.doctorInfo}>
-            <Text style={styles.doctorName}>{doctorData?.name ?? '—'}</Text>
-            <Text style={styles.doctorSpecialty}>{doctorData?.specialization ?? '—'}</Text>
+            <Text style={styles.doctorName}>{entityName ?? '—'}</Text>
+            <Text style={styles.doctorSpecialty}>
+              {doctorData?.specialization ?? pharmacyData?.type ?? '—'}
+            </Text>
             <View style={styles.doctorLocationRow}>
               <LocationPinIcon width={13} height={13} />
-              <Text style={styles.doctorHospital}>  {doctorData?.clinic ?? doctorData?.address ?? '—'}</Text>
+              <Text style={styles.doctorHospital}>
+                {'  '}{doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? '—'}
+              </Text>
             </View>
             {(doctorData?.tier || doctorData?.importance) && (
               <View style={styles.tagRow}>
@@ -403,9 +467,10 @@ const VisitDetailScreen = () => {
           <View style={styles.doctorActions}>
             <TouchableOpacity
               style={styles.contactBtn}
-              onPress={() => doctorData?.phone
-                ? Alert.alert('Call', `Calling ${doctorData.phone}`)
-                : undefined}
+              onPress={() => {
+                const phone = doctorData?.phone ?? pharmacyData?.phone;
+                if (phone) { Alert.alert('Call', `Calling ${phone}`); }
+              }}
             >
               <PhoneIconOutline width={18} height={18} />
             </TouchableOpacity>
@@ -422,12 +487,16 @@ const VisitDetailScreen = () => {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>LAST VISIT</Text>
-            <Text style={styles.statValue}>{doctorData?.lastVisit ?? '—'}</Text>
+            <Text style={styles.statValue}>
+              {doctorData?.lastVisit ?? pharmacyData?.lastVisit ?? '—'}
+            </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>AVG TIME</Text>
-            <Text style={styles.statValue}>{doctorData?.avgTime ?? '—'}</Text>
+            <Text style={styles.statValue}>
+              {doctorData?.avgTime ?? pharmacyData?.avgTime ?? '—'}
+            </Text>
           </View>
         </View>
 
@@ -471,9 +540,9 @@ const VisitDetailScreen = () => {
           placeholderTextColor={COLORS.textMuted}
           keyboardType="numeric"
         />
-        {location && (
+        {/* {location && (
           <Text style={styles.gpsIndicator}>Location captured</Text>
-        )}
+        )} */}
 
         {/* Sample Products */}
         <CollapsibleSection
@@ -581,6 +650,33 @@ const VisitDetailScreen = () => {
           </TouchableOpacity>
         </View>
 
+        <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
+        <TextInput
+          style={styles.timeFieldInput}
+          value={clinicConsultationTime}
+          onChangeText={setClinicConsultationTime}
+          placeholder="e.g. 10:30 AM"
+          placeholderTextColor={COLORS.textMuted}
+        />
+
+        <Text style={styles.timeFieldLabel}>MR Interaction Time</Text>
+        <TextInput
+          style={styles.timeFieldInput}
+          value={mrInteractionTime}
+          onChangeText={setMrInteractionTime}
+          placeholder="e.g. 10:45 AM"
+          placeholderTextColor={COLORS.textMuted}
+        />
+
+        <Text style={styles.timeFieldLabel}>Doctor Arrival Time</Text>
+        <TextInput
+          style={styles.timeFieldInput}
+          value={doctorArrivalTime}
+          onChangeText={setDoctorArrivalTime}
+          placeholder="e.g. 11:00 AM"
+          placeholderTextColor={COLORS.textMuted}
+        />
+
         {/* Objection Handling */}
         <SectionLabel title="OBJECTION HANDLING" />
         <View style={styles.chipsRow}>
@@ -624,23 +720,26 @@ const VisitDetailScreen = () => {
           expanded={prefExpanded}
           onToggle={() => setPrefExpanded(p => !p)}
         >
-          {doctorData?.preferredProducts && doctorData.preferredProducts.length > 0 ? (
-            doctorData.preferredProducts.map((prod, i) => (
-              <View
-                key={prod.id}
-                style={[styles.productRow, i < doctorData.preferredProducts!.length - 1 && styles.productRowBorder]}
-              >
-                <View style={styles.productIconRow}>
-                  <PillIcon width={16} height={16} />
-                  <Text style={styles.productName}>  {prod.name}</Text>
+          {(() => {
+            const prods = doctorData?.preferredProducts ?? pharmacyData?.preferredProducts;
+            return prods && prods.length > 0 ? (
+              prods.map((prod, i) => (
+                <View
+                  key={prod.id}
+                  style={[styles.productRow, i < prods.length - 1 && styles.productRowBorder]}
+                >
+                  <View style={styles.productIconRow}>
+                    <PillIcon width={16} height={16} />
+                    <Text style={styles.productName}>  {prod.name}</Text>
+                  </View>
                 </View>
+              ))
+            ) : (
+              <View style={styles.emptyRow}>
+                <Text style={styles.emptyText}>No preferred products on record.</Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyRow}>
-              <Text style={styles.emptyText}>No preferred products on record.</Text>
-            </View>
-          )}
+            );
+          })()}
         </CollapsibleSection>
 
         {/* Unpreferred Products */}
@@ -649,54 +748,58 @@ const VisitDetailScreen = () => {
           expanded={unprefExpanded}
           onToggle={() => setUnprefExpanded(p => !p)}
         >
-          {doctorData?.unpreferredProducts && doctorData.unpreferredProducts.length > 0 ? (
-            doctorData.unpreferredProducts.map((prod, i) => (
-              <View
-                key={prod.id}
-                style={[styles.productRow, i < doctorData.unpreferredProducts!.length - 1 && styles.productRowBorder]}
-              >
-                <View style={styles.productIconRow}>
-                  <PillIcon width={16} height={16} />
-                  <Text style={styles.productName}>  {prod.name}</Text>
+          {(() => {
+            const prods = doctorData?.unpreferredProducts ?? pharmacyData?.unpreferredProducts;
+            return prods && prods.length > 0 ? (
+              prods.map((prod, i) => (
+                <View
+                  key={prod.id}
+                  style={[styles.productRow, i < prods.length - 1 && styles.productRowBorder]}
+                >
+                  <View style={styles.productIconRow}>
+                    <PillIcon width={16} height={16} />
+                    <Text style={styles.productName}>  {prod.name}</Text>
+                  </View>
                 </View>
+              ))
+            ) : (
+              <View style={styles.emptyRow}>
+                <Text style={styles.emptyText}>No unpreferred products on record.</Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyRow}>
-              <Text style={styles.emptyText}>No unpreferred products on record.</Text>
-            </View>
-          )}
+            );
+          })()}
         </CollapsibleSection>
 
         {/* Interaction History */}
-        {doctorData?.interactionHistory && doctorData.interactionHistory.length > 0 && (
-          <>
-            <SectionLabel title="INTERACTION HISTORY" />
-            <View style={styles.timelineContainer}>
-              {doctorData.interactionHistory.map((item, i) => (
-                <View key={i} style={styles.timelineRow}>
-                  <View style={styles.timelineDotWrapper}>
-                    <View style={styles.timelineDot} />
-                    {i < doctorData.interactionHistory!.length - 1 && (
-                      <View style={styles.timelineLine} />
-                    )}
+        {(() => {
+          const history = doctorData?.interactionHistory ?? pharmacyData?.interactionHistory;
+          return history && history.length > 0 ? (
+            <>
+              <SectionLabel title="INTERACTION HISTORY" />
+              <View style={styles.timelineContainer}>
+                {history.map((item, i) => (
+                  <View key={i} style={styles.timelineRow}>
+                    <View style={styles.timelineDotWrapper}>
+                      <View style={styles.timelineDot} />
+                      {i < history.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+                    <View style={styles.timelineContent}>
+                      <Text style={styles.timelineDate}>{formatDateTime(item.date)}</Text>
+                      {(item.type || item.outcome) && (
+                        <Text style={styles.timelineSubText}>
+                          {[item.type, item.outcome].filter(Boolean).join(' · ')}
+                        </Text>
+                      )}
+                      {item.notes ? (
+                        <Text style={styles.timelineNotes} numberOfLines={2}>{item.notes}</Text>
+                      ) : null}
+                    </View>
                   </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineDate}>{item.date}</Text>
-                    {(item.type || item.outcome) && (
-                      <Text style={styles.timelineSubText}>
-                        {[item.type, item.outcome].filter(Boolean).join(' · ')}
-                      </Text>
-                    )}
-                    {item.notes ? (
-                      <Text style={styles.timelineNotes} numberOfLines={2}>{item.notes}</Text>
-                    ) : null}
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
+                ))}
+              </View>
+            </>
+          ) : null;
+        })()}
 
         {/* Follow-up Plan – only when outcome is Follow-up Required */}
         {outcome === 'Follow-up Required' && (
@@ -740,7 +843,7 @@ const VisitDetailScreen = () => {
         )}
 
         {/* Order History */}
-        {doctorData?.orderHistory && (
+        {(doctorData?.orderHistory ?? pharmacyData?.orderHistory) && (
           <CollapsibleSection
             title="Order History"
             expanded={orderExpanded}
@@ -748,10 +851,10 @@ const VisitDetailScreen = () => {
           >
             <View style={styles.orderCard}>
               {[
-                { label: 'Product Name:', value: doctorData.orderHistory.productName },
-                { label: 'Quantity:', value: doctorData.orderHistory.quantity },
-                { label: 'Last Date:', value: doctorData.orderHistory.lastDate },
-                { label: 'Product Price:', value: doctorData.orderHistory.price },
+                { label: 'Product Name:', value: (doctorData?.orderHistory ?? pharmacyData?.orderHistory)!.productName },
+                { label: 'Quantity:', value: (doctorData?.orderHistory ?? pharmacyData?.orderHistory)!.quantity },
+                { label: 'Last Date:', value: (doctorData?.orderHistory ?? pharmacyData?.orderHistory)!.lastDate },
+                { label: 'Product Price:', value: (doctorData?.orderHistory ?? pharmacyData?.orderHistory)!.price },
               ].map(({ label, value }, i) => (
                 <View key={i} style={styles.orderRow}>
                   <Text style={styles.orderLabel}>{label}</Text>
@@ -972,6 +1075,15 @@ const styles = StyleSheet.create({
     color: COLORS.textDark, padding: 0, maxHeight: 100,
   },
   micButton: { padding: 4, marginLeft: 8 },
+
+  // Time fields in Visit Notes
+  timeFieldLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary, marginBottom: 6, marginTop: 2 },
+  timeFieldInput: {
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark,
+    marginBottom: 14,
+  },
 
   // Documentation
   attachmentsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },

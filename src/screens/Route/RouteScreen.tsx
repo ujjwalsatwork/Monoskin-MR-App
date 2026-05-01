@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
+  RefreshControl,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
@@ -29,9 +29,9 @@ import {
   fetchRoute,
   setSelectedDate,
   clearRouteError,
+  setRouteNeedsRefresh,
   RouteStop,
 } from '@/redux/slices/routeSlice';
-import { startVisit, clearVisitError } from '@/redux/slices/visitSlice';
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
@@ -66,14 +66,11 @@ const RouteScreen = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const [selectedDate, setLocalSelectedDate] = useState<Date>(new Date());
+  const [refreshing, setRefreshing] = useState(false);
 
-  const { data: routeData, loading, error } = useSelector(
+  const { data: routeData, loading, error, needsRefresh } = useSelector(
     (state: RootState) => state.route,
   );
-  const { creating, error: visitError } = useSelector(
-    (state: RootState) => state.visits,
-  );
-
   const weekDays = getWeekDays();
 
   const loadRoute = useCallback(
@@ -83,16 +80,24 @@ const RouteScreen = () => {
     [dispatch],
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await dispatch(fetchRoute({ date: formatDateForApi(selectedDate) }));
+    setRefreshing(false);
+  }, [dispatch, selectedDate]);
+
   useEffect(() => {
     loadRoute(selectedDate);
   }, [selectedDate, loadRoute]);
 
   useEffect(() => {
-    if (visitError) {
-      Alert.alert('Visit Error', visitError);
-      dispatch(clearVisitError());
-    }
-  }, [visitError, dispatch]);
+    return navigation.addListener('focus', () => {
+      if (needsRefresh) {
+        loadRoute(selectedDate);
+        dispatch(setRouteNeedsRefresh(false));
+      }
+    });
+  }, [navigation, needsRefresh, selectedDate, loadRoute, dispatch]);
 
   const handleDateSelect = (date: Date) => {
     setLocalSelectedDate(date);
@@ -100,23 +105,12 @@ const RouteScreen = () => {
     dispatch(clearRouteError());
   };
 
-  const handleStartVisit = async (stop: RouteStop) => {
-    if (creating) return;
-    const result = await dispatch(startVisit({
+  const handleStartVisit = (stop: RouteStop) => {
+    navigation.navigate('VisitDetail', {
+      doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
+      pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
       routeStopId: stop.id,
-      doctorId: stop.doctorId,
-      pharmacyId: stop.pharmacyId,
-    }));
-    if (startVisit.fulfilled.match(result)) {
-      const visitRecord = result.payload;
-      navigation.navigate('VisitDetail', {
-        doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
-        pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
-        routeStopId: stop.id,
-        visitId: String(visitRecord.id),
-      });
-      loadRoute(selectedDate);
-    }
+    });
   };
 
   const handleViewMap = () => {
@@ -165,6 +159,9 @@ const RouteScreen = () => {
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* Date Selector */}
         <ScrollView
@@ -355,23 +352,13 @@ const RouteScreen = () => {
                             stop.isActionAllowed &&
                             !routeData.readOnly && (
                               <TouchableOpacity
-                                style={[
-                                  styles.startVisitButton,
-                                  creating && styles.startVisitButtonDisabled,
-                                ]}
+                                style={styles.startVisitButton}
                                 onPress={() => handleStartVisit(stop)}
-                                disabled={creating}
                               >
-                                {creating ? (
-                                  <ActivityIndicator color="#FFFFFF" size="small" />
-                                ) : (
-                                  <>
-                                    <PlayIcon />
-                                    <Text style={styles.startVisitButtonText}>
-                                      Start Visit
-                                    </Text>
-                                  </>
-                                )}
+                                <PlayIcon />
+                                <Text style={styles.startVisitButtonText}>
+                                  Start Visit
+                                </Text>
                               </TouchableOpacity>
                             )}
                         </View>

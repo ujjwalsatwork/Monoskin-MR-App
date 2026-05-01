@@ -10,7 +10,7 @@ export type OrderItemPayload = {
 export type OrderCreateData = {
     doctorId?: number;
     pharmacyId?: number;
-    warehouseId: number;
+    warehouseId?: number;
     shippingAddress: string;
     notes: string;
     reasonTag: string;

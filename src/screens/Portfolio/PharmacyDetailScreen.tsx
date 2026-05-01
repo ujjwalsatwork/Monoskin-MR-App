@@ -592,9 +592,9 @@ const PharmacyDetailScreen = () => {
           placeholderTextColor={COLORS.textMuted}
           keyboardType="numeric"
         />
-        {location && (
+        {/* {location && (
           <Text style={styles.gpsIndicator}>Location captured</Text>
-        )}
+        )} */}
 
         {/* Sample Products */}
         <CollapsibleSection

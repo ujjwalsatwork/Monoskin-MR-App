@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
+import Config from 'react-native-config';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -59,6 +61,7 @@ const ProfileScreen = () => {
       ? Math.round((profile.conversions / profile.leadsAssigned) * 100)
       : 0;
 
+  console.log('🚀 ~ ProfileScreen ~ ${Config.BASE_URL}/${profile.profilePhoto}:', `${Config.BASE_URL}${profile.profilePhoto}`)
   return (
     <View style={styles.container}>
       <Header title="My Profile" showBack showNotification />
@@ -80,7 +83,14 @@ const ProfileScreen = () => {
           <View style={styles.avatarSection}>
             <View style={styles.avatarWrapper}>
               <View style={styles.avatarCircle}>
-                <ProfileIcon width={100} height={100} />
+                {profile?.profilePhoto ? (
+                  <Image
+                    source={{ uri: `${Config.BASE_URL}${profile.profilePhoto}` }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <ProfileIcon width={100} height={100} />
+                )}
               </View>
               <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
                 <Camera width={16} height={16} />
@@ -245,6 +255,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 60,
   },
   cameraBtn: {
     position: 'absolute',

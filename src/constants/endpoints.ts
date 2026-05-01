@@ -18,6 +18,7 @@ export const ENDPOINTS = {
     },
     products: {
         list: '/products',
+        available: '/products/available',
         detail: (id: number) => `/products/${id}`,
     },
     orders: {
@@ -34,6 +35,11 @@ export const ENDPOINTS = {
     },
     mrRoutes: {
         list: '/mr-routes',
+    },
+    payments: {
+        createOrder: '/payments/create-order',
+        verify: '/payments/verify',
+        createLink: '/payments/create-link',
     },
     // user: {
     //     profile: '/user/profile',

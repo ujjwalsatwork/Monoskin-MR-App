@@ -17,6 +17,7 @@ import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { ProfileIcon, Camera } from '@/assets/images';
+import Config from 'react-native-config';
 import { updateMyProfile, clearUpdateError } from '@/redux/slices/profileSlice';
 import { RootState } from '@/redux/rootReducer';
 import { AppDispatch } from '@/redux/store';
@@ -104,7 +105,14 @@ const EditProfileScreen = () => {
           <TouchableOpacity onPress={handlePickImage} activeOpacity={0.8}>
             <View style={styles.avatarCircle}>
               {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.avatarImage} />
+                <Image
+                  source={{
+                    uri: photoUri.startsWith('/')
+                      ? `${Config.BASE_URL}${photoUri}`
+                      : photoUri,
+                  }}
+                  style={styles.avatarImage}
+                />
               ) : (
                 <ProfileIcon width={100} height={100} />
               )}

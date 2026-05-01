@@ -16,6 +16,7 @@ import { fetchDoctors, fetchPharmacies, Doctor, Pharmacy } from '@/redux/slices/
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
+import TagModal from '@/components/common/TagModal';
 import {
   SearchIcon,
   PlayIcon,
@@ -48,14 +49,18 @@ const DoctorCard = ({
   onStartVisit,
   onCreateOrder,
   onViewDetail,
+  onTagPress,
 }: {
   item: Doctor;
   onStartVisit: () => void;
   onCreateOrder: () => void;
   onViewDetail: () => void;
+  onTagPress: () => void;
 }) => {
   const catConfig = CATEGORY_CONFIG[item.category];
   const progressPercent = item.achievement.done / item.achievement.total;
+  const hasTags = item.tags && item.tags.length > 0;
+  console.log('🚀 ~ DoctorCard ~ item.tags:', item.tags)
 
   return (
     <View style={styles.card}>
@@ -80,12 +85,24 @@ const DoctorCard = ({
 
       {/* Follow-up + Tag row */}
       <View style={styles.tagRow}>
-        {item.followUpToday && (
-          <View style={styles.followUpPill}>
-            <Text style={styles.followUpText}>FOLLOW UP TODAY</Text>
-          </View>
-        )}
-        <TouchableOpacity style={styles.addTagButton}>
+        <View style={styles.tagLeft}>
+          {/* {item.followUpToday && (
+            <View style={styles.followUpPill}>
+              <Text style={styles.followUpText}>FOLLOW UP TODAY</Text>
+            </View>
+          )} */}
+          {hasTags && item.tags.map(tag => (
+            <TouchableOpacity
+              key={tag}
+              style={styles.tagPill}
+              onPress={onTagPress}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.tagPillText}>{tag}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity style={styles.addTagButton} onPress={onTagPress} activeOpacity={0.7}>
           <Text style={styles.addTagText}>+ TAG</Text>
         </TouchableOpacity>
       </View>
@@ -288,6 +305,7 @@ const PortfolioScreen = () => {
   const [activeTab, setActiveTab] = useState<Tab>('Doctors');
   const [searchText, setSearchText] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [tagModalDoctor, setTagModalDoctor] = useState<Doctor | null>(null);
 
   const { doctors, doctorsLoading, pharmacies, pharmaciesLoading } = useSelector(
     (state: RootState) => state.portfolio,
@@ -328,30 +346,17 @@ const PortfolioScreen = () => {
   const renderDoctor = ({ item }: { item: Doctor }) => (
     <DoctorCard
       item={item}
-      onStartVisit={() => navigation.navigate('RouteMapScreen', {
-        routeData: {
-          origin: { lat: 22.7196, lng: 75.8577 },
-          stops: [
-            { id: 1, name: item.name, lat: 22.7250, lng: 75.8650, status: 'target', distanceStr: '1.2 km', timeStr: '5 min', address: `${item.specialty} • ${item.hospital}`, phone: '+91 98765 43210' },
-          ],
-        },
-      })}
+      onStartVisit={() => navigation.navigate('VisitDetail', { doctorId: String(item.id) })}
       onCreateOrder={() => navigation.navigate('CreateOrder', { doctorId: item.id })}
       onViewDetail={() => navigation.navigate('VisitDetail', { visitId: item.id, doctorId: item.id })}
+      onTagPress={() => setTagModalDoctor(item)}
     />
   );
 
   const renderPharmacy = ({ item }: { item: Pharmacy }) => (
     <PharmacyCard
       item={item}
-      onStartVisit={() => navigation.navigate('RouteMapScreen', {
-        routeData: {
-          origin: { lat: 22.7196, lng: 75.8577 },
-          stops: [
-            { id: 1, name: item.name, lat: 22.7260, lng: 75.8660, status: 'target', distanceStr: '0.8 km', timeStr: '3 min', address: item.location, phone: '+91 98765 43210' },
-          ],
-        },
-      })}
+      onStartVisit={() => navigation.navigate('VisitDetail', { pharmacyId: String(item.id) })}
       onCreateOrder={() => navigation.navigate('PharmacyOrder', { pharmacyId: item.id, pharmacyName: item.name })}
       onViewDetail={() => navigation.navigate('PharmacyDetail', { pharmacyId: item.id, pharmacyName: item.name })}
     />
@@ -360,6 +365,15 @@ const PortfolioScreen = () => {
   return (
     <View style={styles.safeArea}>
       <Header title="My Portfolio" showBack showNotification showProfile />
+
+      {tagModalDoctor && (
+        <TagModal
+          visible={!!tagModalDoctor}
+          doctorId={tagModalDoctor.id}
+          initialTags={tagModalDoctor.tags}
+          onClose={() => setTagModalDoctor(null)}
+        />
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -616,6 +630,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  tagLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    flex: 1,
+    gap: 6,
+    marginRight: 8,
+  },
+  tagPill: {
+    backgroundColor: '#E8F0FF',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  tagPillText: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.semibold,
+    color: COLORS.buttonBlue,
+    letterSpacing: 0.2,
   },
   followUpPill: {
     backgroundColor: '#F0F0F0',

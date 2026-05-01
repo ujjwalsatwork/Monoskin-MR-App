@@ -83,6 +83,7 @@ interface RouteState {
     data: RouteData | null;
     loading: boolean;
     error: string | null;
+    needsRefresh: boolean;
     today: TodaySubState;
 }
 
@@ -275,6 +276,7 @@ const initialState: RouteState = {
     data: null,
     loading: false,
     error: null,
+    needsRefresh: false,
     today: {
         data: null,
         loading: false,
@@ -293,6 +295,9 @@ const routeSlice = createSlice({
         },
         clearRouteError: (state) => {
             state.error = null;
+        },
+        setRouteNeedsRefresh: (state, action: PayloadAction<boolean>) => {
+            state.needsRefresh = action.payload;
         },
     },
     extraReducers: (builder) => {
@@ -325,5 +330,5 @@ const routeSlice = createSlice({
     },
 });
 
-export const { setSelectedDate, clearRouteError } = routeSlice.actions;
+export const { setSelectedDate, clearRouteError, setRouteNeedsRefresh } = routeSlice.actions;
 export default routeSlice.reducer;
