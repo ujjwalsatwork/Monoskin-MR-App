@@ -141,6 +141,12 @@ const AddLeadScreen = () => {
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(prev => ({ ...prev, [key]: val }));
 
+  const setPhoneNumber = (key: 'phone' | 'whatsappNumber' | 'receptionistPhone' | 'nearbyChemistPhone') => (val: string) => {
+    // Allow only numeric digits and limit to 10 characters
+    const numericVal = val.replace(/[^0-9]/g, '').slice(0, 10);
+    setForm(prev => ({ ...prev, [key]: numericVal }));
+  };
+
   const formatDate = (d: Date | null) => {
     if (!d) return '';
     return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -151,18 +157,36 @@ const AddLeadScreen = () => {
       Alert.alert('Validation Error', 'Name is required.');
       return;
     }
+    if (!form.designation.trim()) {
+      Alert.alert('Validation Error', 'Designation is required.');
+      return;
+    }
     if (!form.city.trim()) {
       Alert.alert('Validation Error', 'City is required.');
+      return;
+    }
+    if (!form.source.trim()) {
+      Alert.alert('Validation Error', 'Source is required.');
       return;
     }
 
     setSaving(true);
     try {
       const timestamp = Date.now().toString().slice(-6);
+      
+      // Convert date to YYYY-MM-DD format in local timezone
+      const formatDateToISO = (date: Date | null): string | undefined => {
+        if (!date) return undefined;
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
       const payload: Record<string, unknown> = {
         ...form,
         leadType: 'doctor',
-        nextFollowUp: followUpDate ? followUpDate.toISOString().split('T')[0] : undefined,
+        nextFollowUp: formatDateToISO(followUpDate),
       };
 
       if (editMode && leadData?.id) {
@@ -215,7 +239,7 @@ const AddLeadScreen = () => {
         {/* Designation + Specialization row */}
         <View style={styles.row}>
           <View style={styles.halfField}>
-            <Text style={styles.label}>Designation</Text>
+            <Text style={styles.label}>Designation *</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Dermatologist"
@@ -295,8 +319,9 @@ const AddLeadScreen = () => {
                 placeholder="+91 9876543210"
                 placeholderTextColor={COLORS.textMuted}
                 keyboardType="phone-pad"
+                maxLength={10}
                 value={form.phone}
-                onChangeText={set('phone')}
+                onChangeText={setPhoneNumber('phone')}
               />
             </View>
           </View>
@@ -307,8 +332,9 @@ const AddLeadScreen = () => {
               placeholder="WhatsApp number"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="phone-pad"
+              maxLength={10}
               value={form.whatsappNumber}
-              onChangeText={set('whatsappNumber')}
+              onChangeText={setPhoneNumber('whatsappNumber')}
             />
           </View>
         </View>
@@ -333,8 +359,9 @@ const AddLeadScreen = () => {
             placeholder="Receptionist phone number"
             placeholderTextColor={COLORS.textMuted}
             keyboardType="phone-pad"
+            maxLength={10}
             value={form.receptionistPhone}
-            onChangeText={set('receptionistPhone')}
+            onChangeText={setPhoneNumber('receptionistPhone')}
           />
         </Field>
 
@@ -357,8 +384,9 @@ const AddLeadScreen = () => {
               placeholder="Chemist phone"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="phone-pad"
+              maxLength={10}
               value={form.nearbyChemistPhone}
-              onChangeText={set('nearbyChemistPhone')}
+              onChangeText={setPhoneNumber('nearbyChemistPhone')}
             />
           </View>
         </View>
@@ -392,7 +420,7 @@ const AddLeadScreen = () => {
         </Field>
 
         {/* Source dropdown */}
-        <Field label="Source">
+        <Field label="Source *">
           <TouchableOpacity
             style={styles.dropdown}
             activeOpacity={0.8}

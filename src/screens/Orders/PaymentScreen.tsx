@@ -152,7 +152,10 @@ const PaymentScreen = () => {
         orderId: createdOrderId,
       });
 
-      // Navigate to success only after backend verification
+      // Step 5: Generate invoice for the order
+      await apiClient.post(ENDPOINTS.orders.generateInvoice(createdOrderId));
+
+      // Navigate to success only after backend verification and invoice generation
       navigation.navigate('PaymentSuccess', {
         orderId: createdOrderId,
         orderNumber: apiOrderNumber,

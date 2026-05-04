@@ -26,6 +26,7 @@ export const ENDPOINTS = {
         addItems: (orderId: number) => `/orders/${orderId}/items`,
         detail: (orderId: number) => `/orders/${orderId}`,
         items: (orderId: number) => `/orders/${orderId}/items`,
+        generateInvoice: (orderId: number) => `/orders/${orderId}/generate-invoice`,
     },
     profile: {
         me: '/profile/me',

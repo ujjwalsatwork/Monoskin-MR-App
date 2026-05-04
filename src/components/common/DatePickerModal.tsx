@@ -116,7 +116,15 @@ const DatePickerModal = ({ visible, selectedDate, minDate, onSelect, onClose }: 
                     key={ci}
                     style={[s.cell, sel && s.cellSel]}
                     disabled={!d || dis}
-                    onPress={() => d && onSelect(new Date(viewYear, viewMonth, d))}
+                    onPress={() => {
+                      if (d) {
+                        // Create date in local timezone, accounting for month being 0-indexed
+                        const date = new Date(viewYear, viewMonth, d);
+                        // Set time to noon to avoid timezone offset issues
+                        date.setHours(12, 0, 0, 0);
+                        onSelect(date);
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     {d ? (
