@@ -187,13 +187,16 @@ const PharmacyCard = ({
   onStartVisit,
   onCreateOrder,
   onViewDetail,
+  onTagPress,
 }: {
   item: Pharmacy;
   onStartVisit: () => void;
   onCreateOrder: () => void;
   onViewDetail: () => void;
+  onTagPress: () => void;
 }) => {
   const progressPercent = Math.min(item.salesCurrent / item.salesTarget, 1);
+  const hasTags = item.tags && item.tags.length > 0;
   const salesStr = item.salesCurrent >= 1000
     ? `₹${(item.salesCurrent / 1000).toFixed(1).replace('.0', '')}k`
     : `₹${item.salesCurrent}`;
@@ -218,6 +221,25 @@ const PharmacyCard = ({
         <Text style={styles.pharmLastVisit}>
           {item.neverVisited ? 'Never Visited' : `Last visit: ${item.lastVisit}`}
         </Text>
+      </View>
+
+      {/* Follow-up + Tag row */}
+      <View style={styles.tagRow}>
+        <View style={styles.tagLeft}>
+          {hasTags && item.tags.map(tag => (
+            <TouchableOpacity
+              key={tag}
+              style={styles.tagPill}
+              onPress={onTagPress}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.tagPillText}>{tag}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity style={styles.addTagButton} onPress={onTagPress} activeOpacity={0.7}>
+          <Text style={styles.addTagText}>+ TAG</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Divider */}
@@ -306,6 +328,7 @@ const PortfolioScreen = () => {
   const [searchText, setSearchText] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [tagModalDoctor, setTagModalDoctor] = useState<Doctor | null>(null);
+  const [tagModalPharmacy, setTagModalPharmacy] = useState<Pharmacy | null>(null);
 
   const { doctors, doctorsLoading, pharmacies, pharmaciesLoading } = useSelector(
     (state: RootState) => state.portfolio,
@@ -359,6 +382,7 @@ const PortfolioScreen = () => {
       onStartVisit={() => navigation.navigate('VisitDetail', { pharmacyId: String(item.id) })}
       onCreateOrder={() => navigation.navigate('PharmacyOrder', { pharmacyId: item.id, pharmacyName: item.name })}
       onViewDetail={() => navigation.navigate('PharmacyDetail', { pharmacyId: item.id, pharmacyName: item.name })}
+      onTagPress={() => setTagModalPharmacy(item)}
     />
   );
 
@@ -369,9 +393,20 @@ const PortfolioScreen = () => {
       {tagModalDoctor && (
         <TagModal
           visible={!!tagModalDoctor}
-          doctorId={tagModalDoctor.id}
+          type="doctor"
+          id={tagModalDoctor.id}
           initialTags={tagModalDoctor.tags}
           onClose={() => setTagModalDoctor(null)}
+        />
+      )}
+
+      {tagModalPharmacy && (
+        <TagModal
+          visible={!!tagModalPharmacy}
+          type="pharmacy"
+          id={tagModalPharmacy.id}
+          initialTags={tagModalPharmacy.tags}
+          onClose={() => setTagModalPharmacy(null)}
         />
       )}
 

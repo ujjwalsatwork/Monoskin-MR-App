@@ -157,6 +157,7 @@ export type ApiPharmacy = {
     conversionFailures: number;
     engagementScore: number;
     isActive: boolean;
+    tags: string[];
     createdAt: string;
     updatedAt: string;
     preferredProducts?: Array<{ id: number; name: string; totalQuantity: number }>;
@@ -179,6 +180,7 @@ export type Pharmacy = {
     salesTarget: number;
     amount: string;
     paymentStatus: PaymentStatus;
+    tags: string[];
 };
 
 const IMPORTANCE_BG: Record<string, string> = {
@@ -217,6 +219,7 @@ const mapApiPharmacyToUI = (p: ApiPharmacy): Pharmacy => {
         salesTarget: 100,                   // proxy — request monthlySalesTarget from backend
         amount: `₹${outstanding.toFixed(2)}`,
         paymentStatus,
+        tags: p.tags ?? [],
     };
 };
 
@@ -281,6 +284,21 @@ export const fetchPharmacies = createAsyncThunk<Pharmacy[], void>(
     },
 );
 
+export const updatePharmacyTags = createAsyncThunk<
+    { id: string; tags: string[] },
+    { id: string; tags: string[] }
+>(
+    'portfolio/updatePharmacyTags',
+    async ({ id, tags }, { rejectWithValue }) => {
+        try {
+            await apiClient.patch(ENDPOINTS.portfolio.pharmacyDetail(id), { tags });
+            return { id, tags };
+        } catch (error) {
+            return rejectWithValue(extractErrorMessage(error, 'Failed to update tags'));
+        }
+    },
+);
+
 // ─── Slice ─────────────────────────────────────────────────────────────────────
 
 const portfolioSlice = createSlice({
@@ -322,6 +340,14 @@ const portfolioSlice = createSlice({
             .addCase(fetchPharmacies.rejected, (state, action) => {
                 state.pharmaciesLoading = false;
                 state.pharmaciesError = (action.payload as string) ?? 'Failed to fetch pharmacies';
+            })
+            // Update pharmacy tags
+            .addCase(updatePharmacyTags.fulfilled, (state, action) => {
+                const { id, tags } = action.payload;
+                const pharmacy = state.pharmacies.find(p => p.id === id);
+                if (pharmacy) {
+                    pharmacy.tags = tags;
+                }
             });
     },
 });

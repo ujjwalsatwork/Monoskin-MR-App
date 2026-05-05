@@ -214,6 +214,11 @@ const PharmacyOrderScreen = () => {
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
+  // Credit limit calculations
+  const creditLimit = pharmacy?.creditLimit ? parseFloat(pharmacy.creditLimit) : 0;
+  const outstanding = pharmacy?.outstanding ? parseFloat(pharmacy.outstanding) : 0;
+  const remainingCredit = creditLimit - outstanding - orderValue;
+
   const handlePlaceOrder = () => {
     // Validation 1: Check if at least one product is added
     if (products.length === 0) {
@@ -227,6 +232,23 @@ const PharmacyOrderScreen = () => {
       return;
     }
 
+    // Validation 3: Check if order exceeds credit limit
+    if (orderValue + outstanding > creditLimit) {
+      Alert.alert(
+        'Credit Limit Exceeded',
+        `This order exceeds the pharmacy's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
+        [
+          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+          { text: 'Create Order Anyway', onPress: () => proceedWithOrder() },
+        ]
+      );
+      return;
+    }
+
+    proceedWithOrder();
+  };
+
+  const proceedWithOrder = () => {
     const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
     const items = products.map(p => {
       const base = p.price * p.qty;
@@ -271,28 +293,46 @@ const PharmacyOrderScreen = () => {
             <ActivityIndicator size="small" color={COLORS.buttonBlue} />
           </View>
         ) : (
-          <View style={styles.pharmacyCard}>
-            <View style={styles.pharmAvatarWrapper}>
-              <View style={styles.pharmAvatar}>
-                <Text style={styles.pharmAvatarText}>
-                  {(pharmacy?.name ?? pharmacyName).slice(0, 2).toUpperCase()}
+          <>
+            <View style={styles.pharmacyCard}>
+              <View style={styles.pharmAvatarWrapper}>
+                <View style={styles.pharmAvatar}>
+                  <Text style={styles.pharmAvatarText}>
+                    {(pharmacy?.name ?? pharmacyName).slice(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.onlineDot} />
+              </View>
+              <View style={styles.pharmInfo}>
+                <Text style={styles.pharmName}>{pharmacy?.name ?? pharmacyName}</Text>
+                {pharmacy?.importance ? (
+                  <Text style={styles.pharmSpecialty}>{pharmacy.importance} Importance</Text>
+                ) : null}
+                <View style={styles.pharmLocationRow}>
+                  <MapPinOutlineIcon width={13} height={13} />
+                  <Text style={styles.pharmLocation}>
+                    {' '}{pharmacy?.address ?? (`${pharmacy?.city ?? ''}, ${pharmacy?.state ?? ''}`.trim() || '—')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Credit Limit & Outstanding */}
+            <View style={styles.pharmStatsRow}>
+              <View style={[styles.pharmStatBox, styles.pharmStatBoxActive]}>
+                <Text style={styles.pharmStatLabel}>CREDIT LIMIT</Text>
+                <Text style={styles.pharmStatValue} numberOfLines={1}>
+                  ₹{creditLimit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </View>
-              <View style={styles.onlineDot} />
-            </View>
-            <View style={styles.pharmInfo}>
-              <Text style={styles.pharmName}>{pharmacy?.name ?? pharmacyName}</Text>
-              {pharmacy?.importance ? (
-                <Text style={styles.pharmSpecialty}>{pharmacy.importance} Importance</Text>
-              ) : null}
-              <View style={styles.pharmLocationRow}>
-                <MapPinOutlineIcon width={13} height={13} />
-                <Text style={styles.pharmLocation}>
-                  {' '}{pharmacy?.address ?? (`${pharmacy?.city ?? ''}, ${pharmacy?.state ?? ''}`.trim() || '—')}
+              <View style={[styles.pharmStatBox, styles.pharmStatBoxActive]}>
+                <Text style={styles.pharmStatLabel}>OUTSTANDING</Text>
+                <Text style={[styles.pharmStatValue, outstanding > 0 && styles.outstandingRed]} numberOfLines={1}>
+                  ₹{outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </View>
             </View>
-          </View>
+          </>
         )}
 
         {/* Product Summary header */}
@@ -456,6 +496,12 @@ const PharmacyOrderScreen = () => {
             <Text style={styles.bottomBarValueLabel}>EST. ORDER VALUE</Text>
             <Text style={styles.bottomBarValue}>₹{orderValue.toFixed(2)}</Text>
           </View>
+          <View style={styles.bottomBarValueRow}>
+            <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
+            <Text style={[styles.bottomBarValue, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
+              ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity style={styles.placeOrderBtn} onPress={handlePlaceOrder} activeOpacity={0.85}>
           <Text style={styles.placeOrderBtnText}>Review & Place Order</Text>
@@ -518,6 +564,23 @@ const styles = StyleSheet.create({
   pharmSpecialty: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary, marginBottom: 4 },
   pharmLocationRow: { flexDirection: 'row', alignItems: 'center' },
   pharmLocation: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+
+  // Pharmacy stats
+  pharmStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  pharmStatBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    padding: 12,
+  },
+  pharmStatBoxActive: { borderColor: COLORS.buttonBlue, borderWidth: 1.5 },
+  pharmStatLabel: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4, marginBottom: 4 },
+  pharmStatValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
+  pharmStatTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
+  outstandingRed: { color: COLORS.error },
+  remainingCreditPositive: { color: COLORS.success },
+  remainingCreditNegative: { color: COLORS.error },
 
   // Product Summary header
   productSummaryHeader: {
@@ -699,6 +762,7 @@ const styles = StyleSheet.create({
   bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   bottomBarValueLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
   bottomBarValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  remainingCreditNegative: { color: COLORS.error },
   placeOrderBtn: {
     backgroundColor: COLORS.buttonBlue, height: 56,
     borderRadius: 28, justifyContent: 'center', alignItems: 'center',

@@ -287,33 +287,57 @@ const PharmacyDetailScreen = () => {
     if (!outcome) { Alert.alert('Validation', 'Please select an outcome.'); return; }
     if (!mrId) { Alert.alert('Error', 'User session not found. Please login again.'); return; }
 
-    const payload: Record<string, any> = {
-      mrId,
-      pharmacyId: Number(pharmacyId),
-      visitType,
-      outcome,
-      notes: visitNote,
-      objections,
-      sampleProducts: sampleProducts.map(s => ({ productId: Number(s.productId), quantity: s.quantity })),
-      attachments,
-      duration: duration ? parseInt(duration, 10) : undefined,
-      location: location?.address,
-      latitude: location?.latitude,
-      longitude: location?.longitude,
-    };
+    const formData = new FormData();
+    
+    formData.append('mrId', String(mrId));
+    formData.append('pharmacyId', String(pharmacyId));
+    formData.append('visitType', visitType);
+    formData.append('outcome', outcome);
+    
+    if (visitNote) formData.append('notes', visitNote);
+    if (duration) formData.append('duration', String(parseInt(duration, 10)));
+    if (location?.address) formData.append('location', location.address);
+    if (location?.latitude) formData.append('latitude', String(location.latitude));
+    if (location?.longitude) formData.append('longitude', String(location.longitude));
 
     if (outcome === 'Follow-up Required' && followUpDate) {
-      payload.followUpDate = followUpDate;
-      payload.followUpSlot = followUpSlot;
+      formData.append('followUpDate', followUpDate);
+      formData.append('followUpSlot', followUpSlot);
     }
+
+    if (objections.length > 0) {
+      formData.append('objections', JSON.stringify(objections));
+    }
+
+    if (sampleProducts.length > 0) {
+      const formattedSamples = sampleProducts.map(s => ({
+        productId: Number(s.productId),
+        quantity: s.quantity
+      }));
+      formData.append('sampleProducts', JSON.stringify(formattedSamples));
+    }
+
+    attachments.forEach((att) => {
+      formData.append('attachments', {
+        uri: att.uri,
+        type: att.type,
+        name: att.name,
+      } as any);
+    });
 
     try {
       setSubmitting(true);
-      await apiClient.post(ENDPOINTS.mrVisits.create, payload);
+      console.log('🚀 ~ handleSubmit ~ formData:', formData);
+      await apiClient.post(ENDPOINTS.mrVisits.create, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       Alert.alert('Success', 'Visit report submitted successfully.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
-    } catch {
+    } catch (err) {
+      console.log('🚀 ~ handleSubmit ~ error:', err);
       Alert.alert('Error', 'Failed to submit visit report. Please try again.');
     } finally {
       setSubmitting(false);

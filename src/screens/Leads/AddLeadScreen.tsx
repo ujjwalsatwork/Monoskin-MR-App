@@ -113,6 +113,7 @@ const AddLeadScreen = () => {
     designation: leadData?.designation || '',
     specialization: leadData?.specialization || '',
     clinic: leadData?.clinic || leadData?.company || '',
+    licenseNumber: leadData?.licenseNumber || '',
     city: leadData?.city || '',
     state: leadData?.state || '',
     address: leadData?.address || '',
@@ -268,6 +269,17 @@ const AddLeadScreen = () => {
             placeholderTextColor={COLORS.textMuted}
             value={form.clinic}
             onChangeText={set('clinic')}
+          />
+        </Field>
+
+        {/* License Number */}
+        <Field label="License Number">
+          <TextInput
+            style={styles.input}
+            placeholder="License number"
+            placeholderTextColor={COLORS.textMuted}
+            value={form.licenseNumber}
+            onChangeText={set('licenseNumber')}
           />
         </Field>
 

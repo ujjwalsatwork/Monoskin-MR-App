@@ -21,7 +21,7 @@ import {
   ClockIcon,
   ProfileIcon,
 } from '@/assets/images';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { AppStackParamList } from '@/navigation/types';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
@@ -110,6 +110,7 @@ const TimelineDot = ({ status }: { status: 'done' | 'transit' | 'confirmed' }) =
 
 /* ── Screen ── */
 const OrderDetailScreen = () => {
+  const navigation = useNavigation<any>();
   const route = useRoute<RouteProps>();
   const { orderId, orderNumber } = route.params;
 
@@ -171,7 +172,13 @@ const OrderDetailScreen = () => {
 
   return (
     <View style={styles.safeArea}>
-      <Header title="Order Details" showBack showNotification showProfile />
+      <Header
+        title="Order Details"
+        showBack
+        showNotification
+        showProfile
+        onBack={() => navigation.navigate('Main', { screen: 'Portfolio' })}
+      />
 
       {/* Order ID + date + status chip */}
       <View style={styles.orderMeta}>
@@ -266,7 +273,7 @@ const OrderDetailScreen = () => {
           ) : null}
 
           {/* ── Order Status Timeline (static for now) ── */}
-          <View style={styles.card}>
+          {/* <View style={styles.card}>
             <View style={styles.cardTitleRow}>
               <View style={styles.cardTitleIcon}>
                 <ClockIcon width={18} height={18} />
@@ -288,7 +295,7 @@ const OrderDetailScreen = () => {
                 </View>
               ))}
             </View>
-          </View>
+          </View> */}
 
           {/* ── Price Breakdown ── */}
           {order && (
@@ -320,7 +327,7 @@ const OrderDetailScreen = () => {
           )}
 
           {/* ── Location Tracking View ── */}
-          <View style={styles.card}>
+          {/* <View style={styles.card}>
             <View style={styles.cardTitleRow}>
               <View style={styles.cardTitleIcon}>
                 <LocationPinIcon width={18} height={18} />
@@ -337,14 +344,14 @@ const OrderDetailScreen = () => {
                 rotateEnabled={false}
               />
             </View>
-          </View>
+          </View> */}
 
           <View style={styles.bottomSpacer} />
         </ScrollView>
       )}
 
       {/* ── Bottom Bar ── */}
-      <View style={styles.bottomBar}>
+      {/* <View style={styles.bottomBar}>
         <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.85}>
           <ReplayIcon width={18} height={18} />
           <Text style={styles.downloadBtnText}>  Download Invoice</Text>
@@ -352,7 +359,8 @@ const OrderDetailScreen = () => {
         <TouchableOpacity style={styles.shareBtn} activeOpacity={0.85}>
           <ShareIcon width={20} height={20} />
         </TouchableOpacity>
-      </View>
+      </View> */}
+      
     </View>
   );
 };

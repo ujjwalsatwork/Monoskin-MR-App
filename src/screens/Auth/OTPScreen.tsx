@@ -22,6 +22,8 @@ import { verifyOtp, sendOtp, logout } from '@/redux/slices/authSlice';
 
 const MR_ROLE = 'Medical Representative';
 
+const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
+
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
 
 const OTPScreen = ({ route, navigation }: Props) => {
@@ -119,10 +121,9 @@ const OTPScreen = ({ route, navigation }: Props) => {
 
   return (
     <ImageBackground
-      source={{
-        uri: '/Users/menttechlabs/Documents/Nimish/Monoskin-MR-App/src/assets/images/background/background.png',
-      }}
+      source={BACKGROUND_IMAGE}
       style={styles.backgroundImage}
+      resizeMode="cover"
     >
       <View style={styles.overlay} />
 

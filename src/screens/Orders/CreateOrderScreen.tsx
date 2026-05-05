@@ -249,6 +249,11 @@ const CreateOrderScreen = () => {
   const savings   = products.filter(p => p.foc).reduce((s, p) => s + p.price, 0);
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
+  // Credit limit calculations
+  const creditLimit = doctor?.creditLimit ? parseFloat(doctor.creditLimit) : 0;
+  const outstanding = doctor?.outstanding ? parseFloat(doctor.outstanding) : 0;
+  const remainingCredit = creditLimit - outstanding - orderValue;
+
   const toggleCatalogueItem = (id: string) =>
     setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c));
 
@@ -287,6 +292,23 @@ const CreateOrderScreen = () => {
       return;
     }
 
+    // Validation 3: Check if order exceeds credit limit
+    if (orderValue + outstanding > creditLimit) {
+      Alert.alert(
+        'Credit Limit Exceeded',
+        `This order exceeds the doctor's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
+        [
+          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+          { text: 'Create Order Anyway', onPress: () => proceedWithOrder() },
+        ]
+      );
+      return;
+    }
+
+    proceedWithOrder();
+  };
+
+  const proceedWithOrder = () => {
     const orderNumber = `ORD-${Date.now().toString().slice(-8)}`
     const items = products.map(p => {
       const base = p.price * p.qty;
@@ -365,6 +387,22 @@ const CreateOrderScreen = () => {
                   <Text style={styles.priorityVisitText}>{doctor.importance.toUpperCase()} PRIORITY</Text>
                 </View>
               ) : null}
+            </View>
+
+            {/* Credit Limit & Outstanding */}
+            <View style={styles.doctorStatsRow}>
+              <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
+                <Text style={styles.doctorStatLabel}>CREDIT LIMIT</Text>
+                <Text style={styles.doctorStatValue} numberOfLines={1}>
+                  ₹{creditLimit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
+              <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
+                <Text style={styles.doctorStatLabel}>OUTSTANDING</Text>
+                <Text style={[styles.doctorStatValue, outstanding > 0 && styles.outstandingRed]} numberOfLines={1}>
+                  ₹{outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
             </View>
 
             {/* Stats */}
@@ -591,6 +629,12 @@ const CreateOrderScreen = () => {
             <Text style={styles.bottomBarValueLabel}>EST. ORDER VALUE</Text>
             <Text style={styles.bottomBarValue}>₹{orderValue.toFixed(2)}</Text>
           </View>
+          <View style={styles.bottomBarValueRow}>
+            <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
+            <Text style={[styles.bottomBarValue, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
+              ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity style={styles.placeOrderBtn} onPress={handlePlaceOrder} activeOpacity={0.85}>
           <Text style={styles.placeOrderBtnText}>Review & Place Order</Text>
@@ -671,7 +715,7 @@ const styles = StyleSheet.create({
   priorityVisitText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: '#555' },
 
   // Doctor stats
-  doctorStatsRow: { flexDirection: 'row', gap: 10 },
+  doctorStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   doctorStatBox: {
     flex: 1,
     borderWidth: 1,
@@ -681,8 +725,12 @@ const styles = StyleSheet.create({
   },
   doctorStatBoxActive: { borderColor: COLORS.buttonBlue, borderWidth: 1.5 },
   doctorStatLabel: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4, marginBottom: 4 },
+  doctorStatValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   doctorStatTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   doctorStatSub: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+  outstandingRed: { color: COLORS.error },
+  remainingCreditPositive: { color: COLORS.success },
+  remainingCreditNegative: { color: COLORS.error },
 
   // Collapsible
   collapsibleCard: {
@@ -874,6 +922,7 @@ const styles = StyleSheet.create({
   bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   bottomBarValueLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
   bottomBarValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  remainingCreditNegative: { color: COLORS.error },
   placeOrderBtn: {
     backgroundColor: COLORS.buttonBlue,
     height: 56,

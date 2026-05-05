@@ -107,63 +107,74 @@ const PaymentScreen = () => {
       const { createdOrderId, apiOrderNumber } = await createInternalOrder();
 
       // Step 2: Create Razorpay order on backend
-      const razorpayOrderRes = await apiClient.post(ENDPOINTS.payments.createOrder, {
-        amount: Math.round(total * 100), // paise
-        currency: 'INR',
-        orderId: createdOrderId,
-      });
+      // const razorpayOrderRes = await apiClient.post(ENDPOINTS.payments.createOrder, {
+      //   amount: Math.round(total * 100), // paise
+      //   currency: 'INR',
+      //   orderId: createdOrderId,
+      // });
 
-      const { razorpayOrderId, amount } = razorpayOrderRes.data;
+      // const { razorpayOrderId, amount } = razorpayOrderRes.data;
 
-      // Step 3: Open Razorpay Checkout
-      const options = {
-        description: 'Order Payment',
-        currency: 'INR',
-        key: Config.RAZORPAY_KEY_ID ?? '',
-        amount: String(amount),
-        order_id: razorpayOrderId,
-        name: 'Monoskin',
-        prefill: {
-          contact: profile?.phone ?? '',
-          email: profile?.email ?? '',
-          name: profile?.name ?? '',
+      // // Step 3: Open Razorpay Checkout
+      // const options = {
+      //   description: 'Order Payment',
+      //   currency: 'INR',
+      //   key: Config.RAZORPAY_KEY_ID ?? '',
+      //   amount: String(amount),
+      //   order_id: razorpayOrderId,
+      //   name: 'Monoskin',
+      //   prefill: {
+      //     contact: profile?.phone ?? '',
+      //     email: profile?.email ?? '',
+      //     name: profile?.name ?? '',
+      //   },
+      //   theme: { color: '#2E50B2' },
+      // };
+      // console.log('🚀 ~ handleProceed ~ options:', options)
+
+      // let paymentData: any;
+      // try {
+      //   paymentData = await RazorpayCheckout.open(options);
+      // } catch (razorpayError: any) {
+      //   console.log('🚀 ~ handleProceed ~ razorpayError:', razorpayError)
+      //   // Step 5: Payment failed / dismissed
+      //   const reason =
+      //     razorpayError?.description ?? razorpayError?.error?.description ?? 'Payment was not completed.';
+      //   Alert.alert('Payment Failed', reason, [{ text: 'Try Again' }]);
+      //   return;
+      // }
+
+      // // Step 4: Verify payment with backend
+      // await apiClient.post(ENDPOINTS.payments.verify, {
+      //   razorpay_payment_id: paymentData.razorpay_payment_id,
+      //   razorpay_order_id: paymentData.razorpay_order_id,
+      //   razorpay_signature: paymentData.razorpay_signature,
+      //   orderId: createdOrderId,
+      // });
+
+      // // Step 5: Generate invoice for the order
+      // await apiClient.post(ENDPOINTS.orders.generateInvoice(createdOrderId));
+
+      // // Navigate to success only after backend verification and invoice generation
+      // navigation.navigate('PaymentSuccess', {
+      //   orderId: createdOrderId,
+      //   orderNumber: apiOrderNumber,
+      //   totalAmount: total,
+      //   paymentMethod: method === 'upi' ? 'UPI' : 'Net Banking',
+      //   last4: '0000',
+      //   dateTime: getFormattedDateTime(),
+      // });
+      Alert.alert('Success', 'Your order has been placed successfully!', [
+        {
+          text: 'View Order',
+          onPress: () =>
+            navigation.navigate('OrderDetail', {
+              orderId: createdOrderId,
+              orderNumber: apiOrderNumber,
+            }),
         },
-        theme: { color: '#2E50B2' },
-      };
-      console.log('🚀 ~ handleProceed ~ options:', options)
+      ] );
 
-      let paymentData: any;
-      try {
-        paymentData = await RazorpayCheckout.open(options);
-      } catch (razorpayError: any) {
-        console.log('🚀 ~ handleProceed ~ razorpayError:', razorpayError)
-        // Step 5: Payment failed / dismissed
-        const reason =
-          razorpayError?.description ?? razorpayError?.error?.description ?? 'Payment was not completed.';
-        Alert.alert('Payment Failed', reason, [{ text: 'Try Again' }]);
-        return;
-      }
-
-      // Step 4: Verify payment with backend
-      await apiClient.post(ENDPOINTS.payments.verify, {
-        razorpay_payment_id: paymentData.razorpay_payment_id,
-        razorpay_order_id: paymentData.razorpay_order_id,
-        razorpay_signature: paymentData.razorpay_signature,
-        orderId: createdOrderId,
-      });
-
-      // Step 5: Generate invoice for the order
-      await apiClient.post(ENDPOINTS.orders.generateInvoice(createdOrderId));
-
-      // Navigate to success only after backend verification and invoice generation
-      navigation.navigate('PaymentSuccess', {
-        orderId: createdOrderId,
-        orderNumber: apiOrderNumber,
-        totalAmount: total,
-        paymentMethod: method === 'upi' ? 'UPI' : 'Net Banking',
-        last4: '0000',
-        dateTime: getFormattedDateTime(),
-      });
     } catch (err: any) {
       console.log('Payment flow error:', err);
       Alert.alert('Error', 'Something went wrong. Please try again.');
@@ -224,10 +235,8 @@ const PaymentScreen = () => {
           </View>
         </View>
 
-        {/* Payment Method */}
-        <Text style={[styles.sectionLabel, { marginTop: 20 }]}>SELECT PAYMENT METHOD</Text>
+        {/* <Text style={[styles.sectionLabel, { marginTop: 20 }]}>SELECT PAYMENT METHOD</Text>
 
-        {/* UPI */}
         <TouchableOpacity
           style={[styles.methodRow, method === 'upi' && styles.methodRowSelected]}
           onPress={() => setMethod('upi')}
@@ -241,7 +250,6 @@ const PaymentScreen = () => {
           <RadioButton selected={method === 'upi'} />
         </TouchableOpacity>
 
-        {/* Net Banking */}
         <TouchableOpacity
           style={[styles.methodRow, method === 'netbanking' && styles.methodRowSelected]}
           onPress={() => setMethod('netbanking')}
@@ -255,7 +263,6 @@ const PaymentScreen = () => {
           <RadioButton selected={method === 'netbanking'} />
         </TouchableOpacity>
 
-        {/* Pay via Link */}
         <TouchableOpacity
           style={styles.linkBtn}
           onPress={handlePayViaLink}
@@ -265,7 +272,6 @@ const PaymentScreen = () => {
           <Text style={styles.linkBtnText}>Pay via Link</Text>
         </TouchableOpacity>
 
-        {/* SSL */}
         <View style={styles.sslRow}>
           <View style={{ marginRight: 6 }}>
             <ShieldIcon />
@@ -273,10 +279,9 @@ const PaymentScreen = () => {
           <Text style={styles.sslText}>SSL SECURED</Text>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 100 }} /> */}
       </ScrollView>
 
-      {/* Bottom */}
       <View style={styles.bottom}>
         <TouchableOpacity
           style={[styles.proceedBtn, loading && styles.proceedBtnDisabled]}
@@ -285,9 +290,19 @@ const PaymentScreen = () => {
           disabled={loading}
         >
           <Text style={styles.proceedBtnText}>
-            {loading ? 'Processing…' : `Proceed to Pay ₹${total.toFixed(2)}  →`}
+            Place Order ₹{total.toFixed(2)}  →
           </Text>
         </TouchableOpacity>
+        {/* <TouchableOpacity
+          style={[styles.proceedBtn, loading && styles.proceedBtnDisabled]}
+          onPress={handleProceed}
+          activeOpacity={0.85}
+          disabled={loading}
+        >
+          <Text style={styles.proceedBtnText}>
+            {loading ? 'Processing…' : `Proceed to Pay ₹${total.toFixed(2)}  →`}
+          </Text>
+        </TouchableOpacity> */}
         <Text style={styles.termsText}>
           By clicking "Proceed to Pay", you agree to the merchant's{' '}
           <Text style={styles.termsLink}>Terms of Service</Text>.

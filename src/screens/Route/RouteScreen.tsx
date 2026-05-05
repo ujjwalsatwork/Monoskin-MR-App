@@ -260,7 +260,7 @@ const RouteScreen = () => {
             </View>
 
             {/* Map Card */}
-            <View style={styles.mapCard}>
+            {/* <View style={styles.mapCard}>
               <View style={styles.mapTextureLayer}>
                 <View style={styles.mapIconCircle}>
                   <MapIcon />
@@ -270,7 +270,7 @@ const RouteScreen = () => {
                 <MapIcon height={14} />
                 <Text style={styles.viewMapButtonText}>View Full Route Map</Text>
               </TouchableOpacity>
-            </View>
+            </View> */}
 
             {/* Timeline Section */}
             <Text style={styles.timelineTitle}>TIMELINE OF VISITS</Text>

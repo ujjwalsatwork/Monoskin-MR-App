@@ -110,6 +110,7 @@ const AddPharmacyLeadScreen = () => {
 
   const [form, setForm] = useState({
     name: leadData?.name || '',
+    licenseNumber: leadData?.licenseNumber || '',
     city: leadData?.city || '',
     state: leadData?.state || '',
     address: leadData?.address || '',
@@ -202,6 +203,17 @@ const AddPharmacyLeadScreen = () => {
             placeholderTextColor={COLORS.textMuted}
             value={form.name}
             onChangeText={set('name')}
+          />
+        </Field>
+
+        {/* License Number */}
+        <Field label="License Number">
+          <TextInput
+            style={styles.input}
+            placeholder="License number"
+            placeholderTextColor={COLORS.textMuted}
+            value={form.licenseNumber}
+            onChangeText={set('licenseNumber')}
           />
         </Field>
 

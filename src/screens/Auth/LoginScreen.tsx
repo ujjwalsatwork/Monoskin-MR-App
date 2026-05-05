@@ -21,6 +21,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { sendOtp } from '@/redux/slices/authSlice';
 
+const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
+
 const LoginScreen = () => {
   const [mobileNumber, setMobileNumber] = useState('');
   const dispatch = useDispatch<AppDispatch>();
@@ -46,8 +48,9 @@ const LoginScreen = () => {
 
   return (
     <ImageBackground
-      source={{ uri: '/Users/menttechlabs/Documents/Nimish/Monoskin-MR-App/src/assets/images/background/background.png' }}
+      source={BACKGROUND_IMAGE}
       style={styles.backgroundImage}
+      resizeMode="cover"
     >
       <View style={styles.overlay} />
 

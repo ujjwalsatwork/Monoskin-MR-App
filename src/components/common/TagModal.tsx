@@ -10,11 +10,16 @@ import {
 } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '@/redux/store';
-import { updateDoctorTags, fetchDoctors } from '@/redux/slices/portfolioSlice';
+import { updateDoctorTags, updatePharmacyTags, fetchDoctors, fetchPharmacies } from '@/redux/slices/portfolioSlice';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 
 const TAG_OPTIONS = [
+  'New',
+  'Contacted',
+  'In Discussion',
+  'Converted',
+  'Lost',
   'Needs Samples',
   'Follow Up Today',
   'Unavailable',
@@ -25,12 +30,13 @@ const TAG_OPTIONS = [
 
 type Props = {
   visible: boolean;
-  doctorId: string;
+  type: 'doctor' | 'pharmacy';
+  id: string;
   initialTags: string[];
   onClose: () => void;
 };
 
-const TagModal = ({ visible, doctorId, initialTags, onClose }: Props) => {
+const TagModal = ({ visible, type, id, initialTags, onClose }: Props) => {
   const dispatch = useDispatch<AppDispatch>();
   const [selected, setSelected] = useState<string[]>(initialTags);
   const [saving, setSaving] = useState(false);
@@ -50,8 +56,13 @@ const TagModal = ({ visible, doctorId, initialTags, onClose }: Props) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await dispatch(updateDoctorTags({ id: doctorId, tags: selected })).unwrap();
-      dispatch(fetchDoctors());
+      if (type === 'doctor') {
+        await dispatch(updateDoctorTags({ id, tags: selected })).unwrap();
+        dispatch(fetchDoctors());
+      } else {
+        await dispatch(updatePharmacyTags({ id, tags: selected })).unwrap();
+        dispatch(fetchPharmacies());
+      }
       onClose();
     } catch {
       Alert.alert('Error', 'Failed to update tags. Please try again.');
