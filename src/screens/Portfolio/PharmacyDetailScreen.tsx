@@ -59,6 +59,20 @@ type PharmacyDetails = {
   unpreferredProducts?: Array<{ id: string; name: string }>;
   pharmacyNetwork?: Array<{ id: string; name: string; type: 'primary' | 'linked' }>;
   nearbyPharmacies?: Array<{ id: string; name: string; distance: string }>;
+  lastVisitDate?: string;
+};
+
+const formatDateTime = (raw: string): string => {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) { return raw; }
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${dd}-${mm}-${yyyy}, ${hours}:${minutes} ${ampm}`;
 };
 
 type CatalogueItem = {
@@ -429,7 +443,11 @@ const PharmacyDetailScreen = () => {
         <View style={styles.statsRow}>
           <View style={styles.statBlock}>
             <Text style={styles.statLabel}>LAST VISIT</Text>
-            <Text style={styles.statValue}>{pharmacyData?.lastVisit ?? '—'}</Text>
+            <Text style={styles.statValue}>
+              {pharmacyData?.lastVisitDate 
+                ? formatDateTime(pharmacyData.lastVisitDate) 
+                : pharmacyData?.lastVisit ?? '—'}
+            </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBlock}>
@@ -880,8 +898,8 @@ const styles = StyleSheet.create({
   profileInfo: { flex: 1 },
   pharmName: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   pharmType: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.buttonBlue, marginBottom: 4 },
-  locationRow: { flexDirection: 'row', alignItems: 'center' },
-  locationText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+  locationRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
+  locationText: { flex: 1, marginLeft: 6, fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
 
   // Linked chemist card
   sectionCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, padding: 16, marginBottom: 14 },

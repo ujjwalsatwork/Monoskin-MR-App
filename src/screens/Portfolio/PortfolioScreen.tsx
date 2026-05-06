@@ -58,9 +58,9 @@ const DoctorCard = ({
   onTagPress: () => void;
 }) => {
   const catConfig = CATEGORY_CONFIG[item.category];
-  const progressPercent = item.achievement.done / item.achievement.total;
+  const progressPercent = item.achievement.total > 0 ? item.achievement.done / item.achievement.total : 0;
   const hasTags = item.tags && item.tags.length > 0;
-  console.log('🚀 ~ DoctorCard ~ item.tags:', item.tags)
+  console.log('🚀 ~ DoctorCard ~ item.tags:', item)
 
   return (
     <View style={styles.card}>
@@ -169,13 +169,13 @@ const DoctorCard = ({
           <Text style={styles.actionBtnFilledText}>Create Order</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.actionBtnCircle}
           activeOpacity={0.8}
           onPress={onViewDetail}
         >
           <EyeIcon width={20} height={20} />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
     </View>
   );
@@ -208,18 +208,18 @@ const PharmacyCard = ({
     <View style={styles.card}>
       {/* Top info row */}
       <View style={styles.pharmTopRow}>
-        <View style={[styles.pharmIconCircle, { backgroundColor: item.iconBg }]}>
+        {/* <View style={[styles.pharmIconCircle, { backgroundColor: item.iconBg }]}>
           <StoreIcon width={24} height={24} />
-        </View>
+        </View> */}
         <View style={styles.pharmInfo}>
           <Text style={styles.pharmName}>{item.name}</Text>
           <View style={styles.pharmLocationRow}>
-            <MapPinOutlineIcon width={13} height={13} />
-            <Text style={styles.pharmLocation}> {item.location}</Text>
+            <MapPinOutlineIcon width={13} height={13} style={{ marginTop: 3 }} />
+            <Text style={styles.pharmLocation}>{item.location}</Text>
           </View>
         </View>
         <Text style={styles.pharmLastVisit}>
-          {item.neverVisited ? 'Never Visited' : `Last visit: ${item.lastVisit}`}
+          {item.lastVisitDate === null ? 'Never Visited' : `Last visit: ${item.lastVisit}`}
         </Text>
       </View>
 
@@ -293,13 +293,13 @@ const PharmacyCard = ({
           <Text style={styles.actionBtnFilledText}>Create Order</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.actionBtnCircle}
           activeOpacity={0.8}
           onPress={onViewDetail}
         >
           <EyeIcon width={20} height={20} />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
     </View>
   );
@@ -831,9 +831,12 @@ const styles = StyleSheet.create({
   },
   pharmLocationRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    marginTop: 4,
   },
   pharmLocation: {
+    flex: 1,
+    marginLeft: 4,
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,

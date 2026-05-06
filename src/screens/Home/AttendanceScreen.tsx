@@ -49,7 +49,7 @@ const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
     try {
         const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
-            { headers: { 'Accept-Language': 'en' } },
+            { headers: { 'Accept-Language': 'en', 'User-Agent': 'Monoskin/1.0 (test@email.com)', } },
         );
         const json = await res.json();
         const a = json.address ?? {};
@@ -117,6 +117,7 @@ const AttendanceScreen = () => {
                 setAddressText(addr || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
             },
             (err) => {
+                console.log('🚀 ~ AttendanceScreen ~ err:', err)
                 setLocationError(err.message);
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
@@ -255,9 +256,9 @@ const AttendanceScreen = () => {
                     <View style={styles.mapContainer}>
                         {location ? (
                             <MapView
-                                provider={PROVIDER_DEFAULT}
                                 style={styles.map}
-                                initialRegion={{
+                                showsUserLocation={true}
+                                region={{
                                     latitude: location.lat,
                                     longitude: location.long,
                                     latitudeDelta: 0.005,
@@ -487,8 +488,8 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#E0E0E0',
         borderRadius: 12,
-        overflow: 'hidden',
         marginBottom: 24,
+        backgroundColor: '#FFF',
     },
     mapContainer: {
         height: 180,
@@ -496,11 +497,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#F5F5F5',
     },
     map: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        flex: 1,
+        borderTopLeftRadius: 11,
+        borderTopRightRadius: 11,
     },
     mapPlaceholder: {
         flex: 1,
@@ -513,6 +512,8 @@ const styles = StyleSheet.create({
     locationInfoContainer: {
         padding: 16,
         backgroundColor: '#FFF',
+        borderBottomLeftRadius: 11,
+        borderBottomRightRadius: 11,
     },
     locLabel: {
         fontSize: FONTS.size.xs,

@@ -1,16 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   Alert,
-  ImageBackground,
+  Image,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { MonoskinLogo, RightArrowIcon, BackArrowIcon } from '@/assets/images';
@@ -24,43 +25,133 @@ const MR_ROLE = 'Medical Representative';
 
 const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
 
+// Memoized Timer Component to prevent full screen re-renders on timer change
+interface TimerDisplayProps {
+  minutes: string;
+  seconds: string;
+}
+
+const TimerDisplay = React.memo(({ minutes, seconds }: TimerDisplayProps) => (
+  <View style={styles.timerContainer}>
+    <View style={styles.timerBoxView}>
+      <View style={styles.timerBox}>
+        <Text style={styles.timerText}>{minutes}</Text>
+      </View>
+      <Text style={styles.timerLabel}>MINUTES</Text>
+    </View>
+    <Text style={styles.timerColon}>:</Text>
+    <View style={styles.timerBoxView}>
+      <View style={styles.timerBox}>
+        <Text style={styles.timerText}>{seconds}</Text>
+      </View>
+      <Text style={styles.timerLabel}>SECONDS</Text>
+    </View>
+  </View>
+));
+
+// Memoized OTP Input Component to isolate re-renders
+interface OTPInputsProps {
+  otp: string[];
+  onOtpChange: (text: string, index: number) => void;
+  onKeyPress: (e: any, index: number) => void;
+  inputRefs: React.MutableRefObject<(TextInput | null)[]>;
+}
+
+const OTPInputs = React.memo(({ otp, onOtpChange, onKeyPress, inputRefs }: OTPInputsProps) => (
+  <View style={styles.otpContainer}>
+    {otp.map((digit, index) => (
+      <TextInput
+        // @ts-ignore - key prop is valid for lists
+        key={index}
+        style={styles.otpInput}
+        value={digit}
+        onChangeText={text => onOtpChange(text, index)}
+        onKeyPress={e => onKeyPress(e, index)}
+        keyboardType="numeric"
+        maxLength={1}
+        ref={ref => {
+          if (ref) {
+            inputRefs.current[index] = ref;
+          }
+        }}
+      />
+    ))}
+  </View>
+));
+
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
 
 const OTPScreen = ({ route, navigation }: Props) => {
-  const { mobileNumber } = route.params;
+  const { mobileNumber } = route.params || { mobileNumber: '' };
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(59);
+  const [isScreenFocused, setIsScreenFocused] = useState(false);
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  const intervalRef = useRef<any>(null);
   const dispatch = useDispatch<AppDispatch>();
   const { verifyLoading, otpLoading, otpFallback } = useSelector(
     (state: RootState) => state.auth,
   );
 
-  useEffect(() => {
-    if (timer === 0) return;
-    const interval = setInterval(() => {
-      setTimer(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [timer]);
+  // Track screen focus to control timer
+  useFocusEffect(
+    useCallback(() => {
+      setIsScreenFocused(true);
+      return () => {
+        setIsScreenFocused(false);
+      };
+    }, []),
+  );
 
-  const handleOtpChange = (text: string, index: number) => {
+  // Fixed timer logic: only start when screen is focused
+  useEffect(() => {
+    if (!isScreenFocused) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start interval only when screen is focused
+    intervalRef.current = setInterval(() => {
+      setTimer(prev => {
+        if (prev <= 1) {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isScreenFocused]);
+
+  const handleOtpChange = useCallback((text: string, index: number) => {
     const newOtp = [...otp];
     newOtp[index] = text;
     setOtp(newOtp);
     if (text !== '' && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
-  };
+  }, [otp]);
 
-  const handleKeyPress = (e: any, index: number) => {
+  const handleKeyPress = useCallback((e: any, index: number) => {
     if (e.nativeEvent.key === 'Backspace' && index > 0 && otp[index] === '') {
       inputRefs.current[index - 1]?.focus();
     }
-  };
+  }, [otp]);
 
-  const handleVerify = async () => {
+  const handleVerify = useCallback(async () => {
     const otpValue = otp.join('');
     if (otpValue.length < 6) {
       Alert.alert('Error', 'Please enter a valid 6-digit OTP');
@@ -90,9 +181,9 @@ const OTPScreen = ({ route, navigation }: Props) => {
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     }
-  };
+  }, [otp, mobileNumber, dispatch, navigation]);
 
-  const handleResend = async () => {
+  const handleResend = useCallback(async () => {
     if (timer > 0) return;
     const result = await dispatch(sendOtp({ phone: mobileNumber }));
     if (sendOtp.fulfilled.match(result)) {
@@ -106,13 +197,13 @@ const OTPScreen = ({ route, navigation }: Props) => {
           : 'Failed to resend OTP';
       Alert.alert('Error', errorMsg);
     }
-  };
+  }, [timer, mobileNumber, dispatch]);
 
-  const formatTimer = (time: number) => {
+  const formatTimer = useCallback((time: number) => {
     const minutes = Math.floor(time / 60).toString().padStart(2, '0');
     const seconds = (time % 60).toString().padStart(2, '0');
     return { minutes, seconds };
-  };
+  }, []);
 
   const maskedNumber =
     '+91 ' + mobileNumber.slice(0, 2) + '•••••' + mobileNumber.slice(-3);
@@ -120,16 +211,22 @@ const OTPScreen = ({ route, navigation }: Props) => {
   const isLoading = verifyLoading || otpLoading;
 
   return (
-    <ImageBackground
-      source={BACKGROUND_IMAGE}
-      style={styles.backgroundImage}
-      resizeMode="cover"
-    >
+    <View style={styles.rootContainer} renderToHardwareTextureAndroid needsOffscreenAlphaCompositing>
+      <Image
+        source={BACKGROUND_IMAGE}
+        style={styles.backgroundImage}
+      />
       <View style={styles.overlay} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+      <KeyboardAwareScrollView
+        style={styles.scrollViewContainer}
+        contentContainerStyle={styles.scrollContentContainer}
+        enableOnAndroid={true}
+        extraScrollHeight={Platform.OS === 'android' ? 100 : 0}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={true}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
       >
         <TouchableOpacity
           style={styles.backButton}
@@ -151,42 +248,18 @@ const OTPScreen = ({ route, navigation }: Props) => {
             mobile number <Text style={styles.boldText}>{maskedNumber}</Text>
           </Text>
 
-          <View style={styles.otpContainer}>
-            {otp.map((digit, index) => (
-              <TextInput
-                key={index}
-                style={styles.otpInput}
-                value={digit}
-                onChangeText={text => handleOtpChange(text, index)}
-                onKeyPress={e => handleKeyPress(e, index)}
-                keyboardType="numeric"
-                maxLength={1}
-                ref={ref => {
-                  inputRefs.current[index] = ref;
-                }}
-              />
-            ))}
-          </View>
+          <OTPInputs
+            otp={otp}
+            onOtpChange={handleOtpChange}
+            onKeyPress={handleKeyPress}
+            inputRefs={inputRefs}
+          />
 
           {otpFallback ? (
             <Text style={styles.otpFallbackText}>Dev OTP: {otpFallback}</Text>
           ) : null}
 
-          <View style={styles.timerContainer}>
-            <View style={styles.timerBoxView}>
-              <View style={styles.timerBox}>
-                <Text style={styles.timerText}>{minutes}</Text>
-              </View>
-              <Text style={styles.timerLabel}>MINUTES</Text>
-            </View>
-            <Text style={styles.timerColon}>:</Text>
-            <View style={styles.timerBoxView}>
-              <View style={styles.timerBox}>
-                <Text style={styles.timerText}>{seconds}</Text>
-              </View>
-              <Text style={styles.timerLabel}>SECONDS</Text>
-            </View>
-          </View>
+          <TimerDisplay minutes={minutes} seconds={seconds} />
 
           <View style={styles.resendContainer}>
             <Text style={styles.resendText}>Didn't receive the code? </Text>
@@ -235,20 +308,35 @@ const OTPScreen = ({ route, navigation }: Props) => {
             END-TO-END ENCRYPTED VERIFICATION
           </Text>
         </View>
-      </KeyboardAvoidingView>
-    </ImageBackground>
+      </KeyboardAwareScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  backgroundImage: {
+  rootContainer: {
     flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: COLORS.overlayAuth,
+    backgroundColor: '#001C68',
+  },
+  scrollViewContainer: {
+    flex: 1,
+  },
+  scrollContentContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 30,
+    justifyContent: 'space-between',
   },
   container: {
     flex: 1,
@@ -258,7 +346,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 60,
+    top: Platform.OS === 'ios' ? 60 : 20,
     left: 24,
     zIndex: 10,
     padding: 8,
@@ -270,7 +358,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     marginTop: 10,
-    flex: 1,
   },
   logoText: {
     fontSize: FONTS.size.xxxl,
@@ -280,10 +367,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   contentContainer: {
-    flex: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 20,
+    paddingVertical: 20,
+    minHeight: 400,
   },
   iconContainer: {
     marginBottom: 24,
@@ -411,8 +498,8 @@ const styles = StyleSheet.create({
   },
   footerContainer: {
     alignItems: 'center',
-    marginTop: 'auto',
     paddingBottom: 20,
+    paddingTop: 20,
   },
   footerText: {
     color: COLORS.white,

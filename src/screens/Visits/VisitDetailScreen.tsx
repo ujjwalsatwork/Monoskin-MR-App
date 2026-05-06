@@ -64,6 +64,7 @@ type DoctorDetails = {
   preferredProducts?: Array<{ id: string; name: string }>;
   unpreferredProducts?: Array<{ id: string; name: string }>;
   interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+  lastVisitDate?: string;
   lastVisit?: string;
   avgTime?: string;
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
@@ -75,6 +76,7 @@ type PharmacyDetails = {
   type: string;
   address: string;
   phone?: string;
+  lastVisitDate?: string;
   lastVisit?: string;
   avgTime?: string;
   preferredProducts?: Array<{ id: string; name: string }>;
@@ -177,11 +179,13 @@ const VisitDetailScreen = () => {
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
-            { headers: { 'Accept-Language': 'en' } },
+            { headers: { 'Accept-Language': 'en', 'User-Agent': 'Monoskin/1.0 (test@email.com)', } },
           );
           const json = await res.json();
           if (json?.display_name) { address = json.display_name; }
-        } catch { /* fallback to coords */ }
+        } catch (err) { 
+          console.log('🚀 ~ VisitDetailScreen ~ Geocoding error:', err);
+         }
         setLocation({ latitude: lat, longitude: lng, address });
       },
       () => {},
@@ -463,13 +467,13 @@ const VisitDetailScreen = () => {
           </View>
           <View style={styles.doctorInfo}>
             <Text style={styles.doctorName}>{entityName ?? '—'}</Text>
-            <Text style={styles.doctorSpecialty}>
+            {/* <Text style={styles.doctorSpecialty}>
               {doctorData?.specialization ?? pharmacyData?.type ?? '—'}
-            </Text>
+            </Text> */}
             <View style={styles.doctorLocationRow}>
-              <LocationPinIcon width={13} height={13} />
+              <LocationPinIcon width={13} height={13} style={{ marginTop: 3 }}  />
               <Text style={styles.doctorHospital}>
-                {'  '}{doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? '—'}
+                {doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? '—'}
               </Text>
             </View>
             {(doctorData?.tier || doctorData?.importance) && (
@@ -489,7 +493,7 @@ const VisitDetailScreen = () => {
           </View>
           <View style={styles.doctorActions}>
             <TouchableOpacity
-              style={styles.contactBtn}
+              style={[styles.contactBtn, {backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.black}]}
               onPress={() => {
                 const phone = doctorData?.phone ?? pharmacyData?.phone;
                 if (phone) { Alert.alert('Call', `Calling ${phone}`); }
@@ -511,7 +515,9 @@ const VisitDetailScreen = () => {
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>LAST VISIT</Text>
             <Text style={styles.statValue}>
-              {doctorData?.lastVisit ?? pharmacyData?.lastVisit ?? '—'}
+              {(doctorData?.lastVisitDate || pharmacyData?.lastVisitDate)
+                ? formatDateTime(doctorData?.lastVisitDate ?? pharmacyData?.lastVisitDate!)
+                : doctorData?.lastVisit ?? pharmacyData?.lastVisit ?? '—'}
             </Text>
           </View>
           <View style={styles.statDivider} />
@@ -999,8 +1005,8 @@ const styles = StyleSheet.create({
   doctorInfo: { flex: 1 },
   doctorName: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   doctorSpecialty: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.buttonBlue, marginBottom: 4 },
-  doctorLocationRow: { flexDirection: 'row', alignItems: 'center' },
-  doctorHospital: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+  doctorLocationRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
+  doctorHospital: { flex: 1, marginLeft: 6, fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
   tagRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
   tierBadge: { backgroundColor: 'rgba(46,80,178,0.1)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   tierBadgeText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },

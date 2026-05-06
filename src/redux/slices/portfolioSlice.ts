@@ -69,6 +69,15 @@ export type ApiDoctor = {
     interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
     pharmacyNetwork?: Array<{ id: number; name: string; type: 'primary' | 'linked' }>;
     nearbyPharmacies?: Array<{ id: number; name: string; distance: number }>;
+    lastVisitDate?: string | null;
+    visitCount?: number;
+    pendingFollowUps?: number;
+    followUpToday?: number;
+    totalVisitsThisMonth?: number;
+    weeklyTarget?: number;
+    monthlyTarget?: number;
+    monthlyAchieved?: number;
+    paymentStatus?: string;
 };
 
 export type Doctor = {
@@ -97,13 +106,17 @@ const mapApiDoctorToUI = (d: ApiDoctor): Doctor => {
     else if (d.tier === 2) category = 'B';
 
     const outstanding = Number(d.outstanding) || 0;
-    const paymentStatus: PaymentStatus = outstanding > 0 ? 'pending' : 'completed';
+    const mappedPaymentStatus = d.paymentStatus?.toLowerCase() as PaymentStatus;
+    const paymentStatus: PaymentStatus = ['completed', 'overdue', 'pending'].includes(mappedPaymentStatus) 
+        ? mappedPaymentStatus 
+        : (outstanding > 0 ? 'pending' : 'completed');
 
     let lastVisit = 'Never Visited';
     let lastVisitOverdue = false;
-    if (d.lastContactedAt) {
+    const lastDateToUse = d.lastVisitDate || d.lastContactedAt;
+    if (lastDateToUse) {
         const diffDays = Math.floor(
-            Math.abs(Date.now() - new Date(d.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24),
+            Math.abs(Date.now() - new Date(lastDateToUse).getTime()) / (1000 * 60 * 60 * 24),
         );
         if (diffDays === 0) lastVisit = 'Today';
         else if (diffDays === 1) lastVisit = '1 day ago';
@@ -121,14 +134,14 @@ const mapApiDoctorToUI = (d: ApiDoctor): Doctor => {
         state: d.state,
         category,
         priority: d.importance ? `${d.importance} Priority` : undefined,
-        followUpToday: true, // mocked — backend field not available yet
+        followUpToday: (d.followUpToday ?? 0) > 0,
         tags: d.tags ?? [],
-        weeklyTarget: 0,     // mocked — backend field not available yet
+        weeklyTarget: d.weeklyTarget ?? 0,
         amount: `₹${d.totalSalesValue || '0.00'}`,
         paymentStatus,
         lastVisit,
         lastVisitOverdue,
-        achievement: { done: 0, total: 10 }, // mocked — backend field not available yet
+        achievement: { done: d.totalVisitsThisMonth ?? d.monthlyAchieved ?? 0, total: d.monthlyTarget ?? 0 },
     };
 };
 
@@ -141,6 +154,7 @@ export type ApiPharmacy = {
     doctorId: number;
     city: string;
     state: string;
+    area: string | null;
     address: string | null;
     phone: string;
     email: string;
@@ -150,8 +164,8 @@ export type ApiPharmacy = {
     outstanding: string;
     importance: string;
     assignedMRId: number | null;
-    latitude: string;
-    longitude: string;
+    latitude: string | null;
+    longitude: string | null;
     lastOrderDate: string | null;
     lastPaymentDate: string | null;
     conversionFailures: number;
@@ -160,6 +174,13 @@ export type ApiPharmacy = {
     tags: string[];
     createdAt: string;
     updatedAt: string;
+    lastVisitDate: string | null;
+    visitCount: number;
+    pendingFollowUps: number;
+    totalOrders: number;
+    monthlySalesCurrent: number;
+    monthlySalesTarget: number;
+    paymentStatus: string;
     preferredProducts?: Array<{ id: number; name: string; totalQuantity: number }>;
     unpreferredProducts?: Array<{ id: number; name: string }>;
     interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
@@ -174,13 +195,21 @@ export type Pharmacy = {
     iconBg: string;
     lastVisit: string;
     neverVisited: boolean;
-    // NOTE: salesCurrent & salesTarget not in API — using engagementScore (0-100) as proxy.
-    // Request backend to add monthlySalesCurrent and monthlySalesTarget fields.
     salesCurrent: number;
     salesTarget: number;
     amount: string;
-    paymentStatus: PaymentStatus;
+    paymentStatus: string;
     tags: string[];
+    priority?: string;
+    visitCount: number;
+    pendingFollowUps: number;
+    totalOrders: number;
+    pharmacyNetwork: Array<{ id: string; name: string; type: 'primary' | 'linked' }>;
+    nearbyPharmacies: Array<{ id: string; name: string; distance: string }>;
+    preferredProducts: Array<{ id: string; name: string; totalQuantity?: number }>;
+    unpreferredProducts: Array<{ id: string; name: string }>;
+    interactionHistory: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
+    lastVisitDate: string | null;
 };
 
 const IMPORTANCE_BG: Record<string, string> = {
@@ -190,15 +219,12 @@ const IMPORTANCE_BG: Record<string, string> = {
 };
 
 const mapApiPharmacyToUI = (p: ApiPharmacy): Pharmacy => {
-    const outstanding = Number(p.outstanding) || 0;
-    const paymentStatus: PaymentStatus = outstanding > 0 ? 'pending' : 'completed';
-
     let lastVisit = '';
     let neverVisited = true;
-    if (p.lastOrderDate) {
+    if (p.lastVisitDate) {
         neverVisited = false;
         const diffDays = Math.floor(
-            Math.abs(Date.now() - new Date(p.lastOrderDate).getTime()) / (1000 * 60 * 60 * 24),
+            Math.abs(Date.now() - new Date(p.lastVisitDate).getTime()) / (1000 * 60 * 60 * 24),
         );
         if (diffDays === 0) lastVisit = 'Today';
         else if (diffDays === 1) lastVisit = '1 day ago';
@@ -215,11 +241,27 @@ const mapApiPharmacyToUI = (p: ApiPharmacy): Pharmacy => {
         iconBg,
         lastVisit,
         neverVisited,
-        salesCurrent: p.engagementScore,   // proxy — request monthlySalesCurrent from backend
-        salesTarget: 100,                   // proxy — request monthlySalesTarget from backend
-        amount: `₹${outstanding.toFixed(2)}`,
-        paymentStatus,
+        salesCurrent: p.monthlySalesCurrent,
+        salesTarget: p.monthlySalesTarget,
+        amount: `₹${Number(p.outstanding).toFixed(2)}`,
+        paymentStatus: p.paymentStatus,
         tags: p.tags ?? [],
+        priority: p.importance ? `${p.importance} Priority` : undefined,
+        visitCount: p.visitCount,
+        pendingFollowUps: p.pendingFollowUps,
+        totalOrders: p.totalOrders,
+        pharmacyNetwork: p.pharmacyNetwork?.map(n => ({ id: String(n.id), name: n.name, type: n.type })) ?? [],
+        nearbyPharmacies: p.nearbyPharmacies?.map(n => ({ id: String(n.id), name: n.name, distance: `${n.distance} km` })) ?? [],
+        preferredProducts: p.preferredProducts?.map(pr => ({ id: String(pr.id), name: pr.name, totalQuantity: pr.totalQuantity })) ?? [],
+        unpreferredProducts: p.unpreferredProducts?.map(pr => ({ id: String(pr.id), name: pr.name })) ?? [],
+        interactionHistory: p.interactionHistory?.map(i => ({
+            date: i.date,
+            type: i.type,
+            outcome: i.outcome,
+            notes: i.notes,
+            source: i.source,
+        })) ?? [],
+        lastVisitDate: p.lastVisitDate,
     };
 };
 

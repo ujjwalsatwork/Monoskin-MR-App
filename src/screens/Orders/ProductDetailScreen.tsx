@@ -107,7 +107,7 @@ const ProductDetailScreen = () => {
         </View>
 
         {/* Quick Order */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.quickOrderBtn}
           activeOpacity={0.85}
           onPress={() => {
@@ -116,7 +116,7 @@ const ProductDetailScreen = () => {
           }}
         >
           <Text style={styles.quickOrderText}>Quick Order  ›</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         {/* Highlights */}
         <Text style={styles.sectionLabel}>HIGHLIGHTS</Text>

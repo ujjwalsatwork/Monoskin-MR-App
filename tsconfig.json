@@ -4,6 +4,9 @@
     "jsx": "react",
     "types": ["jest"],
     "baseUrl": ".",
+    "lib": ["es2017", "dom"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "paths": {
       "@/*": ["src/*"]
     }
