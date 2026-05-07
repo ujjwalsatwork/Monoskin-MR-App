@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Linking,
 } from 'react-native';
 import Config from 'react-native-config';
 import { useDispatch, useSelector } from 'react-redux';
@@ -92,16 +93,16 @@ const ProfileScreen = () => {
                   <ProfileIcon width={100} height={100} />
                 )}
               </View>
-              <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
+              {/* <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
                 <Camera width={16} height={16} />
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
 
             <Text style={styles.userName}>{profile?.name ?? '—'}</Text>
             <View style={styles.roleRow}>
               <View style={styles.roleBadge}>
                 <Text style={styles.roleBadgeText}>
-                  {profile?.managerRole ?? 'MR'}
+                  {'MR'}
                 </Text>
               </View>
               <Text style={styles.employeeIdInfo}>
@@ -189,6 +190,53 @@ const ProfileScreen = () => {
                   <Text style={styles.infoValue}>
                     {profile?.reportingManager ?? '—'}
                   </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Support & Contacts Info */}
+          <View style={styles.personalInfoSection}>
+            <Text style={styles.sectionTitle}>SUPPORT</Text>
+
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <View style={styles.infoIconWrapper}>
+                  <PhoneSmallIcon width={18} height={18} />
+                </View>
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoLabel}>Helpline</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL('tel:+917400900852')}>
+                    <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 74009 00852</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.infoRow}>
+                <View style={styles.infoIconWrapper}>
+                  <PhoneSmallIcon width={18} height={18} />
+                </View>
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoLabel}>HR - Pooja Khandelwal</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL('tel:+917500610020')}>
+                    <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 75006 10020</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.infoRow}>
+                <View style={styles.infoIconWrapper}>
+                  <PhoneSmallIcon width={18} height={18} />
+                </View>
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoLabel}>Finance - Chetan Kannojiya</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL('tel:+916268993566')}>
+                    <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 62689 93566</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>

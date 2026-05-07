@@ -20,6 +20,7 @@ interface ApiRouteStop {
     status: string;
     visitId?: number | null;
     notes?: string | null;
+    duration?: number | null;
 }
 
 interface ApiRouteResponse {
@@ -53,6 +54,7 @@ export interface RouteStop {
     timeStr?: string;
     phone?: string;
     visitId?: number;
+    duration?: number;
 }
 
 export interface RouteData {
@@ -143,6 +145,7 @@ const mapApiResponse = (api: ApiRouteResponse): RouteData => {
             status,
             isActionAllowed,
             visitId: s.visitId ?? undefined,
+            duration: s.duration ?? undefined,
         };
     });
 

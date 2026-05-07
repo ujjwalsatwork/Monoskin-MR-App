@@ -137,12 +137,8 @@ const RouteScreen = () => {
 
   const buildStepMap = (stops: RouteStop[]): Record<number, number> => {
     const map: Record<number, number> = {};
-    let counter = 0;
-    stops.forEach(s => {
-      if (s.status !== 'DONE') {
-        counter += 1;
-        map[s.id] = counter;
-      }
+    stops.forEach((s, index) => {
+      map[s.id] = index + 1;
     });
     return map;
   };
@@ -292,8 +288,9 @@ const RouteScreen = () => {
                 return (
                   <View style={styles.timelineContainer}>
                     <View style={styles.timelineLine} />
-                    {routeData.stops.map(stop => (
-                      <View key={stop.id} style={styles.timelineRow}>
+                    {routeData.stops.map(stop => {
+                      console.log('🚀 ~ RouteScreen ~ stop:', stop)
+                      return <View key={stop.id} style={styles.timelineRow}>
                         <View style={styles.nodeWrapper}>
                           {stop.status === 'DONE' ? (
                             <View style={styles.doneNode}>
@@ -348,8 +345,16 @@ const RouteScreen = () => {
                             </View>
                           )}
 
-                          {stop.status === 'TARGET' &&
-                            stop.isActionAllowed &&
+                          {stop.status === 'DONE' && stop.duration !== undefined && (
+                            <View style={styles.timeLabelRow}>
+                              <ClockIcon height={12} width={12} />
+                              <Text style={styles.timeLabelText}>
+                                Time taken: {Math.floor(stop.duration / 60)} min {stop.duration % 60} sec
+                              </Text>
+                            </View>
+                          )}
+
+                          {stop.status !== 'DONE' &&
                             !routeData.readOnly && (
                               <TouchableOpacity
                                 style={styles.startVisitButton}
@@ -362,8 +367,8 @@ const RouteScreen = () => {
                               </TouchableOpacity>
                             )}
                         </View>
-                      </View>
-                    ))}
+                      </View>;
+                    })}
                   </View>
                 );
               })()

@@ -1,5 +1,5 @@
 /* eslint-disable react/no-unstable-nested-components */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -151,7 +151,7 @@ const VisitDetailScreen = () => {
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
   const [slotVisible, setSlotVisible] = useState(false);
-  const [duration, setDuration] = useState('');
+  const screenEntryTime = useRef(Date.now());
   const [location, setLocation] = useState<{
     latitude: string;
     longitude: string;
@@ -337,7 +337,10 @@ const VisitDetailScreen = () => {
     if (clinicConsultationTime) formData.append('clinicConsultationTime', clinicConsultationTime);
     if (mrInteractionTime) formData.append('mrInteractionTime', mrInteractionTime);
     if (doctorArrivalTime) formData.append('doctorArrivalTime', doctorArrivalTime);
-    if (duration) formData.append('duration', String(parseInt(duration, 10)));
+    
+    const calculatedDuration = Math.floor((Date.now() - screenEntryTime.current) / 1000);
+    formData.append('duration', String(calculatedDuration));
+
     if (location?.address) formData.append('location', location.address);
     if (location?.latitude) formData.append('latitude', String(location.latitude));
     if (location?.longitude) formData.append('longitude', String(location.longitude));
@@ -559,16 +562,6 @@ const VisitDetailScreen = () => {
           ))}
         </View>
 
-        {/* Duration */}
-        <SectionLabel title="DURATION (MINUTES)" />
-        <TextInput
-          style={styles.durationInput}
-          value={duration}
-          onChangeText={setDuration}
-          placeholder="e.g. 30"
-          placeholderTextColor={COLORS.textMuted}
-          keyboardType="numeric"
-        />
         {/* {location && (
           <Text style={styles.gpsIndicator}>Location captured</Text>
         )} */}
@@ -738,7 +731,7 @@ const VisitDetailScreen = () => {
         <TouchableOpacity style={styles.uploadCard} activeOpacity={0.8} onPress={handleImageUpload}>
           <CameraUploadIcon width={32} height={32} />
           <Text style={styles.uploadTitle}>
-            {attachments.length > 0 ? 'Add More Photos' : 'Upload Prescription Photo'}
+            {attachments.length > 0 ? 'Upload More Documents' : 'Upload Documents'}
           </Text>
           <Text style={styles.uploadSubtitle}>JPEG or PNG, Max 5MB</Text>
         </TouchableOpacity>
@@ -1039,13 +1032,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textDark },
   chipTextActive: { color: COLORS.white },
 
-  // Duration
-  durationInput: {
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark,
-    marginBottom: 8,
-  },
   gpsIndicator: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.success, marginBottom: 16 },
 
   // Collapsible

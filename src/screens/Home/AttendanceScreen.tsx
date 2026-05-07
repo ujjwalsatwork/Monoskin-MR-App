@@ -15,7 +15,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayIcon, PlayBlue, PauseBlue } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -361,7 +361,7 @@ const AttendanceScreen = () => {
                         onPress={() => setBreakActive((prev) => !prev)}
                         activeOpacity={0.8}
                     >
-                        <PauseIcon />
+                        {breakActive ? <PlayBlue /> : <PauseIcon />}
                         <Text style={styles.breakButtonText}>
                             {breakActive ? 'END\nBREAK' : 'START\nBREAK'}
                         </Text>
@@ -490,6 +490,8 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginBottom: 24,
         backgroundColor: '#FFF',
+        overflow: 'hidden',
+
     },
     mapContainer: {
         height: 180,

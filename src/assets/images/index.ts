@@ -25,6 +25,8 @@ export { default as DoctorBagIcon } from './DoctorBagIcon.svg';
 export { default as PillIcon } from './PillIcon.svg';
 export { default as MapPinOutlineIcon } from './MapPinOutlineIcon.svg';
 export { default as PlayIcon } from './PlayIcon.svg';
+export { default as PlayBlue } from './PlayBlue.svg';
+export { default as PauseBlue } from './PauseBlue.svg';
 export { default as MapIcon } from './MapIcon.svg';
 export { default as PhoneIconOutline } from './PhoneIconOutline.svg';
 export { default as CenterLocationIcon } from './CenterLocationIcon.svg';

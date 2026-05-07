@@ -51,7 +51,7 @@ const CheckInSuccessScreen = ({ route, navigation }: Props) => {
              <Text style={styles.subLocationValue}>{subLocationText}</Text>
           </View>
 
-          <TouchableOpacity
+          {/* <TouchableOpacity
              style={styles.primaryButton}
              onPress={() => navigation.navigate('RouteMapScreen', {
                routeData: {
@@ -65,7 +65,7 @@ const CheckInSuccessScreen = ({ route, navigation }: Props) => {
              })}
           >
              <Text style={styles.primaryButtonText}>Start Field Work</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <TouchableOpacity 
              style={styles.outlineButton} 

@@ -8,6 +8,7 @@ import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { SearchIcon, PhoneIconOutline, EmailIcon } from '@/assets/images';
+import Svg, { Path } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -50,11 +51,17 @@ const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
   Low:    { bg: '#F0F0F0', color: '#666666' },
 };
 
+const PIPELINE_STAGES = [
+  'New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted'
+];
+
 /* ─── Lead Card ──────────────────────────────────────────────────── */
 const LeadCard = ({ item }: { item: Lead }) => {
   const stageStyle = STAGE_COLORS[item.stage] ?? { bg: '#F0F0F0', color: '#666666' };
   const priorityStyle = PRIORITY_COLORS[item.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const navigation = useNavigation<NavProp>();
+
+  let currentIndex = PIPELINE_STAGES.findIndex(s => s.toLowerCase() === item.stage.toLowerCase());
 
   return (
     <View style={styles.card}>
@@ -84,6 +91,63 @@ const LeadCard = ({ item }: { item: Lead }) => {
             <Text style={styles.lastContact}>{item.city}</Text>
           </>
         ) : null}
+      </View>
+
+      {/* Pipeline */}
+      <View style={styles.pipelineContainer}>
+        {/* <Text style={styles.pipelineTitle}>PIPELINE STAGE</Text> */}
+        <View style={styles.pipelineNodesRow}>
+          {PIPELINE_STAGES.map((stage, index) => {
+            const isCompleted = index < currentIndex;
+            const isActive = index === currentIndex;
+            const isVisibleLabel = index === 0 || index === currentIndex || index === PIPELINE_STAGES.length - 1;
+
+            return (
+              <React.Fragment key={stage}>
+                <View style={styles.pipelineNodeWrapper}>
+                  {isActive ? (
+                    <View style={styles.pipelineActiveNodeOuter}>
+                      <View style={styles.pipelineActiveNodeInner}>
+                        <Text style={styles.pipelineActiveNodeText}>{index + 1}</Text>
+                      </View>
+                    </View>
+                  ) : isCompleted ? (
+                    <View style={styles.pipelineCompletedNode}>
+                      <Svg width="10" height="7" viewBox="0 0 14 10" fill="none">
+                        <Path d="M1 5L5 9L13 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </View>
+                  ) : (
+                    <View style={styles.pipelineFutureNode}>
+                      <Text style={styles.pipelineFutureNodeText}>{index + 1}</Text>
+                    </View>
+                  )}
+
+                  {isVisibleLabel && (
+                    <View style={[
+                      styles.pipelineLabelContainer,
+                      { left: -28, alignItems: 'center', justifyContent: 'center' }
+                    ]}>
+                      <Text style={[
+                        styles.pipelineLabelText,
+                        isActive && styles.pipelineLabelTextActive
+                      ]} numberOfLines={1}>
+                        {stage}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {index < PIPELINE_STAGES.length - 1 && (
+                  <View style={[
+                    styles.pipelineLine,
+                    isCompleted ? styles.pipelineLineCompleted : styles.pipelineLineFuture
+                  ]} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.divider} />
@@ -367,6 +431,101 @@ const styles = StyleSheet.create({
   },
 
   divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 12 },
+
+  pipelineContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  pipelineTitle: {
+    fontSize: 11,
+    fontFamily: FONTS.family.bold,
+    color: '#6A7185',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+  pipelineNodesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 20,
+  },
+  pipelineNodeWrapper: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  pipelineActiveNodeOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D5DDF2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  pipelineActiveNodeInner: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.buttonBlue,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pipelineActiveNodeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontFamily: FONTS.family.bold,
+  },
+  pipelineCompletedNode: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#8898D0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pipelineFutureNode: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pipelineFutureNodeText: {
+    color: '#9CA3AF',
+    fontSize: 9,
+    fontFamily: FONTS.family.bold,
+  },
+  pipelineLine: {
+    flex: 1,
+    height: 2,
+    marginHorizontal: 2,
+    zIndex: 1,
+  },
+  pipelineLineCompleted: {
+    backgroundColor: '#8898D0',
+  },
+  pipelineLineFuture: {
+    backgroundColor: '#F3F4F6',
+  },
+  pipelineLabelContainer: {
+    position: 'absolute',
+    top: 28,
+    width: 80,
+  },
+  pipelineLabelText: {
+    fontSize: 8,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  pipelineLabelTextActive: {
+    color: COLORS.buttonBlue,
+    fontFamily: FONTS.family.semibold,
+  },
 
   actionsRow: {
     flexDirection: 'row',

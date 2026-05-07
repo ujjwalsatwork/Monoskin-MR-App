@@ -1,16 +1,34 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import Header from '@/components/common/Header';
 import { CheckCircleIcon, ShieldCheckIcon, ClockIcon, LocationPinIcon } from '@/assets/images';
+import { AppDispatch, RootState } from '@/redux/store';
+import { fetchTodayRoute } from '@/redux/slices/routeSlice';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'CheckOutSuccess'>;
 
 const CheckOutSuccessScreen = ({ route, navigation }: Props) => {
-  const { time, doctorName, doctorLocation, pharmacyName, pharmacyLocation } = route.params;
+  const { time } = route.params;
+
+  const dispatch = useDispatch<AppDispatch>();
+  const { data, loading } = useSelector((state: RootState) => state.route.today);
+
+  useEffect(() => {
+    dispatch(fetchTodayRoute());
+  }, [dispatch]);
+
+  const stops = data?.stops ?? [];
+  
+  const completedDoctors = stops.filter(stop => stop.status === 'DONE' && stop.doctorId);
+  const lastDoctor = completedDoctors.length > 0 ? completedDoctors[completedDoctors.length - 1] : null;
+
+  const completedPharmacies = stops.filter(stop => stop.status === 'DONE' && stop.pharmacyId);
+  const lastPharmacy = completedPharmacies.length > 0 ? completedPharmacies[completedPharmacies.length - 1] : null;
 
   return (
     <View style={styles.mainContainer}>
@@ -47,8 +65,16 @@ const CheckOutSuccessScreen = ({ route, navigation }: Props) => {
                 <LocationPinIcon />
                 <Text style={styles.cardLabel}>LAST DOCTOR VISITED</Text>
              </View>
-             <Text style={styles.locationValue}>{doctorName}</Text>
-             <Text style={styles.subLocationValue}>{doctorLocation}</Text>
+             {loading && !data ? (
+               <ActivityIndicator size="small" color={COLORS.buttonBlue} style={{ alignSelf: 'flex-start', marginTop: 8 }} />
+             ) : lastDoctor ? (
+               <>
+                 <Text style={styles.locationValue}>{lastDoctor.name}</Text>
+                 {!!lastDoctor.address && <Text style={styles.subLocationValue}>{lastDoctor.address}</Text>}
+               </>
+             ) : (
+               <Text style={styles.subLocationValue}>No doctor visited yet</Text>
+             )}
           </View>
 
           <View style={styles.card}>
@@ -56,8 +82,16 @@ const CheckOutSuccessScreen = ({ route, navigation }: Props) => {
                 <LocationPinIcon />
                 <Text style={styles.cardLabel}>LAST PHARMACY VISITED</Text>
              </View>
-             <Text style={styles.locationValue}>{pharmacyName}</Text>
-             <Text style={styles.subLocationValue}>{pharmacyLocation}</Text>
+             {loading && !data ? (
+               <ActivityIndicator size="small" color={COLORS.buttonBlue} style={{ alignSelf: 'flex-start', marginTop: 8 }} />
+             ) : lastPharmacy ? (
+               <>
+                 <Text style={styles.locationValue}>{lastPharmacy.name}</Text>
+                 {!!lastPharmacy.address && <Text style={styles.subLocationValue}>{lastPharmacy.address}</Text>}
+               </>
+             ) : (
+               <Text style={styles.subLocationValue}>No pharmacy visited yet</Text>
+             )}
           </View>
 
           <View style={styles.actionSection}>

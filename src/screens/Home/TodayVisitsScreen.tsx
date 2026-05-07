@@ -70,7 +70,7 @@ const TodayVisitsScreen = () => {
               uiStatus === 'in_progress' && styles.visitTimeActive,
             ]}
           >
-            {item.plannedTime || '—'}
+            {item.plannedTime || ''}
           </Text>
           <View style={[styles.statusBadge, { backgroundColor: config.bg }]}>
             <Text style={[styles.statusText, { color: config.color }]}>

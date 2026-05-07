@@ -318,6 +318,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
   },
   backgroundImage: {
     ...StyleSheet.absoluteFillObject,
@@ -326,7 +327,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#001C68',
+    backgroundColor: "rgba(0, 28, 104, 0.53)",
   },
   scrollViewContainer: {
     flex: 1,
@@ -357,7 +358,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
-    marginTop: 10,
+    marginTop: 50,
+    // backgroundColor:'red'
   },
   logoText: {
     fontSize: FONTS.size.xxxl,
