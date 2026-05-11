@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import DatePickerModal from '@/components/common/DatePickerModal';
 import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type AddPharmacyRouteProp = RouteProp<AppStackParamList, 'AddPharmacyLead'>;
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
@@ -102,6 +103,103 @@ const sheet = StyleSheet.create({
   sep: { height: 1, backgroundColor: COLORS.border },
 });
 
+
+export type AssignedDoctor = {
+  id: number;
+  name: string;
+};
+
+export type CustomDoctor = {
+  name: string;
+  postalAddress: string;
+  phone: string;
+  billingDetails: string;
+  deliveryDetails: string;
+};
+
+type MultiSelectDoctorSheetProps = {
+  visible: boolean;
+  title: string;
+  options: AssignedDoctor[];
+  selectedIds: number[];
+  onToggle: (id: number) => void;
+  onAddCustom: () => void;
+  onClose: () => void;
+};
+
+const MultiSelectDoctorSheet = ({ visible, title, options, selectedIds, onToggle, onAddCustom, onClose }: MultiSelectDoctorSheetProps) => (
+  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={sheet.overlay} />
+    </TouchableWithoutFeedback>
+    <View style={sheet.container}>
+      <View style={sheet.handle} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <Text style={sheet.title}>{title}</Text>
+        <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.buttonBlue, fontFamily: FONTS.family.bold }}>Done</Text></TouchableOpacity>
+      </View>
+      <FlatList
+        data={[...options, { id: -1, name: '+ Add Other Doctor' }]}
+        keyExtractor={item => item.id.toString()}
+        style={{ maxHeight: 300 }}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          if (item.id === -1) {
+            return (
+              <TouchableOpacity style={sheet.option} activeOpacity={0.7} onPress={() => { onClose(); onAddCustom(); }}>
+                <Text style={[sheet.optionText, { color: COLORS.buttonBlue, fontFamily: FONTS.family.bold }]}>{item.name}</Text>
+              </TouchableOpacity>
+            );
+          }
+          const active = selectedIds.includes(item.id);
+          return (
+            <TouchableOpacity style={sheet.option} activeOpacity={0.7} onPress={() => onToggle(item.id)}>
+              <Text style={[sheet.optionText, active && sheet.optionActive]}>{item.name}</Text>
+              {active && <Text style={sheet.check}>✓</Text>}
+            </TouchableOpacity>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={sheet.sep} />}
+      />
+    </View>
+  </Modal>
+);
+
+const CustomDoctorModal = ({ visible, onClose, onSave }: { visible: boolean, onClose: () => void, onSave: (p: CustomDoctor) => void }) => {
+  const [data, setData] = useState<CustomDoctor>({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+  return (
+    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+      <View style={[sheet.overlay, { justifyContent: 'flex-end' }]}>
+        <View style={[sheet.container, { paddingBottom: Platform.OS === 'ios' ? 40 : 20, maxHeight: '90%' }]}>
+          <View style={sheet.handle} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+             <Text style={sheet.title}>Add Custom Doctor</Text>
+             <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.textMuted }}>Cancel</Text></TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Field label="Doctor Name *"><TextInput style={styles.input} value={data.name} onChangeText={t => setData({...data, name: t})} placeholder="Dr. Name" /></Field>
+            <Field label="Postal Address *"><TextInput style={styles.input} value={data.postalAddress} onChangeText={t => setData({...data, postalAddress: t})} placeholder="Address" /></Field>
+            <Field label="Phone No. *"><TextInput style={styles.input} keyboardType="numeric" maxLength={10} value={data.phone} onChangeText={t => setData({...data, phone: t.replace(/[^0-9]/g, '').slice(0, 10)})} placeholder="10 digit Phone Number" /></Field>
+            <Field label="Billing Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.billingDetails} onChangeText={t => setData({...data, billingDetails: t})} placeholder="Billing details..." /></Field>
+            <Field label="Delivery Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.deliveryDetails} onChangeText={t => setData({...data, deliveryDetails: t})} placeholder="Delivery details..." /></Field>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => {
+              if (!data.name.trim()) { Alert.alert('Validation Error', 'Doctor Name is required.'); return; }
+              if (!data.postalAddress.trim()) { Alert.alert('Validation Error', 'Postal Address is required.'); return; }
+              if (data.phone.length !== 10) { Alert.alert('Validation Error', 'A valid 10-digit Phone Number is required.'); return; }
+              if (!data.billingDetails.trim()) { Alert.alert('Validation Error', 'Billing Details are required.'); return; }
+              if (!data.deliveryDetails.trim()) { Alert.alert('Validation Error', 'Delivery Details are required.'); return; }
+              onSave(data);
+              setData({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+            }}>
+              <Text style={styles.saveBtnText}>Add</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 /* ─── Screen ─────────────────────────────────────────────────────── */
 const AddPharmacyLeadScreen = () => {
   const route = useRoute<AddPharmacyRouteProp>();
@@ -132,6 +230,33 @@ const AddPharmacyLeadScreen = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [assignedDoctors, setAssignedDoctors] = useState<AssignedDoctor[]>([]);
+  const [selectedDoctorIds, setSelectedDoctorIds] = useState<number[]>([]);
+  const [customDoctors, setCustomDoctors] = useState<CustomDoctor[]>([]);
+  
+  const [showDoctorsSheet, setShowDoctorsSheet] = useState(false);
+  const [showCustomDoctorModal, setShowCustomDoctorModal] = useState(false);
+
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      try {
+        const res = await apiClient.get<AssignedDoctor[]>(ENDPOINTS.portfolio.doctors);
+        setAssignedDoctors(res.data || []);
+      } catch (err) {
+        console.log('Error fetching assigned doctors', err);
+      }
+    };
+    fetchDoctors();
+    
+    if (editMode && leadData?.linkedDoctor) {
+       const preSelectedIds = leadData.linkedDoctor.filter((p: any) => p.doctorId).map((p: any) => p.doctorId);
+       setSelectedDoctorIds(preSelectedIds);
+       const preCustom = leadData.linkedDoctor.filter((p: any) => !p.doctorId);
+       setCustomDoctors(preCustom);
+    }
+  }, [editMode, leadData]);
+
+
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(prev => ({ ...prev, [key]: val }));
 
@@ -153,11 +278,17 @@ const AddPharmacyLeadScreen = () => {
     setSaving(true);
     try {
       const timestamp = Date.now().toString().slice(-6);
+      
       const payload: Record<string, unknown> = {
         ...form,
         leadType: 'pharmacy',
         nextFollowUp: followUpDate ? followUpDate.toISOString().split('T')[0] : undefined,
+        linkedDoctor: [
+          ...selectedDoctorIds.map(id => ({ doctorId: id })),
+          ...customDoctors
+        ]
       };
+
 
       if (editMode && leadData?.id) {
         await apiClient.patch(`/leads/${leadData.id}`, payload);
@@ -282,7 +413,48 @@ const AddPharmacyLeadScreen = () => {
           />
         </Field>
 
+        
+        {/* Linked Doctors dropdown */}
+        <Field label="Linked Doctors">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowDoctorsSheet(true)}
+          >
+            <Text style={[styles.dropdownText, (selectedDoctorIds.length > 0 || customDoctors.length > 0) && styles.dropdownSelected]}>
+              {(selectedDoctorIds.length + customDoctors.length) > 0 ? `${selectedDoctorIds.length + customDoctors.length} Selected` : 'Select or Add Doctor'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+        
+        {/* Selected Doctors Chips */}
+        {(selectedDoctorIds.length > 0 || customDoctors.length > 0) && (
+           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {selectedDoctorIds.map(id => {
+                 const name = assignedDoctors.find(p => p.id === id)?.name || `Doctor #${id}`;
+                 return (
+                   <View key={`ex-${id}`} style={styles.chip}>
+                     <Text style={styles.chipText}>{name}</Text>
+                     <TouchableOpacity onPress={() => setSelectedDoctorIds(prev => prev.filter(pid => pid !== id))}>
+                       <Text style={styles.chipClose}>✕</Text>
+                     </TouchableOpacity>
+                   </View>
+                 );
+              })}
+              {customDoctors.map((p, idx) => (
+                 <View key={`c-${idx}`} style={styles.chip}>
+                   <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   <TouchableOpacity onPress={() => setCustomDoctors(prev => prev.filter((_, i) => i !== idx))}>
+                     <Text style={styles.chipClose}>✕</Text>
+                   </TouchableOpacity>
+                 </View>
+              ))}
+           </View>
+        )}
+
         {/* Stage * dropdown */}
+
         <Field label="Stage *">
           <TouchableOpacity
             style={styles.dropdown}
@@ -372,7 +544,28 @@ const AddPharmacyLeadScreen = () => {
         </TouchableOpacity>
       </View>
 
+      
       {/* Dropdown sheets */}
+      <MultiSelectDoctorSheet
+        visible={showDoctorsSheet}
+        title="Select Assigned Doctor"
+        options={assignedDoctors}
+        selectedIds={selectedDoctorIds}
+        onToggle={(id) => {
+          setSelectedDoctorIds(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+        }}
+        onAddCustom={() => setShowCustomDoctorModal(true)}
+        onClose={() => setShowDoctorsSheet(false)}
+      />
+      <CustomDoctorModal
+        visible={showCustomDoctorModal}
+        onClose={() => setShowCustomDoctorModal(false)}
+        onSave={(p) => {
+          setCustomDoctors(prev => [...prev, p]);
+          setShowCustomDoctorModal(false);
+        }}
+      />
+
       <OptionsSheet
         visible={showStage}
         title="Select Stage"
@@ -502,6 +695,14 @@ const styles = StyleSheet.create({
   },
 
   spacer: { height: 24 },
+
+  chip: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#D0D7F5'
+  },
+  chipText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.buttonBlue, marginRight: 6 },
+  chipClose: { fontSize: FONTS.size.sm, color: COLORS.buttonBlue, fontWeight: 'bold' },
+
 
   footer: {
     paddingHorizontal: 16,

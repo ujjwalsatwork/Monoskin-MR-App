@@ -49,6 +49,27 @@ type Lead = {
   assignedMRId?: number | null;
   nextFollowUp?: string | null;
   notes?: string | null;
+  
+  linkedPharmacy?: {
+     id?: number;
+     pharmacyId?: number;
+     name?: string;
+     gst?: string;
+     postalAddress?: string;
+     phone?: string;
+     billingDetails?: string;
+     deliveryDetails?: string;
+  }[];
+  linkedDoctor?: {
+     id?: number;
+     doctorId?: number;
+     name?: string;
+     postalAddress?: string;
+     phone?: string;
+     billingDetails?: string;
+     deliveryDetails?: string;
+  }[];
+
   createdAt: string;
 };
 
@@ -287,7 +308,37 @@ const LeadDetailsScreen = () => {
           ) : null}
         </View>
 
+        
+        {/* Linked Entities */}
+        {((lead.linkedPharmacy?.length || 0) > 0 || (lead.linkedDoctor?.length || 0) > 0) && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              {lead.leadType === 'doctor' ? 'LINKED PHARMACIES' : 'LINKED DOCTORS'}
+            </Text>
+            {(lead.linkedPharmacy || []).map((p, idx) => (
+               <View key={`lp-${idx}`} style={[styles.companyRow, { alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 8, marginBottom: 8 }]}>
+                 <View style={{ flex: 1 }}>
+                   <Text style={[styles.infoValue, { fontFamily: FONTS.family.bold, color: COLORS.textDark }]}>{p.name || `Pharmacy #${p.pharmacyId}`}</Text>
+                   {p.phone && <Text style={styles.infoLabel}>Phone: {p.phone}</Text>}
+                   {p.postalAddress && <Text style={styles.infoLabel}>Address: {p.postalAddress}</Text>}
+                   {p.gst && <Text style={styles.infoLabel}>GST: {p.gst}</Text>}
+                 </View>
+               </View>
+            ))}
+            {(lead.linkedDoctor || []).map((d, idx) => (
+               <View key={`ld-${idx}`} style={[styles.companyRow, { alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 8, marginBottom: 8 }]}>
+                 <View style={{ flex: 1 }}>
+                   <Text style={[styles.infoValue, { fontFamily: FONTS.family.bold, color: COLORS.textDark }]}>{d.name || `Doctor #${d.doctorId}`}</Text>
+                   {d.phone && <Text style={styles.infoLabel}>Phone: {d.phone}</Text>}
+                   {d.postalAddress && <Text style={styles.infoLabel}>Address: {d.postalAddress}</Text>}
+                 </View>
+               </View>
+            ))}
+          </View>
+        )}
+
         {/* Lead Info */}
+
         <View style={styles.card}>
           <Text style={styles.cardTitle}>LEAD INFO</Text>
           <View style={styles.companyRow}>

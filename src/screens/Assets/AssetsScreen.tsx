@@ -27,6 +27,16 @@ import {
   ReplayIcon,
   Stack,
 } from '@/assets/images';
+import {
+  AssetItem,
+  AssetTab,
+  TabPagination,
+  fetchAssets,
+  markAssetDownloaded,
+  downloadAssetFile,
+  resolveAssetUrl,
+  formatFileSize,
+} from '@/services/assetsService';
 
 // ─── Screen constants ──────────────────────────────────────────────────────────
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -35,55 +45,7 @@ const CARD_GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 const IMAGE_HEIGHT = CARD_WIDTH * 0.82;
 const FEATURED_HEIGHT = 220;
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-type AssetTab = 'brochures' | 'videos';
-type BadgeType = 'new' | 'downloaded';
-
-interface Asset {
-  id: string;
-  title: string;
-  fileType: string;
-  fileSize: string;
-  duration?: string; // e.g. "05:20"
-  badge?: BadgeType;
-  tab: AssetTab;
-  fileUrl?: string;
-  imageUrl?: string;
-  link?: string;
-}
-
-// ─── Dummy data ────────────────────────────────────────────────────────────────
-// Public sample MP4 used as placeholder until backend is ready
-const DUMMY_VIDEO_URL =
-  'https://www.w3schools.com/html/mov_bbb.mp4';
-
-const DUMMY_ASSETS: Asset[] = [
-  // Brochures
-  { id: '1', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', badge: 'downloaded', tab: 'brochures' },
-  { id: '2', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '1.8 MB', badge: 'new', tab: 'brochures' },
-  { id: '3', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', tab: 'brochures' },
-  { id: '4', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', tab: 'brochures' },
-  { id: '5', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', tab: 'brochures' },
-  { id: '6', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', tab: 'brochures' },
-  { id: '7', title: 'Monoskin Product Brochure', fileType: 'PDF', fileSize: '2.4 MB', tab: 'brochures' },
-  // Videos
-  {
-    id: '8', title: 'Monoskin Video-01', fileType: 'MP4', fileSize: '18MB',
-    duration: '05:20', badge: 'new', tab: 'videos',
-    fileUrl: DUMMY_VIDEO_URL,
-  },
-  {
-    id: '9', title: 'Monoskin Video-02', fileType: 'MP4', fileSize: '24MB',
-    duration: '08:15', badge: 'downloaded', tab: 'videos',
-    fileUrl: DUMMY_VIDEO_URL,
-  },
-  {
-    id: '10', title: 'Monoskin Video-03', fileType: 'MP4', fileSize: '12MB',
-    duration: '03:45', tab: 'videos',
-    fileUrl: DUMMY_VIDEO_URL,
-  },
-];
+const PAGE_LIMIT = 20;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const getMimeType = (fileType: string): string => {
@@ -112,7 +74,7 @@ const formatSeconds = (secs: number): string => {
 
 // ─── Featured Video Player ─────────────────────────────────────────────────────
 interface FeaturedVideoPlayerProps {
-  video: Asset;
+  video: AssetItem;
 }
 
 const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
@@ -127,13 +89,10 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
 
   const progress = duration > 0 ? currentTime / duration : 0;
 
-  // Resets the 5-sec hide timer if playing
   const resetHideTimer = useCallback(() => {
     if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
     if (!paused && !isEnded) {
-      hideControlsTimer.current = setTimeout(() => {
-        setShowControls(false);
-      }, 2000);
+      hideControlsTimer.current = setTimeout(() => setShowControls(false), 2000);
     }
   }, [paused, isEnded]);
 
@@ -151,7 +110,6 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
 
   const handlePlayPause = () => {
     if (isEnded) {
-      // Replay
       videoRef.current?.seek(0);
       setIsEnded(false);
       setPaused(false);
@@ -159,13 +117,11 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
     } else {
       setPaused(p => !p);
     }
-    setShowControls(true); // Ensure they stay visible right when tapping
+    setShowControls(true);
   };
 
   const onProgress = useCallback((data: { currentTime: number }) => {
-    if (!isEnded) {
-      setCurrentTime(data.currentTime);
-    }
+    if (!isEnded) setCurrentTime(data.currentTime);
   }, [isEnded]);
 
   const onLoad = useCallback((data: { duration: number }) => {
@@ -180,13 +136,12 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
   const onEnd = useCallback(() => {
     setIsEnded(true);
     setPaused(true);
-    setShowControls(true); // Bring controls back so they see the replay button
+    setShowControls(true);
   }, []);
 
   const handleSeek = (event: any) => {
     if (duration <= 0) return;
     const { locationX } = event.nativeEvent;
-    // measure bar width via layout
     const ratio = Math.min(Math.max(locationX / (SCREEN_WIDTH - HORIZONTAL_PADDING * 2), 0), 1);
     const seekTo = ratio * duration;
     videoRef.current?.seek(seekTo);
@@ -195,16 +150,20 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
     resetHideTimer();
   };
 
+  const videoUrl = resolveAssetUrl(video.fileUrl);
+  const posterUrl = video.thumbnailUrl ? resolveAssetUrl(video.thumbnailUrl) : undefined;
+
   return (
     <View style={styles.featuredContainer}>
-      {/* Video */}
       {video.fileUrl ? (
         <Video
           ref={videoRef}
-          source={{ uri: video.fileUrl }}
+          source={{ uri: videoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
           paused={paused}
+          poster={posterUrl}
+          posterResizeMode="cover"
           onProgress={onProgress}
           onLoad={onLoad}
           onBuffer={onBuffer}
@@ -219,7 +178,6 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
         />
       )}
 
-      {/* Touchable overlay capturing taps anywhere on video body to toggle controls */}
       <TouchableOpacity
         style={StyleSheet.absoluteFill}
         activeOpacity={1}
@@ -227,10 +185,8 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
       >
         {showControls && (
           <>
-            {/* Dark gradient overlay for readability */}
             <View style={styles.featuredOverlay} />
 
-            {/* Play / Pause / Replay button */}
             {!loading && (
               <TouchableOpacity
                 style={styles.featuredPlayBtn}
@@ -247,20 +203,17 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
               </TouchableOpacity>
             )}
 
-            {/* Bottom info: title + progress */}
             <View style={styles.featuredBottom}>
               <Text style={styles.featuredTitle} numberOfLines={1}>
                 {video.title}
               </Text>
 
-              {/* Progress bar */}
               <TouchableOpacity
                 style={styles.progressBarTrack}
                 activeOpacity={1}
                 onPress={handleSeek}
               >
                 <View style={[styles.progressBarFill, { width: `${progress * 100}%` as any }]} />
-                {/* Thumb dot */}
                 <View
                   style={[
                     styles.progressThumb,
@@ -269,7 +222,6 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
                 />
               </TouchableOpacity>
 
-              {/* Timestamps */}
               <View style={styles.featuredTimestamps}>
                 <Text style={styles.featuredTime}>{formatSeconds(currentTime)}</Text>
                 <Text style={styles.featuredTime}>{formatSeconds(duration)}</Text>
@@ -279,13 +231,8 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
         )}
       </TouchableOpacity>
 
-      {/* Loading indicator (Always atop, unaffected by control visibility) */}
       {loading && (
-        <ActivityIndicator
-          size="large"
-          color={COLORS.white}
-          style={styles.featuredLoader}
-        />
+        <ActivityIndicator size="large" color={COLORS.white} style={styles.featuredLoader} />
       )}
     </View>
   );
@@ -293,126 +240,156 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
 
 // ─── Video List Item ───────────────────────────────────────────────────────────
 interface VideoListItemProps {
-  item: Asset;
+  item: AssetItem;
   isDownloaded: boolean;
   isDownloading: boolean;
   isSharing: boolean;
-  onDownload: (item: Asset) => void;
-  onShare: (item: Asset) => void;
+  onDownload: (item: AssetItem) => void;
+  onShare: (item: AssetItem) => void;
 }
 
 const VideoListItem: React.FC<VideoListItemProps> = ({
   item, isDownloaded, isDownloading, isSharing, onDownload, onShare,
-}) => (
-  <View style={styles.videoListItem}>
-    {/* Thumbnail */}
-    <View style={styles.videoThumbContainer}>
-      <ImageBackground
-        source={require('@/assets/images/background/Brochure.png')}
-        style={styles.videoThumb}
-        resizeMode="cover"
-      >
-        <View style={styles.videoThumbOverlay} />
-        <View style={styles.videoThumbPlayCircle}>
-          <PlayIcon width={14} height={14} fill={COLORS.white} />
-        </View>
-      </ImageBackground>
-    </View>
+}) => {
+  const thumbUrl = item.thumbnailUrl ? resolveAssetUrl(item.thumbnailUrl) : undefined;
 
-    {/* Info */}
-    <View style={styles.videoListInfo}>
-      <Text style={styles.videoListTitle} numberOfLines={1}>{item.title}</Text>
-      <View style={styles.videoListMeta}>
-        <ClockIcon width={12} height={12} stroke={COLORS.textSecondary} />
-        <Text style={styles.videoListMetaText}>{item.duration ?? '--:--'}</Text>
-        {/* <Text style={styles.videoListMetaSep}> 🗂 </Text> */}
-        <Stack width={12} height={12} />
-        <Text style={styles.videoListMetaText}>{item.fileSize}</Text>
-      </View>
-    </View>
-
-    {/* Actions: download + share */}
-    <View style={styles.videoListActions}>
-      {/* Download */}
-      <TouchableOpacity
-        style={styles.videoActionBtn}
-        onPress={() => onDownload(item)}
-        disabled={isDownloading || isDownloaded}
-        activeOpacity={0.75}
-      >
-        {isDownloading ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
-        ) : isDownloaded ? (
-          <CheckCircleIcon width={22} height={22} stroke={COLORS.primary} />
+  return (
+    <View style={styles.videoListItem}>
+      <View style={styles.videoThumbContainer}>
+        {thumbUrl ? (
+          <ImageBackground
+            source={{ uri: thumbUrl }}
+            style={styles.videoThumb}
+            resizeMode="cover"
+          >
+            <View style={styles.videoThumbOverlay} />
+            <View style={styles.videoThumbPlayCircle}>
+              <PlayIcon width={14} height={14} fill={COLORS.white} />
+            </View>
+          </ImageBackground>
         ) : (
-          <View style={styles.downloadIconWrapper}>
-            <Text style={styles.downloadArrow}>↓</Text>
-          </View>
+          <ImageBackground
+            source={require('@/assets/images/background/Brochure.png')}
+            style={styles.videoThumb}
+            resizeMode="cover"
+          >
+            <View style={styles.videoThumbOverlay} />
+            <View style={styles.videoThumbPlayCircle}>
+              <PlayIcon width={14} height={14} fill={COLORS.white} />
+            </View>
+          </ImageBackground>
         )}
-      </TouchableOpacity>
+      </View>
 
-      {/* Share */}
-      <TouchableOpacity
-        style={[styles.videoActionBtn, isSharing && { opacity: 0.5 }]}
-        onPress={() => onShare(item)}
-        disabled={isSharing}
-        activeOpacity={0.75}
-      >
-        {isSharing
-          ? <ActivityIndicator size="small" color={COLORS.primary} />
-          : <ShareIcon width={22} height={22} />}
-      </TouchableOpacity>
-    </View>
-  </View>
-);
-
-// ─── Brochure Card (unchanged grid layout) ────────────────────────────────────
-interface AssetCardProps {
-  item: Asset;
-  onShare: (item: Asset) => void;
-  isSharing: boolean;
-}
-
-const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, isSharing }) => (
-  <View style={styles.card}>
-    <View style={styles.imageContainer}>
-      <ImageBackground
-        source={require('@/assets/images/background/Brochure.png')}
-        style={{ width: '100%', height: '100%' }}
-        resizeMode="cover"
-      />
-      {item.badge === 'downloaded' && (
-        <View style={styles.downloadedBadge}>
-          <CheckCircleIcon height={20} />
+      <View style={styles.videoListInfo}>
+        <Text style={styles.videoListTitle} numberOfLines={1}>{item.title}</Text>
+        <View style={styles.videoListMeta}>
+          <ClockIcon width={12} height={12} stroke={COLORS.textSecondary} />
+          <Text style={styles.videoListMetaText}>{item.duration ?? '--:--'}</Text>
+          <Stack width={12} height={12} />
+          <Text style={styles.videoListMetaText}>{formatFileSize(item.fileSize)}</Text>
         </View>
-      )}
-      {item.badge === 'new' && (
-        <View style={styles.newBadge}>
-          <Text style={styles.newBadgeText}>NEW</Text>
-        </View>
-      )}
-    </View>
+      </View>
 
-    <View style={styles.cardContent}>
-      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-      <Text style={styles.cardSubtitle}>{item.fileType} • {item.fileSize}</Text>
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.viewButton} activeOpacity={0.8}>
-          <EyeIcon stroke={COLORS.white} width={14} height={14} />
-          <Text style={styles.viewButtonText}>View</Text>
-        </TouchableOpacity>
+      <View style={styles.videoListActions}>
         <TouchableOpacity
+          style={styles.videoActionBtn}
+          onPress={() => onDownload(item)}
+          disabled={isDownloading || isDownloaded}
+          activeOpacity={0.75}
+        >
+          {isDownloading ? (
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          ) : isDownloaded ? (
+            <CheckCircleIcon width={22} height={22} stroke={COLORS.primary} />
+          ) : (
+            <View style={styles.downloadIconWrapper}>
+              <Text style={styles.downloadArrow}>↓</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.videoActionBtn, isSharing && styles.disabledOpacity]}
           onPress={() => onShare(item)}
-          style={[styles.shareButton, isSharing && { opacity: 0.5 }]}
-          activeOpacity={0.8}
           disabled={isSharing}
+          activeOpacity={0.75}
         >
           {isSharing
             ? <ActivityIndicator size="small" color={COLORS.primary} />
-            : <ShareIcon />}
+            : <ShareIcon width={22} height={22} />}
         </TouchableOpacity>
       </View>
     </View>
+  );
+};
+
+// ─── Brochure Card ─────────────────────────────────────────────────────────────
+interface AssetCardProps {
+  item: AssetItem;
+  onShare: (item: AssetItem) => void;
+  isSharing: boolean;
+}
+
+const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, isSharing }) => {
+  const thumbUrl = item.imageUrl ? resolveAssetUrl(item.imageUrl) : undefined;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.imageContainer}>
+        {thumbUrl ? (
+          <ImageBackground
+            source={{ uri: thumbUrl }}
+            style={styles.fullSize}
+            resizeMode="cover"
+          />
+        ) : (
+          <ImageBackground
+            source={require('@/assets/images/background/Brochure.png')}
+            style={styles.fullSize}
+            resizeMode="cover"
+          />
+        )}
+        {item.badge === 'downloaded' && (
+          <View style={styles.downloadedBadge}>
+            <CheckCircleIcon height={20} />
+          </View>
+        )}
+        {item.badge === 'new' && (
+          <View style={styles.newBadge}>
+            <Text style={styles.newBadgeText}>NEW</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.cardContent}>
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.cardSubtitle}>{item.fileType} • {formatFileSize(item.fileSize)}</Text>
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.viewButton} activeOpacity={0.8}>
+            <EyeIcon stroke={COLORS.white} width={14} height={14} />
+            <Text style={styles.viewButtonText}>View</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onShare(item)}
+            style={[styles.shareButton, isSharing && styles.disabledOpacity]}
+            activeOpacity={0.8}
+            disabled={isSharing}
+          >
+            {isSharing
+              ? <ActivityIndicator size="small" color={COLORS.primary} />
+              : <ShareIcon />}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// ─── Empty / Error States ──────────────────────────────────────────────────────
+const EmptyState: React.FC<{ message: string }> = ({ message }) => (
+  <View style={styles.emptyContainer}>
+    <Text style={styles.emptyText}>{message}</Text>
   </View>
 );
 
@@ -420,17 +397,93 @@ const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, isSharing }) => (
 const AssetsScreen = () => {
   const [activeTab, setActiveTab] = useState<AssetTab>('brochures');
   const [sharingId, setSharingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  const brochures = DUMMY_ASSETS.filter(a => a.tab === 'brochures');
-  const videos = DUMMY_ASSETS.filter(a => a.tab === 'videos');
-  const featuredVideo = videos[0];
+  // Brochures state
+  const [brochures, setBrochures] = useState<AssetItem[]>([]);
+  const [brochurePagination, setBrochurePagination] = useState<TabPagination | null>(null);
+  const [brochuresLoading, setBrochuresLoading] = useState(false);
+  const [brochuresLoadingMore, setBrochuresLoadingMore] = useState(false);
+  const [brochuresError, setBrochuresError] = useState<string | null>(null);
+  const brochuresFetched = useRef(false);
 
-  // ── Share ──────────────────────────────────────────────────────────────────
-  const handleShare = async (item: Asset) => {
+  // Videos state
+  const [videos, setVideos] = useState<AssetItem[]>([]);
+  const [videoPagination, setVideoPagination] = useState<TabPagination | null>(null);
+  const [videosLoading, setVideosLoading] = useState(false);
+  const [videosLoadingMore, setVideosLoadingMore] = useState(false);
+  const [videosError, setVideosError] = useState<string | null>(null);
+  const videosFetched = useRef(false);
+
+  // Per-item download tracking (supplements server's isDownloaded flag)
+  const [localDownloadedIds, setLocalDownloadedIds] = useState<Set<number>>(new Set());
+
+  // ── Fetch ────────────────────────────────────────────────────────────────────
+  const loadBrochures = useCallback(async (page = 1) => {
+    const isFirst = page === 1;
+    isFirst ? setBrochuresLoading(true) : setBrochuresLoadingMore(true);
+    setBrochuresError(null);
+    try {
+      const result = await fetchAssets('brochures', page, PAGE_LIMIT);
+      setBrochures(prev => isFirst ? result.items : [...prev, ...result.items]);
+      setBrochurePagination(result.pagination);
+    } catch {
+      setBrochuresError('Failed to load brochures. Tap to retry.');
+    } finally {
+      isFirst ? setBrochuresLoading(false) : setBrochuresLoadingMore(false);
+    }
+  }, []);
+
+  const loadVideos = useCallback(async (page = 1) => {
+    const isFirst = page === 1;
+    isFirst ? setVideosLoading(true) : setVideosLoadingMore(true);
+    setVideosError(null);
+    try {
+      const result = await fetchAssets('videos', page, PAGE_LIMIT);
+      setVideos(prev => isFirst ? result.items : [...prev, ...result.items]);
+      setVideoPagination(result.pagination);
+    } catch {
+      setVideosError('Failed to load videos. Tap to retry.');
+    } finally {
+      isFirst ? setVideosLoading(false) : setVideosLoadingMore(false);
+    }
+  }, []);
+
+  // Fetch brochures on mount (default tab)
+  useEffect(() => {
+    if (!brochuresFetched.current) {
+      brochuresFetched.current = true;
+      loadBrochures(1);
+    }
+  }, [loadBrochures]);
+
+  // Fetch videos lazily when that tab is first opened
+  const handleTabSwitch = (tab: AssetTab) => {
+    setActiveTab(tab);
+    if (tab === 'videos' && !videosFetched.current) {
+      videosFetched.current = true;
+      loadVideos(1);
+    }
+  };
+
+  // ── Load More ────────────────────────────────────────────────────────────────
+  const handleLoadMoreBrochures = () => {
+    if (brochuresLoadingMore || !brochurePagination) return;
+    if (brochurePagination.page >= brochurePagination.totalPages) return;
+    loadBrochures(brochurePagination.page + 1);
+  };
+
+  const handleLoadMoreVideos = () => {
+    if (videosLoadingMore || !videoPagination) return;
+    if (videoPagination.page >= videoPagination.totalPages) return;
+    loadVideos(videoPagination.page + 1);
+  };
+
+  // ── Share ────────────────────────────────────────────────────────────────────
+  const handleShare = async (item: AssetItem) => {
+    const idStr = String(item.id);
     if (sharingId) return;
-    setSharingId(item.id);
+    setSharingId(idStr);
     try {
       const shareOptions: {
         title: string;
@@ -440,17 +493,15 @@ const AssetsScreen = () => {
         failOnCancel?: boolean;
       } = {
         title: item.title,
-        message: item.link
-          ? `${item.title}\n\nWatch here:\n${item.link}`
-          : item.title,
+        message: item.title,
         failOnCancel: false,
       };
 
       if (item.fileUrl) {
-        shareOptions.url = item.fileUrl;
+        shareOptions.url = resolveAssetUrl(item.fileUrl);
         shareOptions.type = getMimeType(item.fileType);
       } else if (item.imageUrl) {
-        shareOptions.url = item.imageUrl;
+        shareOptions.url = resolveAssetUrl(item.imageUrl);
         shareOptions.type = 'image/jpeg';
       }
 
@@ -464,38 +515,55 @@ const AssetsScreen = () => {
     }
   };
 
-  // ── Download ───────────────────────────────────────────────────────────────
-  const handleDownload = async (item: Asset) => {
+  // ── Download ─────────────────────────────────────────────────────────────────
+  const handleDownload = async (item: AssetItem) => {
     if (!item.fileUrl) {
-      Alert.alert('Not available', 'No download URL is set for this video yet.');
+      Alert.alert('Not available', 'No download URL is set for this item yet.');
       return;
     }
-    if (downloadingId || downloadedIds.has(item.id)) return;
+    if (downloadingId !== null || item.isDownloaded || localDownloadedIds.has(item.id)) return;
 
     setDownloadingId(item.id);
 
-    const fileName = `${item.title.replace(/\s+/g, '_')}_${item.id}.mp4`;
+    const ext = item.fileType.toLowerCase();
+    const fileName = `${item.title.replace(/\s+/g, '_')}_${item.id}.${ext}`;
     const destPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
 
     try {
-      const result = await RNFS.downloadFile({
-        fromUrl: item.fileUrl,
-        toFile: destPath,
-        progressDivider: 10,
-      }).promise;
-
-      if (result.statusCode === 200) {
-        setDownloadedIds(prev => new Set([...prev, item.id]));
+      const success = await downloadAssetFile(item, destPath);
+      if (success) {
+        setLocalDownloadedIds(prev => new Set([...prev, item.id]));
+        // Notify server
+        markAssetDownloaded(item.id).catch(() => {});
         Alert.alert('Downloaded', `"${item.title}" saved to your device.`);
       } else {
         Alert.alert('Error', 'Download failed. Please try again.');
       }
-    } catch (err) {
-      console.warn('Download error:', err);
-      Alert.alert('Error', 'Failed to download the video.');
+    } catch {
+      Alert.alert('Error', 'Failed to download the file.');
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  const isDownloaded = (item: AssetItem) =>
+    item.isDownloaded || localDownloadedIds.has(item.id);
+
+  const featuredVideo = videos[0] ?? null;
+
+  // ── Brochures footer (load more / loading) ───────────────────────────────────
+  const renderBrochureFooter = () => {
+    if (brochuresLoadingMore) {
+      return <ActivityIndicator size="small" color={COLORS.primary} style={styles.loaderMarginV16} />;
+    }
+    if (brochurePagination && brochurePagination.page < brochurePagination.totalPages) {
+      return (
+        <TouchableOpacity style={styles.loadMoreBtn} onPress={handleLoadMoreBrochures}>
+          <Text style={styles.loadMoreText}>Load More</Text>
+        </TouchableOpacity>
+      );
+    }
+    return null;
   };
 
   return (
@@ -507,7 +575,7 @@ const AssetsScreen = () => {
         <View style={styles.tabWrapper}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'brochures' && styles.activeTab]}
-            onPress={() => setActiveTab('brochures')}
+            onPress={() => handleTabSwitch('brochures')}
             activeOpacity={0.8}
           >
             <Text style={[styles.tabText, activeTab === 'brochures' && styles.activeTabText]}>
@@ -516,7 +584,7 @@ const AssetsScreen = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'videos' && styles.activeTab]}
-            onPress={() => setActiveTab('videos')}
+            onPress={() => handleTabSwitch('videos')}
             activeOpacity={0.8}
           >
             <Text style={[styles.tabText, activeTab === 'videos' && styles.activeTabText]}>
@@ -528,53 +596,89 @@ const AssetsScreen = () => {
 
       {/* ── Brochures Tab ── */}
       {activeTab === 'brochures' && (
-        <FlatList
-          data={brochures}
-          renderItem={({ item }) => (
-            <AssetCard
-              item={item}
-              onShare={handleShare}
-              isSharing={sharingId === item.id}
-            />
-          )}
-          keyExtractor={item => item.id}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        brochuresLoading ? (
+          <View style={styles.centerLoader}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          </View>
+        ) : brochuresError ? (
+          <TouchableOpacity style={styles.emptyContainer} onPress={() => loadBrochures(1)}>
+            <Text style={styles.errorText}>{brochuresError}</Text>
+          </TouchableOpacity>
+        ) : (
+          <FlatList
+            data={brochures}
+            renderItem={({ item }) => (
+              <AssetCard
+                item={item}
+                onShare={handleShare}
+                isSharing={sharingId === String(item.id)}
+              />
+            )}
+            keyExtractor={item => String(item.id)}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            onEndReached={handleLoadMoreBrochures}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={renderBrochureFooter}
+            ListEmptyComponent={<EmptyState message="No brochures available." />}
+          />
+        )
       )}
 
       {/* ── Videos Tab ── */}
       {activeTab === 'videos' && (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.videosContent}
-        >
-          {/* Featured Player */}
-          {featuredVideo && (
-            <FeaturedVideoPlayer video={featuredVideo} />
-          )}
-
-          {/* Library header */}
-          <View style={styles.libraryHeader}>
-            <Text style={styles.libraryTitle}>Video Library</Text>
-            <Text style={styles.libraryCount}>{videos.length} VIDEOS</Text>
+        videosLoading ? (
+          <View style={styles.centerLoader}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
           </View>
+        ) : videosError ? (
+          <TouchableOpacity style={styles.emptyContainer} onPress={() => loadVideos(1)}>
+            <Text style={styles.errorText}>{videosError}</Text>
+          </TouchableOpacity>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.videosContent}
+          >
+            {/* Featured Player */}
+            {featuredVideo && <FeaturedVideoPlayer video={featuredVideo} />}
 
-          {/* Video List */}
-          {videos.map(video => (
-            <VideoListItem
-              key={video.id}
-              item={video}
-              isDownloaded={downloadedIds.has(video.id)}
-              isDownloading={downloadingId === video.id}
-              isSharing={sharingId === video.id}
-              onDownload={handleDownload}
-              onShare={handleShare}
-            />
-          ))}
-        </ScrollView>
+            {/* Library header */}
+            {videos.length > 0 && (
+              <View style={styles.libraryHeader}>
+                <Text style={styles.libraryTitle}>Video Library</Text>
+                <Text style={styles.libraryCount}>{videoPagination?.total ?? videos.length} VIDEOS</Text>
+              </View>
+            )}
+
+            {videos.length === 0 && <EmptyState message="No videos available." />}
+
+            {/* Video List */}
+            {videos.map(video => (
+              <VideoListItem
+                key={video.id}
+                item={video}
+                isDownloaded={isDownloaded(video)}
+                isDownloading={downloadingId === video.id}
+                isSharing={sharingId === String(video.id)}
+                onDownload={handleDownload}
+                onShare={handleShare}
+              />
+            ))}
+
+            {/* Load more videos */}
+            {videosLoadingMore && (
+              <ActivityIndicator size="small" color={COLORS.primary} style={styles.loaderMarginV12} />
+            )}
+            {!videosLoadingMore && videoPagination && videoPagination.page < videoPagination.totalPages && (
+              <TouchableOpacity style={styles.loadMoreBtn} onPress={handleLoadMoreVideos}>
+                <Text style={styles.loadMoreText}>Load More</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        )
       )}
     </View>
   );
@@ -618,6 +722,46 @@ const styles = StyleSheet.create({
   activeTabText: {
     fontFamily: FONTS.family.bold,
     color: COLORS.white,
+  },
+
+  // ── Loader / error / empty ────────────────────────────────────────────────
+  centerLoader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
+  emptyText: {
+    fontFamily: FONTS.family.medium,
+    fontSize: FONTS.size.md,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  errorText: {
+    fontFamily: FONTS.family.medium,
+    fontSize: FONTS.size.md,
+    color: '#D32F2F',
+    textAlign: 'center',
+  },
+  loadMoreBtn: {
+    alignSelf: 'center',
+    marginVertical: 16,
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderRadius: 50,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+  loadMoreText: {
+    fontFamily: FONTS.family.bold,
+    fontSize: FONTS.size.sm,
+    color: COLORS.primary,
   },
 
   // ── Brochures grid ───────────────────────────────────────────────────────
@@ -893,11 +1037,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginRight: 10,
   },
-  videoListMetaSep: {
-    fontSize: FONTS.size.xs,
-    color: COLORS.textSecondary,
-    marginHorizontal: 2,
-  },
   videoListActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -921,6 +1060,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
     lineHeight: 22,
+  },
+  fullSize: {
+    width: '100%',
+    height: '100%',
+  },
+  disabledOpacity: {
+    opacity: 0.5,
+  },
+  loaderMarginV16: {
+    marginVertical: 16,
+  },
+  loaderMarginV12: {
+    marginVertical: 12,
   },
 });
 

@@ -42,6 +42,15 @@ export const ENDPOINTS = {
         verify: '/payments/verify',
         createLink: '/payments/create-link',
     },
+    assets: {
+        list: '/assets',
+        markDownloaded: (id: number) => `/assets/${id}/download`,
+    },
+    notifications: {
+        list: '/notifications',
+        markRead: (id: number) => `/notifications/${id}/read`,
+        markAllRead: '/notifications/read-all',
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',

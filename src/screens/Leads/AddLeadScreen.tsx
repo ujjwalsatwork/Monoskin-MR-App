@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import DatePickerModal from '@/components/common/DatePickerModal';
 import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 type AddDoctorRouteProp = RouteProp<AppStackParamList, 'AddDoctorLead'>;
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
@@ -102,6 +103,106 @@ const sheet = StyleSheet.create({
   sep: { height: 1, backgroundColor: COLORS.border },
 });
 
+
+export type AssignedPharmacy = {
+  id: number;
+  name: string;
+};
+
+export type CustomPharmacy = {
+  name: string;
+  gst: string;
+  postalAddress: string;
+  phone: string;
+  billingDetails: string;
+  deliveryDetails: string;
+};
+
+type MultiSelectSheetProps = {
+  visible: boolean;
+  title: string;
+  options: AssignedPharmacy[];
+  selectedIds: number[];
+  onToggle: (id: number) => void;
+  onAddCustom: () => void;
+  onClose: () => void;
+};
+
+const MultiSelectSheet = ({ visible, title, options, selectedIds, onToggle, onAddCustom, onClose }: MultiSelectSheetProps) => (
+  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={sheet.overlay} />
+    </TouchableWithoutFeedback>
+    <View style={sheet.container}>
+      <View style={sheet.handle} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <Text style={sheet.title}>{title}</Text>
+        <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.buttonBlue, fontFamily: FONTS.family.bold }}>Done</Text></TouchableOpacity>
+      </View>
+      <FlatList
+        data={[...options, { id: -1, name: '+ Add Other Pharmacy' }]}
+        keyExtractor={item => item.id.toString()}
+        style={{ maxHeight: 300 }}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          if (item.id === -1) {
+            return (
+              <TouchableOpacity style={sheet.option} activeOpacity={0.7} onPress={() => { onClose(); onAddCustom(); }}>
+                <Text style={[sheet.optionText, { color: COLORS.buttonBlue, fontFamily: FONTS.family.bold }]}>{item.name}</Text>
+              </TouchableOpacity>
+            );
+          }
+          const active = selectedIds.includes(item.id);
+          return (
+            <TouchableOpacity style={sheet.option} activeOpacity={0.7} onPress={() => onToggle(item.id)}>
+              <Text style={[sheet.optionText, active && sheet.optionActive]}>{item.name}</Text>
+              {active && <Text style={sheet.check}>✓</Text>}
+            </TouchableOpacity>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={sheet.sep} />}
+      />
+    </View>
+  </Modal>
+);
+
+const CustomPharmacyModal = ({ visible, onClose, onSave }: { visible: boolean, onClose: () => void, onSave: (p: CustomPharmacy) => void }) => {
+  const [data, setData] = useState<CustomPharmacy>({ name: '', gst: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+  return (
+    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+      <View style={[sheet.overlay, { justifyContent: 'flex-end' }]}>
+        <View style={[sheet.container, { paddingBottom: Platform.OS === 'ios' ? 40 : 20, maxHeight: '90%' }]}>
+          <View style={sheet.handle} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+             <Text style={sheet.title}>Add Custom Pharmacy</Text>
+             <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.textMuted }}>Cancel</Text></TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Field label="Pharmacy Name *"><TextInput style={styles.input} value={data.name} onChangeText={t => setData({...data, name: t})} placeholder="Pharmacy Name" /></Field>
+            <Field label="GST *"><TextInput style={styles.input} value={data.gst} onChangeText={t => setData({...data, gst: t})} placeholder="GST Number" /></Field>
+            <Field label="Postal Address *"><TextInput style={styles.input} value={data.postalAddress} onChangeText={t => setData({...data, postalAddress: t})} placeholder="Address" /></Field>
+            <Field label="Phone No. *"><TextInput style={styles.input} keyboardType="numeric" maxLength={10} value={data.phone} onChangeText={t => setData({...data, phone: t.replace(/[^0-9]/g, '').slice(0, 10)})} placeholder="10 digit Phone Number" /></Field>
+            <Field label="Billing Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.billingDetails} onChangeText={t => setData({...data, billingDetails: t})} placeholder="Billing details..." /></Field>
+            <Field label="Delivery Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.deliveryDetails} onChangeText={t => setData({...data, deliveryDetails: t})} placeholder="Delivery details..." /></Field>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => {
+              if (!data.name.trim()) { Alert.alert('Validation Error', 'Pharmacy Name is required.'); return; }
+              if (!data.gst.trim()) { Alert.alert('Validation Error', 'GST Number is required.'); return; }
+              if (!data.postalAddress.trim()) { Alert.alert('Validation Error', 'Postal Address is required.'); return; }
+              if (data.phone.length !== 10) { Alert.alert('Validation Error', 'A valid 10-digit Phone Number is required.'); return; }
+              if (!data.billingDetails.trim()) { Alert.alert('Validation Error', 'Billing Details are required.'); return; }
+              if (!data.deliveryDetails.trim()) { Alert.alert('Validation Error', 'Delivery Details are required.'); return; }
+              onSave(data);
+              setData({ name: '', gst: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+            }}>
+              <Text style={styles.saveBtnText}>Add</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 /* ─── Screen ─────────────────────────────────────────────────────── */
 const AddLeadScreen = () => {
   const route = useRoute<AddDoctorRouteProp>();
@@ -138,6 +239,35 @@ const AddLeadScreen = () => {
   const [showSource, setShowSource] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [assignedPharmacies, setAssignedPharmacies] = useState<AssignedPharmacy[]>([]);
+  const [selectedPharmacyIds, setSelectedPharmacyIds] = useState<number[]>([]);
+  const [customPharmacies, setCustomPharmacies] = useState<CustomPharmacy[]>([]);
+  
+  const [showPharmaciesSheet, setShowPharmaciesSheet] = useState(false);
+  const [showCustomPharmacyModal, setShowCustomPharmacyModal] = useState(false);
+
+  useEffect(() => {
+    // Fetch assigned pharmacies
+    const fetchPharmacies = async () => {
+      try {
+        const res = await apiClient.get<AssignedPharmacy[]>(ENDPOINTS.portfolio.pharmacies);
+        setAssignedPharmacies(res.data || []);
+      } catch (err) {
+        console.log('Error fetching assigned pharmacies', err);
+      }
+    };
+    fetchPharmacies();
+    
+    if (editMode && leadData?.linkedPharmacy) {
+       // initialize selected from edit
+       const preSelectedIds = leadData.linkedPharmacy.filter((p: any) => p.pharmacyId).map((p: any) => p.pharmacyId);
+       setSelectedPharmacyIds(preSelectedIds);
+       const preCustom = leadData.linkedPharmacy.filter((p: any) => !p.pharmacyId);
+       setCustomPharmacies(preCustom);
+    }
+  }, [editMode, leadData]);
+
 
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(prev => ({ ...prev, [key]: val }));
@@ -184,11 +314,17 @@ const AddLeadScreen = () => {
         return `${year}-${month}-${day}`;
       };
       
+      
       const payload: Record<string, unknown> = {
         ...form,
         leadType: 'doctor',
         nextFollowUp: formatDateToISO(followUpDate),
+        linkedPharmacy: [
+          ...selectedPharmacyIds.map(id => ({ pharmacyId: id })),
+          ...customPharmacies
+        ]
       };
+      console.log('🚀 ~ handleSave ~ payload:', payload)
 
       if (editMode && leadData?.id) {
         await apiClient.patch(`/leads/${leadData.id}`, payload);
@@ -403,7 +539,48 @@ const AddLeadScreen = () => {
           </View>
         </View>
 
+        
+        {/* Linked Pharmacies dropdown */}
+        <Field label="Linked Pharmacies">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowPharmaciesSheet(true)}
+          >
+            <Text style={[styles.dropdownText, (selectedPharmacyIds.length > 0 || customPharmacies.length > 0) && styles.dropdownSelected]}>
+              {(selectedPharmacyIds.length + customPharmacies.length) > 0 ? `${selectedPharmacyIds.length + customPharmacies.length} Selected` : 'Select or Add Pharmacy'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+        
+        {/* Selected Pharmacies Chips */}
+        {(selectedPharmacyIds.length > 0 || customPharmacies.length > 0) && (
+           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {selectedPharmacyIds.map(id => {
+                 const name = assignedPharmacies.find(p => p.id === id)?.name || `Pharmacy #${id}`;
+                 return (
+                   <View key={`ex-${id}`} style={styles.chip}>
+                     <Text style={styles.chipText}>{name}</Text>
+                     <TouchableOpacity onPress={() => setSelectedPharmacyIds(prev => prev.filter(pid => pid !== id))}>
+                       <Text style={styles.chipClose}>✕</Text>
+                     </TouchableOpacity>
+                   </View>
+                 );
+              })}
+              {customPharmacies.map((p, idx) => (
+                 <View key={`c-${idx}`} style={styles.chip}>
+                   <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   <TouchableOpacity onPress={() => setCustomPharmacies(prev => prev.filter((_, i) => i !== idx))}>
+                     <Text style={styles.chipClose}>✕</Text>
+                   </TouchableOpacity>
+                 </View>
+              ))}
+           </View>
+        )}
+
         {/* Stage * dropdown */}
+
         <Field label="Stage *">
           <TouchableOpacity
             style={styles.dropdown}
@@ -493,7 +670,28 @@ const AddLeadScreen = () => {
         </TouchableOpacity>
       </View>
 
+      
       {/* Dropdown sheets */}
+      <MultiSelectSheet
+        visible={showPharmaciesSheet}
+        title="Select Assigned Pharmacy"
+        options={assignedPharmacies}
+        selectedIds={selectedPharmacyIds}
+        onToggle={(id) => {
+          setSelectedPharmacyIds(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+        }}
+        onAddCustom={() => setShowCustomPharmacyModal(true)}
+        onClose={() => setShowPharmaciesSheet(false)}
+      />
+      <CustomPharmacyModal
+        visible={showCustomPharmacyModal}
+        onClose={() => setShowCustomPharmacyModal(false)}
+        onSave={(p) => {
+          setCustomPharmacies(prev => [...prev, p]);
+          setShowCustomPharmacyModal(false);
+        }}
+      />
+
       <OptionsSheet
         visible={showStage}
         title="Select Stage"
@@ -623,6 +821,14 @@ const styles = StyleSheet.create({
   },
 
   spacer: { height: 24 },
+
+  chip: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#D0D7F5'
+  },
+  chipText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.buttonBlue, marginRight: 6 },
+  chipClose: { fontSize: FONTS.size.sm, color: COLORS.buttonBlue, fontWeight: 'bold' },
+
 
   footer: {
     paddingHorizontal: 16,
