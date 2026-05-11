@@ -12,10 +12,10 @@ import {
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Geolocation from '@react-native-community/geolocation';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayIcon, PlayBlue, PauseBlue } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -341,6 +341,14 @@ const AttendanceScreen = () => {
                     <Text style={styles.outlineButtonText}>View Attendance History</Text>
                 </TouchableOpacity>
 
+                <TouchableOpacity
+                    style={[styles.outlineButton, styles.viewHistoryButton, styles.leaveRequestButton]}
+                    onPress={() => navigation.navigate('SubmitLeave')}
+                    activeOpacity={0.8}
+                >
+                    <Text style={styles.leaveRequestButtonText}>Submit Leave Request</Text>
+                </TouchableOpacity>
+
                 <View style={{ height: 12 }} />
 
                 {/* Break Timer */}
@@ -396,6 +404,7 @@ const AttendanceScreen = () => {
                     </View>
                 </View>
             </ScrollView>
+
         </View>
     );
 };
@@ -687,6 +696,18 @@ const styles = StyleSheet.create({
         fontFamily: FONTS.family.bold,
         color: '#000',
     },
+
+    // ── Leave Request Button ───────────────────────────────────────────────
+    leaveRequestButton: {
+        marginTop: 12,
+        borderColor: COLORS.buttonBlue,
+    },
+    leaveRequestButtonText: {
+        color: COLORS.buttonBlue,
+        fontSize: FONTS.size.lg,
+        fontFamily: FONTS.family.bold,
+    },
+
 });
 
 export default AttendanceScreen;

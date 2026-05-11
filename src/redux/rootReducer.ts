@@ -6,6 +6,7 @@ import attendanceReducer from './slices/attendanceSlice';
 import portfolioReducer from './slices/portfolioSlice';
 import profileReducer from './slices/profileSlice';
 import routeReducer from './slices/routeSlice';
+import leaveReducer from './slices/leaveSlice';
 
 const appReducer = combineReducers({
     auth: authReducer,
@@ -15,6 +16,7 @@ const appReducer = combineReducers({
     portfolio: portfolioReducer,
     profile: profileReducer,
     route: routeReducer,
+    leave: leaveReducer,
 });
 
 // Reset all slices to initialState on logout so stale data never leaks between sessions

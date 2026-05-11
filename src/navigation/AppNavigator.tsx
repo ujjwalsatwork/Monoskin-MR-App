@@ -25,6 +25,7 @@ import LeadDetailsScreen from '@/screens/Leads/LeadDetailsScreen';
 import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
 import ProfileScreen from '@/screens/Profile/ProfileScreen';
 import EditProfileScreen from '@/screens/Profile/EditProfileScreen';
+import SubmitLeaveScreen from '@/screens/Home/SubmitLeaveScreen';
 import { AppStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -138,6 +139,11 @@ const AppNavigator = () => {
             <Stack.Screen
               name="EditProfile"
               component={EditProfileScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="SubmitLeave"
+              component={SubmitLeaveScreen}
               options={{ headerShown: false }}
             />
           </>

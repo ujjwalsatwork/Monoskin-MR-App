@@ -449,10 +449,10 @@ const PortfolioScreen = () => {
           <Text style={styles.filterChipFilledText}>Filter</Text>
           <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.filterChipFilled}>
+        {/* <TouchableOpacity style={styles.filterChipFilled}>
           <Text style={styles.filterChipFilledText}>Sort By</Text>
           <Down style={styles.chevron} stroke={COLORS.white} />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
 
       {/* List */}

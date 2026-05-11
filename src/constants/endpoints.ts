@@ -51,6 +51,9 @@ export const ENDPOINTS = {
         markRead: (id: number) => `/notifications/${id}/read`,
         markAllRead: '/notifications/read-all',
     },
+    leaveRequests: {
+        create: '/leave-requests',
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',

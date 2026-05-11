@@ -345,9 +345,8 @@ const CreateOrderScreen = () => {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
         {/* Doctor Selection */}
-        <Text style={styles.sectionLabel}>DOCTOR SELECTION</Text>
+        {/* <Text style={styles.sectionLabel}>DOCTOR SELECTION</Text>
 
-        {/* Search */}
         <View style={styles.searchBox}>
           <SearchIcon />
           <TextInput
@@ -357,7 +356,7 @@ const CreateOrderScreen = () => {
             value={search}
             onChangeText={setSearch}
           />
-        </View>
+        </View> */}
 
         {/* Doctor Card */}
         {doctorLoading ? (

@@ -84,6 +84,7 @@ export type AppStackParamList = {
     Notifications: undefined;
     Profile: undefined;
     EditProfile: undefined;
+    SubmitLeave: undefined;
     RouteMapScreen: {
         routeData: {
             readOnly: boolean;
