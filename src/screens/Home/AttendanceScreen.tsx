@@ -21,9 +21,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
-import { logAttendance, fetchTodayStatus, clearAttendanceError, AttendanceError } from '@/redux/slices/attendanceSlice';
+import {
+    logAttendance,
+    fetchTodayStatus,
+    clearAttendanceError,
+    startBreak,
+    endBreak,
+    AttendanceError,
+} from '@/redux/slices/attendanceSlice';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { fetchTodayRoute } from '@/redux/slices/routeSlice';
+import { formatBreakDuration, formatDurationSeconds, formatElapsedSeconds } from '@/utils/attendanceFormatter';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,8 +79,8 @@ const AttendanceScreen = () => {
     const [location, setLocation] = useState<{ lat: number; long: number } | null>(null);
     const [addressText, setAddressText] = useState('');
     const [locationError, setLocationError] = useState('');
-    const [breakActive, setBreakActive] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [breakElapsed, setBreakElapsed] = useState(0);
 
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const dispatch = useDispatch<AppDispatch>();
@@ -81,8 +89,12 @@ const AttendanceScreen = () => {
         checkInLoading,
         checkOutLoading,
         todayLoading,
+        breakLoading,
         isCheckedIn,
         currentSession,
+        activeBreak,
+        breaks,
+        effectiveWorkMinutes,
     } = useSelector((state: RootState) => state.attendance);
 
     const profileLoaded = useSelector((state: RootState) => !!state.profile.data);
@@ -200,6 +212,42 @@ const AttendanceScreen = () => {
             );
         }
     }, [dispatch, addressText, coordsString, currentDate, navigation]);
+
+    // ─── Break timer ──────────────────────────────────────────────────────────
+
+    useEffect(() => {
+        if (!activeBreak) {
+            setBreakElapsed(0);
+            return;
+        }
+        const start = dayjs(activeBreak.breakStart);
+        const tick = () => setBreakElapsed(dayjs().diff(start, 'second'));
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+    }, [activeBreak]);
+
+    const handleStartBreak = useCallback(async () => {
+        if (!currentSession) return;
+        const result = await dispatch(startBreak({ attendanceId: currentSession.id }));
+        if (startBreak.rejected.match(result)) {
+            Alert.alert('Break Failed', result.payload?.message ?? 'Failed to start break');
+        }
+    }, [dispatch, currentSession]);
+
+    const handleEndBreak = useCallback(async () => {
+        if (!activeBreak) return;
+        const result = await dispatch(endBreak({ breakId: activeBreak.id }));
+        if (endBreak.rejected.match(result)) {
+            Alert.alert('Break Failed', result.payload?.message ?? 'Failed to end break');
+        }
+    }, [dispatch, activeBreak]);
+
+    // Compute from timestamps for second-level precision (backend `duration` is rounded minutes)
+    const totalBreakSeconds = breaks.reduce((sum, b) => {
+        if (!b.breakEnd) return sum;
+        return sum + dayjs(b.breakEnd).diff(dayjs(b.breakStart), 'second');
+    }, 0);
 
     // ─── Status card ─────────────────────────────────────────────────────────
 
@@ -359,22 +407,66 @@ const AttendanceScreen = () => {
                         </View>
                         <View>
                             <Text style={styles.breakTitle}>Break Timer</Text>
-                            <Text style={styles.breakSubtitle}>
-                                Log lunch breaks or{'\n'}transport gaps
-                            </Text>
+                            {activeBreak ? (
+                                <Text style={styles.breakTimer}>
+                                    {formatElapsedSeconds(breakElapsed)}
+                                </Text>
+                            ) : (
+                                <Text style={styles.breakSubtitle}>
+                                    Log lunch breaks or{'\n'}transport gaps
+                                </Text>
+                            )}
                         </View>
                     </View>
                     <TouchableOpacity
-                        style={styles.breakButton}
-                        onPress={() => setBreakActive((prev) => !prev)}
+                        style={[
+                            styles.breakButton,
+                            (!isCheckedIn || breakLoading) && styles.buttonDisabled,
+                        ]}
+                        onPress={activeBreak ? handleEndBreak : handleStartBreak}
+                        disabled={!isCheckedIn || breakLoading}
                         activeOpacity={0.8}
                     >
-                        {breakActive ? <PlayBlue /> : <PauseIcon />}
+                        {breakLoading ? (
+                            <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+                        ) : activeBreak ? (
+                            <PlayBlue />
+                        ) : (
+                            <PauseIcon />
+                        )}
                         <Text style={styles.breakButtonText}>
-                            {breakActive ? 'END\nBREAK' : 'START\nBREAK'}
+                            {activeBreak ? 'END\nBREAK' : 'START\nBREAK'}
                         </Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* Break Summary */}
+                {(breaks.length > 0 || activeBreak !== null || effectiveWorkMinutes > 0) && (
+                    <View style={styles.breakSummaryCard}>
+                        <View style={styles.breakSummaryRow}>
+                            <View style={styles.breakSummaryStat}>
+                                <Text style={styles.breakSummaryLabel}>BREAKS TODAY</Text>
+                                <Text style={styles.breakSummaryValue}>
+                                    {breaks.length + (activeBreak ? 1 : 0)}
+                                </Text>
+                            </View>
+                            <View style={styles.breakSummaryStat}>
+                                <Text style={styles.breakSummaryLabel}>TOTAL BREAK</Text>
+                                <Text style={styles.breakSummaryValue}>
+                                    {formatDurationSeconds(totalBreakSeconds)}
+                                </Text>
+                            </View>
+                            {/* <View style={styles.breakSummaryStat}>
+                                <Text style={styles.breakSummaryLabel}>EFFECTIVE WORK</Text>
+                                <Text style={styles.breakSummaryValue}>
+                                    {effectiveWorkMinutes > 0
+                                        ? formatBreakDuration(effectiveWorkMinutes)
+                                        : '--'}
+                                </Text>
+                            </View> */}
+                        </View>
+                    </View>
+                )}
 
                 {/* Show Today's Visits */}
                 <View style={styles.visitsSection}>
@@ -706,6 +798,47 @@ const styles = StyleSheet.create({
         color: COLORS.buttonBlue,
         fontSize: FONTS.size.lg,
         fontFamily: FONTS.family.bold,
+    },
+
+    // ── Break timer live display ───────────────────────────────────────────
+    breakTimer: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.buttonBlue,
+        marginTop: 2,
+    },
+
+    // ── Break summary card ────────────────────────────────────────────────
+    breakSummaryCard: {
+        marginHorizontal: 20,
+        marginTop: -8,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 12,
+        padding: 14,
+        backgroundColor: '#F8F9FF',
+    },
+    breakSummaryRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    breakSummaryStat: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    breakSummaryLabel: {
+        fontSize: FONTS.size.xs,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.textSecondary,
+        marginBottom: 4,
+        textAlign: 'center',
+    },
+    breakSummaryValue: {
+        fontSize: FONTS.size.md,
+        fontFamily: FONTS.family.bold,
+        color: '#000',
+        textAlign: 'center',
     },
 
 });

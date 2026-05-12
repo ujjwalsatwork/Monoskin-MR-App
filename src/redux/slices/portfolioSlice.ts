@@ -93,6 +93,7 @@ export type Doctor = {
     followUpToday: boolean;
     tags: string[];
     weeklyTarget: number;
+    visitCount: number;
     amount: string;
     paymentStatus: PaymentStatus;
     lastVisit: string;
@@ -137,6 +138,7 @@ const mapApiDoctorToUI = (d: ApiDoctor): Doctor => {
         followUpToday: (d.followUpToday ?? 0) > 0,
         tags: d.tags ?? [],
         weeklyTarget: d.weeklyTarget ?? 0,
+        visitCount: d.visitCount ?? 0,
         amount: `₹${d.totalSalesValue || '0.00'}`,
         paymentStatus,
         lastVisit,

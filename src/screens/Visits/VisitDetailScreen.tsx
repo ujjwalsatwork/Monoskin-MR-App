@@ -357,7 +357,8 @@ const VisitDetailScreen = () => {
     if (sampleProducts.length > 0) {
       const formattedSamples = sampleProducts.map(s => ({
         productId: Number(s.productId),
-        quantity: s.quantity
+        name: s.name,
+        quantity: s.quantity,
       }));
       formData.append('sampleProducts', JSON.stringify(formattedSamples));
     }

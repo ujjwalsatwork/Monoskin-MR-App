@@ -191,6 +191,44 @@ export const transformAttendanceDays = (
     return result;
 };
 
+// ─── Break duration helpers ───────────────────────────────────────────────────
+
+/** Formats a minute count into a human-readable string, e.g. "15 min" or "1 hr 20 min". */
+export const formatBreakDuration = (minutes: number): string => {
+    if (minutes <= 0) return '0 min';
+    if (minutes < 60) return `${minutes} min`;
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hrs} hr ${mins} min` : `${hrs} hr`;
+};
+
+/**
+ * Formats a total-seconds count into a human-readable string with second precision.
+ * e.g. 90 → "1 min 30 sec", 3661 → "1 hr 1 min 1 sec", 45 → "45 sec"
+ */
+export const formatDurationSeconds = (totalSeconds: number): string => {
+    if (totalSeconds <= 0) return '0 sec';
+    const s = totalSeconds % 60;
+    const totalMins = Math.floor(totalSeconds / 60);
+    const m = totalMins % 60;
+    const h = Math.floor(totalMins / 60);
+    const parts: string[] = [];
+    if (h > 0) parts.push(`${h} hr`);
+    if (m > 0) parts.push(`${m} min`);
+    if (s > 0 || parts.length === 0) parts.push(`${s} sec`);
+    return parts.join(' ');
+};
+
+/** Formats elapsed seconds into MM:SS or HH:MM:SS for a live timer display. */
+export const formatElapsedSeconds = (totalSeconds: number): string => {
+    const s = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const m = totalMinutes % 60;
+    const h = Math.floor(totalMinutes / 60);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+};
+
 // ─── Legacy compat ────────────────────────────────────────────────────────────
 
 export const transformAttendanceData = (

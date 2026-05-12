@@ -23,12 +23,26 @@ export interface AttendanceSession {
     longitude: number | null;
 }
 
+export interface BreakSession {
+    id: number;
+    mrId: number;
+    attendanceId: number;
+    date: string;
+    breakStart: string;           // ISO datetime
+    breakEnd: string | null;
+    duration: number | null;      // minutes, as returned by backend
+    status: 'active' | 'completed';
+}
+
 // Shape returned by GET /mr-attendance/today
 // sessions[] is a flat list of split records that mergeIntoPairedSessions pairs up
 export interface TodayAttendanceStatus {
     isCheckedIn: boolean;
     currentSession: AttendanceSession | null;
     sessions: AttendanceApiRecord[];
+    breaks: BreakSession[];
+    activeBreak: BreakSession | null;
+    effectiveWorkMinutes: number;
 }
 
 export interface LogAttendancePayload {
@@ -45,9 +59,13 @@ interface AttendanceState {
     checkInLoading: boolean;
     checkOutLoading: boolean;
     todayLoading: boolean;
+    breakLoading: boolean;
     isCheckedIn: boolean;
     currentSession: AttendanceSession | null;
     sessions: PairedSession[];            // UI-ready merged sessions for today
+    breaks: BreakSession[];
+    activeBreak: BreakSession | null;
+    effectiveWorkMinutes: number;
     error: string | null;
 }
 
@@ -177,15 +195,67 @@ export const logAttendance = createAsyncThunk<
     },
 );
 
+export const startBreak = createAsyncThunk<
+    BreakSession,
+    { attendanceId: number },
+    { state: RootState; rejectValue: AttendanceError }
+>(
+    'attendance/startBreak',
+    async ({ attendanceId }, { getState, rejectWithValue }) => {
+        const mrId = getState().profile.data?.id;
+        if (!mrId) {
+            return rejectWithValue({ message: 'Profile not loaded. Please try again.' });
+        }
+        try {
+            const response = await apiClient.post<BreakSession>(
+                ENDPOINTS.mrBreaks.start,
+                { mrId, attendanceId, date: dayjs().format('YYYY-MM-DD') },
+            );
+            return response.data;
+        } catch (error) {
+            return rejectWithValue({
+                message: extractErrorMessage(error, 'Failed to start break'),
+                status: extractErrorStatus(error),
+            });
+        }
+    },
+);
+
+export const endBreak = createAsyncThunk<
+    BreakSession,
+    { breakId: number },
+    { rejectValue: AttendanceError }
+>(
+    'attendance/endBreak',
+    async ({ breakId }, { rejectWithValue }) => {
+        try {
+            const response = await apiClient.post<BreakSession>(
+                ENDPOINTS.mrBreaks.end,
+                { breakId, breakEnd: dayjs().toISOString() },
+            );
+            return response.data;
+        } catch (error) {
+            return rejectWithValue({
+                message: extractErrorMessage(error, 'Failed to end break'),
+                status: extractErrorStatus(error),
+            });
+        }
+    },
+);
+
 // ─── Slice ────────────────────────────────────────────────────────────────────
 
 const initialState: AttendanceState = {
     checkInLoading: false,
     checkOutLoading: false,
     todayLoading: false,
+    breakLoading: false,
     isCheckedIn: false,
     currentSession: null,
     sessions: [],
+    breaks: [],
+    activeBreak: null,
+    effectiveWorkMinutes: 0,
     error: null,
 };
 
@@ -206,11 +276,15 @@ const attendanceSlice = createSlice({
             })
             .addCase(fetchTodayStatus.fulfilled, (state, action) => {
                 state.todayLoading = false;
-                // Derive state from raw records — never trust the API's isCheckedIn flag.
+                // Derive attendance state from raw records — never trust the API's isCheckedIn flag.
                 const derived = deriveFromRecords(action.payload.sessions);
                 state.isCheckedIn = derived.isCheckedIn;
                 state.currentSession = derived.currentSession;
                 state.sessions = derived.sessions;
+                // Break state comes directly from backend
+                state.breaks = action.payload.breaks ?? [];
+                state.activeBreak = action.payload.activeBreak ?? null;
+                state.effectiveWorkMinutes = action.payload.effectiveWorkMinutes ?? 0;
             })
             .addCase(fetchTodayStatus.rejected, (state) => {
                 state.todayLoading = false;
@@ -256,9 +330,45 @@ const attendanceSlice = createSlice({
                 state.checkInLoading = false;
                 state.checkOutLoading = false;
                 state.error = action.payload?.message ?? 'Attendance log failed';
+            })
+            // ── startBreak ────────────────────────────────────────────────────
+            .addCase(startBreak.pending, (state) => {
+                state.breakLoading = true;
+                state.error = null;
+            })
+            .addCase(startBreak.fulfilled, (state, action) => {
+                state.breakLoading = false;
+                // Active break lives only in activeBreak — NOT added to breaks[]
+                // (backend keeps breaks[] for completed ones only)
+                state.activeBreak = action.payload;
+            })
+            .addCase(startBreak.rejected, (state, action) => {
+                state.breakLoading = false;
+                state.error = action.payload?.message ?? 'Failed to start break';
+            })
+            // ── endBreak ──────────────────────────────────────────────────────
+            .addCase(endBreak.pending, (state) => {
+                state.breakLoading = true;
+                state.error = null;
+            })
+            .addCase(endBreak.fulfilled, (state, action) => {
+                state.breakLoading = false;
+                state.activeBreak = null;
+                // Move the now-completed break into breaks[] (it was only in activeBreak before)
+                const idx = state.breaks.findIndex((b) => b.id === action.payload.id);
+                if (idx !== -1) {
+                    state.breaks[idx] = action.payload;
+                } else {
+                    state.breaks.push(action.payload);
+                }
+            })
+            .addCase(endBreak.rejected, (state, action) => {
+                state.breakLoading = false;
+                state.error = action.payload?.message ?? 'Failed to end break';
             });
     },
 });
 
 export const { clearAttendanceError } = attendanceSlice.actions;
 export default attendanceSlice.reducer;
+export type { AttendanceState };

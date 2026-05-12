@@ -9,6 +9,8 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/redux/store';
@@ -36,6 +38,143 @@ import { AppStackParamList } from '@/navigation/types';
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type Category = 'A' | 'B' | 'C';
 type Tab = 'Doctors' | 'Pharmacies';
+
+type FilterState = {
+  category: string[];
+  lastVisited: string[];
+  tags: string[];
+};
+
+const EMPTY_FILTERS: FilterState = { category: [], lastVisited: [], tags: [] };
+
+const FILTER_FIELDS: Array<{ key: keyof FilterState; label: string; options: string[] }> = [
+  { key: 'category', label: 'Category', options: ['A', 'B', 'C'] },
+  {
+    key: 'lastVisited',
+    label: 'Last Visited',
+    options: ['Today', 'This Week', 'This Month', 'Over a Month', 'Never'],
+  },
+  {
+    key: 'tags',
+    label: 'Tags',
+    options: [
+      'New',
+      'Contacted',
+      'In Discussion',
+      'Converted',
+      'Lost',
+      'Needs Samples',
+      'Follow Up Today',
+      'Unavailable',
+      'Reschedule',
+      'Not Interested',
+      'No Response',
+    ],
+  },
+];
+
+/* ─── Helper: parse days from lastVisit string ───────────────── */
+const parseDaysAgo = (lastVisit: string): number | null => {
+  if (!lastVisit || lastVisit === 'Never Visited') return null;
+  if (lastVisit === 'Today') return 0;
+  const m = lastVisit.match(/^(\d+)\s+day/);
+  if (m) return parseInt(m[1], 10);
+  return null;
+};
+
+const matchesLastVisited = (lastVisit: string, lastVisitDate: string | null | undefined, filters: string[]): boolean => {
+  if (filters.length === 0) return true;
+  const days = parseDaysAgo(lastVisit);
+  const isNever = days === null && (!lastVisitDate);
+  return filters.some(f => {
+    if (f === 'Never') return isNever;
+    if (f === 'Today') return days === 0;
+    if (f === 'This Week') return days !== null && days >= 1 && days <= 7;
+    if (f === 'This Month') return days !== null && days > 7 && days <= 30;
+    if (f === 'Over a Month') return days !== null && days > 30;
+    return false;
+  });
+};
+
+/* ─── Filter Modal ────────────────────────────────────────────── */
+const FilterModal = ({
+  visible,
+  onClose,
+  onApply,
+  initialFilters,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onApply: (filters: FilterState) => void;
+  initialFilters: FilterState;
+}) => {
+  const [pending, setPending] = useState<FilterState>(initialFilters);
+
+  useEffect(() => {
+    if (visible) setPending(initialFilters);
+  }, [visible, initialFilters]);
+
+  const toggle = (key: keyof FilterState, value: string) => {
+    setPending(prev => {
+      const curr = prev[key];
+      return {
+        ...prev,
+        [key]: curr.includes(value) ? curr.filter(v => v !== value) : [...curr, value],
+      };
+    });
+  };
+
+  const totalSelected = pending.category.length + pending.lastVisited.length + pending.tags.length;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={filterModalStyles.overlay} activeOpacity={1} onPress={onClose} />
+      <View style={filterModalStyles.sheet}>
+        <View style={filterModalStyles.handle} />
+        <View style={filterModalStyles.header}>
+          <Text style={filterModalStyles.title}>Filter</Text>
+          <TouchableOpacity onPress={() => setPending(EMPTY_FILTERS)}>
+            <Text style={filterModalStyles.resetText}>Reset All</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {FILTER_FIELDS.map(field => (
+            <View key={field.key} style={filterModalStyles.section}>
+              <Text style={filterModalStyles.sectionLabel}>{field.label}</Text>
+              <View style={filterModalStyles.chipRow}>
+                {field.options.map(opt => {
+                  const selected = pending[field.key].includes(opt);
+                  const label = field.key === 'category' ? `Category ${opt}` : opt;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[filterModalStyles.chip, selected && filterModalStyles.chipSelected]}
+                      onPress={() => toggle(field.key, opt)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[filterModalStyles.chipText, selected && filterModalStyles.chipTextSelected]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+        <TouchableOpacity
+          style={filterModalStyles.applyBtn}
+          onPress={() => { onApply(pending); onClose(); }}
+          activeOpacity={0.85}
+        >
+          <Text style={filterModalStyles.applyBtnText}>
+            Apply Filters{totalSelected > 0 ? ` (${totalSelected})` : ''}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+};
 
 const CATEGORY_CONFIG: Record<Category, { label: string; bg: string; color: string }> = {
   A: { label: 'CATEGORY A', bg: '#FFF3E0', color: '#E65100' },
@@ -112,7 +251,7 @@ const DoctorCard = ({
         <View style={styles.infoLeft}>
           <View style={styles.infoLine}>
             <CheckCircleIcon width={14} height={14} />
-            <Text style={styles.infoText}>  Weekly Target: {item.weeklyTarget} Visits</Text>
+            <Text style={styles.infoText}>  Total Visits: {item.visitCount}</Text>
           </View>
           <View style={styles.infoLine}>
             <ClockIcon width={14} height={14} />
@@ -122,7 +261,7 @@ const DoctorCard = ({
             </Text>
           </View>
         </View>
-        <View style={styles.infoRight}>
+        {/* <View style={styles.infoRight}>
           <Text style={styles.amountText}>{item.amount}</Text>
           <Text style={[
             styles.paymentStatusText,
@@ -133,11 +272,11 @@ const DoctorCard = ({
               : item.paymentStatus === 'overdue' ? 'Payment Overdue'
               : 'Payment Pending'}
           </Text>
-        </View>
+        </View> */}
       </View>
 
       {/* Monthly Achievement */}
-      <View style={styles.achievementSection}>
+      {/* <View style={styles.achievementSection}>
         <View style={styles.achievementHeader}>
           <Text style={styles.achievementLabel}>MONTHLY ACHIEVEMENT</Text>
           <Text style={styles.achievementValue}>
@@ -147,7 +286,7 @@ const DoctorCard = ({
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progressPercent * 100}%` }]} />
         </View>
-      </View>
+      </View> */}
 
       {/* Action buttons */}
       <View style={styles.actionRow}>
@@ -218,9 +357,6 @@ const PharmacyCard = ({
             <Text style={styles.pharmLocation}>{item.location}</Text>
           </View>
         </View>
-        <Text style={styles.pharmLastVisit}>
-          {item.lastVisitDate === null ? 'Never Visited' : `Last visit: ${item.lastVisit}`}
-        </Text>
       </View>
 
       {/* Follow-up + Tag row */}
@@ -242,11 +378,28 @@ const PharmacyCard = ({
         </TouchableOpacity>
       </View>
 
+      {/* Visit + Last Visit row */}
+      <View style={styles.infoRow}>
+        <View style={styles.infoLeft}>
+          <View style={styles.infoLine}>
+            <CheckCircleIcon width={14} height={14} />
+            <Text style={styles.infoText}>  Total Visits: {item.visitCount}</Text>
+          </View>
+          <View style={styles.infoLine}>
+            <ClockIcon width={14} height={14} />
+            <Text style={styles.infoText}>  Last Visit: </Text>
+            <Text style={styles.infoText}>
+              {item.lastVisitDate === null ? 'Never Visited' : item.lastVisit}
+            </Text>
+          </View>
+        </View>
+      </View>
+
       {/* Divider */}
-      <View style={styles.pharmDivider} />
+      {/* <View style={styles.pharmDivider} /> */}
 
       {/* Sales target row */}
-      <View style={styles.pharmSalesRow}>
+      {/* <View style={styles.pharmSalesRow}>
         <View>
           <Text style={styles.salesTargetLabel}>ENGAGEMENT SCORE</Text>
           <Text style={styles.salesTargetValue}>
@@ -266,12 +419,12 @@ const PharmacyCard = ({
               : 'Payment Pending'}
           </Text>
         </View>
-      </View>
+      </View> */}
 
       {/* Progress bar */}
-      <View style={[styles.progressTrack, styles.pharmProgressTrack]}>
+      {/* <View style={[styles.progressTrack, styles.pharmProgressTrack]}>
         <View style={[styles.progressFill, { width: `${progressPercent * 100}%` }]} />
-      </View>
+      </View> */}
 
       {/* Action buttons */}
       <View style={styles.actionRow}>
@@ -329,6 +482,16 @@ const PortfolioScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [tagModalDoctor, setTagModalDoctor] = useState<Doctor | null>(null);
   const [tagModalPharmacy, setTagModalPharmacy] = useState<Pharmacy | null>(null);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS);
+
+  const hasActiveFilters =
+    appliedFilters.category.length > 0 ||
+    appliedFilters.lastVisited.length > 0 ||
+    appliedFilters.tags.length > 0;
+
+  const totalApplied =
+    appliedFilters.category.length + appliedFilters.lastVisited.length + appliedFilters.tags.length;
 
   const { doctors, doctorsLoading, pharmacies, pharmaciesLoading } = useSelector(
     (state: RootState) => state.portfolio,
@@ -356,15 +519,24 @@ const PortfolioScreen = () => {
 
   const query = searchText.toLowerCase();
 
-  const filteredDoctors = doctors.filter(d =>
-    [d?.name, d?.specialty, d?.hospital, d?.address, d?.city, d?.state]
-      .some(field => field?.toLowerCase().includes(query)),
-  );
+  const filteredDoctors = doctors.filter(d => {
+    const matchesSearch = [d?.name, d?.specialty, d?.hospital, d?.address, d?.city, d?.state]
+      .some(field => field?.toLowerCase().includes(query));
+    if (!matchesSearch) return false;
+    if (appliedFilters.category.length > 0 && !appliedFilters.category.includes(d.category)) return false;
+    if (!matchesLastVisited(d.lastVisit, undefined, appliedFilters.lastVisited)) return false;
+    if (appliedFilters.tags.length > 0 && !appliedFilters.tags.some(t => d.tags?.includes(t))) return false;
+    return true;
+  });
 
-  const filteredPharmacies = pharmacies.filter(p =>
-    [p?.name, p?.location]
-      .some(field => field?.toLowerCase().includes(query)),
-  );
+  const filteredPharmacies = pharmacies.filter(p => {
+    const matchesSearch = [p?.name, p?.location]
+      .some(field => field?.toLowerCase().includes(query));
+    if (!matchesSearch) return false;
+    if (!matchesLastVisited(p.lastVisit, p.lastVisitDate, appliedFilters.lastVisited)) return false;
+    if (appliedFilters.tags.length > 0 && !appliedFilters.tags.some(t => p.tags?.includes(t))) return false;
+    return true;
+  });
 
   const renderDoctor = ({ item }: { item: Doctor }) => (
     <DoctorCard
@@ -440,19 +612,34 @@ const PortfolioScreen = () => {
         ))}
       </View>
 
+      <FilterModal
+        visible={filterModalVisible}
+        onClose={() => setFilterModalVisible(false)}
+        onApply={setAppliedFilters}
+        initialFilters={appliedFilters}
+      />
+
       {/* Filter row */}
       <View style={styles.filterRow}>
-        <TouchableOpacity style={styles.filterChipOutline}>
-          <Text style={styles.filterChipOutlineText}>All Units</Text>
+        <TouchableOpacity
+          style={[styles.filterChipOutline, !hasActiveFilters && styles.filterChipOutlineActive]}
+          onPress={() => setAppliedFilters(EMPTY_FILTERS)}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.filterChipOutlineText, !hasActiveFilters && styles.filterChipOutlineTextActive]}>
+            All Units
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.filterChipFilled}>
-          <Text style={styles.filterChipFilledText}>Filter</Text>
+        <TouchableOpacity
+          style={[styles.filterChipFilled, hasActiveFilters && styles.filterChipFilledActive]}
+          onPress={() => setFilterModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.filterChipFilledText}>
+            {hasActiveFilters ? `Filter (${totalApplied})` : 'Filter'}
+          </Text>
           <Down style={styles.chevron} stroke={COLORS.white} />
         </TouchableOpacity>
-        {/* <TouchableOpacity style={styles.filterChipFilled}>
-          <Text style={styles.filterChipFilledText}>Sort By</Text>
-          <Down style={styles.chevron} stroke={COLORS.white} />
-        </TouchableOpacity> */}
       </View>
 
       {/* List */}
@@ -582,6 +769,13 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.semibold,
     color: COLORS.buttonBlue,
   },
+  filterChipOutlineActive: {
+    backgroundColor: COLORS.buttonBlue,
+    borderColor: COLORS.buttonBlue,
+  },
+  filterChipOutlineTextActive: {
+    color: COLORS.white,
+  },
   filterChipFilled: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -589,6 +783,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 7,
+  },
+  filterChipFilledActive: {
+    backgroundColor: '#003DA5',
   },
   filterChipFilledText: {
     fontSize: FONTS.size.sm,
@@ -912,6 +1109,94 @@ const emptyStyles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+});
+
+const filterModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  sheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    maxHeight: '75%',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#DDD',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+  },
+  resetText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.semibold,
+    color: COLORS.buttonBlue,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionLabel: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textSecondary,
+    letterSpacing: 0.4,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: COLORS.white,
+  },
+  chipSelected: {
+    borderColor: COLORS.buttonBlue,
+    backgroundColor: '#EAF0FF',
+  },
+  chipText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.semibold,
+    color: COLORS.textSecondary,
+  },
+  chipTextSelected: {
+    color: COLORS.buttonBlue,
+  },
+  applyBtn: {
+    backgroundColor: COLORS.buttonBlue,
+    borderRadius: 28,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  applyBtnText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
   },
 });
 

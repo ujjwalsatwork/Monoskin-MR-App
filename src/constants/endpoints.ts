@@ -54,6 +54,11 @@ export const ENDPOINTS = {
     leaveRequests: {
         create: '/leave-requests',
     },
+    mrBreaks: {
+        start: '/mr-breaks/start',
+        end: '/mr-breaks/end',
+        today: '/mr-breaks/today',
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',
