@@ -62,7 +62,6 @@ const ProfileScreen = () => {
       ? Math.round((profile.conversions / profile.leadsAssigned) * 100)
       : 0;
 
-  console.log('🚀 ~ ProfileScreen ~ ${Config.BASE_URL}/${profile.profilePhoto}:', `${Config.BASE_URL}${profile.profilePhoto}`)
   return (
     <View style={styles.container}>
       <Header title="My Profile" showBack showNotification />

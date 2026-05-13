@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { COLORS } from '@/constants/colors';
@@ -97,21 +98,27 @@ const LeadDetailsScreen = () => {
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const res = await apiClient.get<Lead>(`/leads/${leadId}`);
-        setLead(res.data);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
+  const fetchLead = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(false);
+    try {
+      const res = await apiClient.get<Lead>(`/leads/${leadId}`);
+      setLead(res.data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [leadId]);
+
+  useFocusEffect(useCallback(() => {
+    fetchLead();
+  }, [fetchLead]));
 
   if (loading) {
     return (
@@ -185,9 +192,17 @@ const LeadDetailsScreen = () => {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchLead(true)}
+            colors={[COLORS.buttonBlue]}
+            tintColor={COLORS.buttonBlue}
+          />
+        }
       >
         {/* Action Buttons */}
-        <View style={styles.actionsContainer}>
+        {/* <View style={styles.actionsContainer}>
           {[
             {
               icon: <PhoneIconOutline stroke={COLORS.white} height={18} width={18} />,
@@ -217,9 +232,11 @@ const LeadDetailsScreen = () => {
               </View>
             </TouchableOpacity>
           ))}
-        </View>
+        </View> */}
 
         {/* Contact Info */}
+        <View style={styles.spacing}/>
+          {/* Empty view for spacing between header and first card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>CONTACT INFO</Text>
           {lead.phone ? (
@@ -280,7 +297,7 @@ const LeadDetailsScreen = () => {
           ) : null}
           {designation ? (
             <View style={styles.companyRow}>
-              <Text style={styles.infoLabel}>Role:</Text>
+              <Text style={styles.infoLabel}>Designation:</Text>
               <Text style={styles.companyValue}>{designation}</Text>
             </View>
           ) : null}
@@ -385,6 +402,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.white,
+  },
+  spacing: {
+    height: 16,
   },
   centered: {
     flex: 1,

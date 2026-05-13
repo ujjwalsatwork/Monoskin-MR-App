@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,17 +6,18 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { MapPinOutlineIcon } from '@/assets/images';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { AppDispatch, RootState } from '@/redux/store';
-import { fetchTodayRoute, RouteStop } from '@/redux/slices/routeSlice';
+import { fetchTodayRoute, RouteStop, setRouteNeedsRefresh } from '@/redux/slices/routeSlice';
 
 type StopStatus = 'in_progress' | 'upcoming' | 'completed';
 
@@ -37,9 +38,26 @@ const TodayVisitsScreen = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const { data, loading, error } = useSelector((state: RootState) => state.route.today);
+  const needsRefresh = useSelector((state: RootState) => state.route.needsRefresh);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     dispatch(fetchTodayRoute());
+  }, [dispatch]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (needsRefresh) {
+        dispatch(setRouteNeedsRefresh(false));
+        dispatch(fetchTodayRoute());
+      }
+    }, [needsRefresh, dispatch]),
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await dispatch(fetchTodayRoute());
+    setRefreshing(false);
   }, [dispatch]);
 
   const stops = data?.stops ?? [];
@@ -127,6 +145,14 @@ const TodayVisitsScreen = () => {
         renderItem={renderStop}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.buttonBlue]}
+            tintColor={COLORS.buttonBlue}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.progressCard}>
             <View style={styles.progressLeft}>

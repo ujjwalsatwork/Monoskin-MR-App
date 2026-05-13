@@ -9,7 +9,10 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '@/constants/colors';
@@ -25,31 +28,33 @@ const MR_ROLE = 'Medical Representative';
 
 const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
 
-// Memoized Timer Component to prevent full screen re-renders on timer change
-interface TimerDisplayProps {
+// Isolated so timer ticks don't re-render the parent screen
+interface ResendRowProps {
   minutes: string;
   seconds: string;
+  timer: number;
+  otpLoading: boolean;
+  onResend: () => void;
 }
 
-const TimerDisplay = React.memo(({ minutes, seconds }: TimerDisplayProps) => (
-  <View style={styles.timerContainer}>
-    <View style={styles.timerBoxView}>
-      <View style={styles.timerBox}>
-        <Text style={styles.timerText}>{minutes}</Text>
-      </View>
-      <Text style={styles.timerLabel}>MINUTES</Text>
-    </View>
-    <Text style={styles.timerColon}>:</Text>
-    <View style={styles.timerBoxView}>
-      <View style={styles.timerBox}>
-        <Text style={styles.timerText}>{seconds}</Text>
-      </View>
-      <Text style={styles.timerLabel}>SECONDS</Text>
-    </View>
+const ResendRow = React.memo(({ minutes, seconds, timer, otpLoading, onResend }: ResendRowProps) => (
+  <View style={styles.resendContainer}>
+    <Text style={styles.resendText}>Didn't receive the code? </Text>
+    {otpLoading ? (
+      <ActivityIndicator color={COLORS.white} size="small" style={styles.resendLoader} />
+    ) : timer > 0 ? (
+      <Text style={styles.resendTimerText}>
+        Resend in {minutes}:{seconds}
+      </Text>
+    ) : (
+      <TouchableOpacity onPress={onResend}>
+        <Text style={styles.resendLink}>Resend</Text>
+      </TouchableOpacity>
+    )}
   </View>
 ));
 
-// Memoized OTP Input Component to isolate re-renders
+// Isolated to prevent full-screen re-renders when typing
 interface OTPInputsProps {
   otp: string[];
   onOtpChange: (text: string, index: number) => void;
@@ -85,6 +90,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
   const { mobileNumber } = route.params || { mobileNumber: '' };
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(59);
+  const [timerKey, setTimerKey] = useState(0);
   const [isScreenFocused, setIsScreenFocused] = useState(false);
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
@@ -94,7 +100,6 @@ const OTPScreen = ({ route, navigation }: Props) => {
     (state: RootState) => state.auth,
   );
 
-  // Track screen focus to control timer
   useFocusEffect(
     useCallback(() => {
       setIsScreenFocused(true);
@@ -104,7 +109,6 @@ const OTPScreen = ({ route, navigation }: Props) => {
     }, []),
   );
 
-  // Fixed timer logic: only start when screen is focused
   useEffect(() => {
     if (!isScreenFocused) {
       if (intervalRef.current) {
@@ -114,7 +118,6 @@ const OTPScreen = ({ route, navigation }: Props) => {
       return;
     }
 
-    // Start interval only when screen is focused
     intervalRef.current = setInterval(() => {
       setTimer(prev => {
         if (prev <= 1) {
@@ -134,7 +137,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
         intervalRef.current = null;
       }
     };
-  }, [isScreenFocused]);
+  }, [isScreenFocused, timerKey]);
 
   const handleOtpChange = useCallback((text: string, index: number) => {
     const newOtp = [...otp];
@@ -188,6 +191,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
     const result = await dispatch(sendOtp({ phone: mobileNumber }));
     if (sendOtp.fulfilled.match(result)) {
       setTimer(59);
+      setTimerKey(k => k + 1);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } else {
@@ -211,7 +215,7 @@ const OTPScreen = ({ route, navigation }: Props) => {
   const isLoading = verifyLoading || otpLoading;
 
   return (
-    <View style={styles.rootContainer} renderToHardwareTextureAndroid needsOffscreenAlphaCompositing>
+    <View style={styles.rootContainer}>
       <Image
         source={BACKGROUND_IMAGE}
         style={styles.backgroundImage}
@@ -222,7 +226,9 @@ const OTPScreen = ({ route, navigation }: Props) => {
         style={styles.scrollViewContainer}
         contentContainerStyle={styles.scrollContentContainer}
         enableOnAndroid={true}
-        extraScrollHeight={Platform.OS === 'android' ? 100 : 0}
+        extraScrollHeight={-60}
+        enableAutomaticScroll={true}
+        enableResetScrollToCoords={false}
         keyboardShouldPersistTaps="handled"
         scrollEnabled={true}
         bounces={false}
@@ -240,8 +246,6 @@ const OTPScreen = ({ route, navigation }: Props) => {
         </View>
 
         <View style={styles.contentContainer}>
-          <View style={styles.iconContainer} />
-
           <Text style={styles.title}>Verify Your Mobile{'\n'}Number</Text>
           <Text style={styles.subtitle}>
             We've sent a 6-digit code to your registered{'\n'}
@@ -259,32 +263,13 @@ const OTPScreen = ({ route, navigation }: Props) => {
             <Text style={styles.otpFallbackText}>Dev OTP: {otpFallback}</Text>
           ) : null}
 
-          <TimerDisplay minutes={minutes} seconds={seconds} />
-
-          <View style={styles.resendContainer}>
-            <Text style={styles.resendText}>Didn't receive the code? </Text>
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={timer > 0 || otpLoading}
-            >
-              {otpLoading ? (
-                <ActivityIndicator
-                  color={COLORS.white}
-                  size="small"
-                  style={styles.resendLoader}
-                />
-              ) : (
-                <Text
-                  style={[
-                    styles.resendLink,
-                    timer > 0 && styles.resendDisabled,
-                  ]}
-                >
-                  Resend
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+          <ResendRow
+            minutes={minutes}
+            seconds={seconds}
+            timer={timer}
+            otpLoading={otpLoading}
+            onResend={handleResend}
+          />
 
           <TouchableOpacity
             style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -321,13 +306,19 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 28, 104, 0.53)",
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    backgroundColor: 'rgba(0, 28, 104, 0.53)',
   },
   scrollViewContainer: {
     flex: 1,
@@ -335,15 +326,8 @@ const styles = StyleSheet.create({
   scrollContentContainer: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 30,
-    justifyContent: 'space-between',
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 30,
+    paddingTop: Platform.OS === 'ios' ? 20 : 10,
+    paddingBottom: 24,
   },
   backButton: {
     position: 'absolute',
@@ -357,25 +341,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 50,
-    // backgroundColor:'red'
-  },
-  logoText: {
-    fontSize: FONTS.size.xxxl,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.white,
-    marginLeft: 8,
-    letterSpacing: -0.5,
+    marginBottom: 16,
+    marginTop: 24,
   },
   contentContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
-    minHeight: 400,
-  },
-  iconContainer: {
-    marginBottom: 24,
+    paddingTop: 8,
   },
   title: {
     fontSize: FONTS.size.xxxl,
@@ -383,7 +355,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 34,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   subtitle: {
     fontSize: FONTS.size.md,
@@ -391,7 +363,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   boldText: {
     fontFamily: FONTS.family.bold,
@@ -418,49 +390,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,200,0.85)',
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
-    marginBottom: 12,
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-    position: 'relative',
-  },
-  timerBox: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    width: 50,
-  },
-  timerBoxView: {
-    alignItems: 'center',
-  },
-  timerText: {
-    color: COLORS.white,
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-  },
-  timerLabel: {
-    color: COLORS.white,
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    bottom: -16,
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  timerColon: {
-    color: COLORS.white,
-    fontSize: FONTS.size.lg,
-    fontFamily: FONTS.family.bold,
-    marginHorizontal: 8,
+    marginBottom: 8,
   },
   resendContainer: {
     flexDirection: 'row',
+    marginTop: 16,
     marginBottom: 24,
     alignItems: 'center',
   },
@@ -469,13 +403,15 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.regular,
   },
-  resendLink: {
+  resendTimerText: {
     color: COLORS.white,
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
   },
-  resendDisabled: {
-    opacity: 0.5,
+  resendLink: {
+    color: COLORS.white,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
   },
   resendLoader: {
     marginLeft: 4,
@@ -500,8 +436,9 @@ const styles = StyleSheet.create({
   },
   footerContainer: {
     alignItems: 'center',
-    paddingBottom: 20,
-    paddingTop: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    marginTop: 'auto',
   },
   footerText: {
     color: COLORS.white,

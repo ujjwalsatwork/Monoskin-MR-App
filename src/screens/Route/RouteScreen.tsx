@@ -152,6 +152,11 @@ const RouteScreen = () => {
   return (
     <View style={styles.mainContainer}>
       <Header title="Today's Route Plan" showBack showNotification showProfile />
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+        </View>
+      )}
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
@@ -184,7 +189,7 @@ const RouteScreen = () => {
           })}
         </ScrollView>
 
-        {loading && (
+        {loading && !routeData && (
           <View style={styles.centeredContainer}>
             <ActivityIndicator size="large" color={COLORS.buttonBlue} />
           </View>
@@ -208,7 +213,7 @@ const RouteScreen = () => {
           </View>
         )}
 
-        {!loading && routeData && routeData.stops.length > 0 && (
+        {routeData && routeData.stops.length > 0 && (
           <>
             {/* Read-only banner */}
             {routeData.readOnly && (
@@ -384,6 +389,17 @@ const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   contentContainer: {
     paddingBottom: 40,

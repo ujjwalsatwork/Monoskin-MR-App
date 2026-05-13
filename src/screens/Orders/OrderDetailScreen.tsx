@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Platform,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import MapView from 'react-native-maps';
 import { COLORS } from '@/constants/colors';
@@ -119,6 +120,15 @@ const OrderDetailScreen = () => {
   const [entity, setEntity] = useState<EntityDetail | null>(null);
   const [entityType, setEntityType] = useState<'doctor' | 'pharmacy' | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const onHardwareBack = () => {
+      navigation.navigate('Main', { screen: 'Portfolio' });
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [navigation]);
 
   useEffect(() => {
     const fetchAll = async () => {

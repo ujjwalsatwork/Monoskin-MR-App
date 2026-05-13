@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, TextInput, Platform, ActivityIndicator,
-  RefreshControl,
+  RefreshControl, Linking,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -57,6 +57,7 @@ const PIPELINE_STAGES = [
 
 /* ─── Lead Card ──────────────────────────────────────────────────── */
 const LeadCard = ({ item }: { item: Lead }) => {
+  console.log('🚀 ~ LeadCard ~ item:', item)
   const stageStyle = STAGE_COLORS[item.stage] ?? { bg: '#F0F0F0', color: '#666666' };
   const priorityStyle = PRIORITY_COLORS[item.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const navigation = useNavigation<NavProp>();
@@ -158,14 +159,14 @@ const LeadCard = ({ item }: { item: Lead }) => {
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => item.phone && undefined /* tel link placeholder */}
+            onPress={() => item.phone && Linking.openURL(`tel:${item.phone}`)}
           >
             <PhoneIconOutline width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => item.email && undefined /* email link placeholder */}
+            onPress={() => item.email && Linking.openURL(`mailto:${item.email}`)}
           >
             <EmailIcon width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>

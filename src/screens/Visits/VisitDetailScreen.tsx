@@ -12,6 +12,7 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -56,6 +57,7 @@ type DoctorDetails = {
   clinic: string;
   address: string;
   phone?: string;
+  whatsappNumber?: string;
   tags?: string[];
   tier?: string;
   importance?: string;
@@ -76,6 +78,7 @@ type PharmacyDetails = {
   type: string;
   address: string;
   phone?: string;
+  whatsappNumber?: string;
   lastVisitDate?: string;
   lastVisit?: string;
   avgTime?: string;
@@ -134,6 +137,21 @@ const VisitDetailScreen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+    onOk?: () => void;
+  }>({ visible: false, type: 'success', title: '', message: '' });
+
+  const showFeedback = (
+    type: 'success' | 'error',
+    title: string,
+    message: string,
+    onOk?: () => void,
+  ) => setFeedbackModal({ visible: true, type, title, message, onOk });
 
   const [sampleProducts, setSampleProducts] = useState<SampleProduct[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
@@ -222,8 +240,8 @@ const VisitDetailScreen = () => {
     }
   };
 
-  const fetchCatalogue = async () => {
-    if (catalogue.length > 0) { return; }
+  const fetchCatalogue = async (): Promise<CatalogueItem[]> => {
+    if (catalogue.length > 0) { return catalogue; }
     try {
       setCatalogueLoading(true);
       const res = await apiClient.get(ENDPOINTS.products.list);
@@ -237,16 +255,25 @@ const VisitDetailScreen = () => {
         selected: false,
       }));
       setCatalogue(items);
+      return items;
     } catch {
-      Alert.alert('Error', 'Failed to load products.');
+      showFeedback('error', 'Error', 'Failed to load products.');
+      return [];
     } finally {
       setCatalogueLoading(false);
     }
   };
 
   const openAddSample = async () => {
+    const baseItems = await fetchCatalogue();
+    const source = baseItems.length > 0 ? baseItems : catalogue;
+    setCatalogue(source.map(item => {
+      const existing = sampleProducts.find(p => p.productId === item.id);
+      return existing
+        ? { ...item, selected: true, qty: existing.quantity }
+        : { ...item, selected: false, qty: 1 };
+    }));
     setAddSampleVisible(true);
-    await fetchCatalogue();
   };
 
   const toggleCatalogueItem = (id: string) => {
@@ -270,10 +297,7 @@ const VisitDetailScreen = () => {
       packSize: c.packSize,
       quantity: c.qty,
     }));
-    setSampleProducts(prev => {
-      const existingIds = new Set(prev.map(p => p.productId));
-      return [...prev, ...newSamples.filter(s => !existingIds.has(s.productId))];
-    });
+    setSampleProducts(newSamples);
     setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 1 })));
     setAddSampleVisible(false);
   };
@@ -319,9 +343,9 @@ const VisitDetailScreen = () => {
   };
 
   const handleSubmit = async () => {
-    if (!visitType) { Alert.alert('Validation', 'Please select a visit type.'); return; }
-    if (!outcome) { Alert.alert('Validation', 'Please select an outcome.'); return; }
-    if (!mrId) { Alert.alert('Error', 'User session not found. Please login again.'); return; }
+    if (!visitType) { showFeedback('error', 'Validation', 'Please select a visit type.'); return; }
+    if (!outcome) { showFeedback('error', 'Validation', 'Please select an outcome.'); return; }
+    if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
 
     const formData = new FormData();
     
@@ -380,11 +404,9 @@ const VisitDetailScreen = () => {
         },
       });
       dispatch(setRouteNeedsRefresh(true));
-      Alert.alert('Success', 'Visit report submitted successfully.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      showFeedback('success', 'Success', 'Visit report submitted successfully.', () => navigation.goBack());
     } catch {
-      Alert.alert('Error', 'Failed to submit visit report. Please try again.');
+      showFeedback('error', 'Error', 'Failed to submit visit report. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -500,14 +522,17 @@ const VisitDetailScreen = () => {
               style={[styles.contactBtn, {backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.black}]}
               onPress={() => {
                 const phone = doctorData?.phone ?? pharmacyData?.phone;
-                if (phone) { Alert.alert('Call', `Calling ${phone}`); }
+                if (phone) { Linking.openURL(`tel:${phone}`); }
               }}
             >
               <PhoneIconOutline width={18} height={18} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.contactBtn}
-              onPress={() => Alert.alert('WhatsApp', 'Opening WhatsApp...')}
+              onPress={() => {
+                const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber;
+                if (whatsapp) { Linking.openURL(`whatsapp://send?phone=${whatsapp}`); }
+              }}
             >
               <WhatsAppIcon width={18} height={18} />
             </TouchableOpacity>
@@ -585,9 +610,11 @@ const VisitDetailScreen = () => {
             </View>
           ) : (
             sampleProducts.map((product, i) => (
-              <View
+              <TouchableOpacity
                 key={product.productId}
                 style={[styles.productRow, i < sampleProducts.length - 1 && styles.productRowBorder]}
+                onPress={openAddSample}
+                activeOpacity={0.7}
               >
                 <View>
                   <Text style={styles.productName}>{product.name}</Text>
@@ -596,7 +623,7 @@ const VisitDetailScreen = () => {
                 <View style={styles.qtyBadge}>
                   <Text style={styles.qtyBadgeText}>x{product.quantity}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </CollapsibleSection>
@@ -896,7 +923,7 @@ const VisitDetailScreen = () => {
         <TouchableOpacity
           style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
           activeOpacity={0.85}
-          onPress={handleSubmit}
+          onPress={() => setConfirmVisible(true)}
           disabled={submitting}
         >
           {submitting
@@ -904,6 +931,67 @@ const VisitDetailScreen = () => {
             : <Text style={styles.submitButtonText}>Submit Report</Text>}
         </TouchableOpacity>
       </View>
+
+      {/* Feedback Modal (Success / Error) */}
+      <Modal
+        visible={feedbackModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFeedbackModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmBox}>
+            <View style={[styles.feedbackIconCircle, feedbackModal.type === 'success' ? styles.feedbackIconSuccess : styles.feedbackIconError]}>
+              <Text style={styles.feedbackIconText}>{feedbackModal.type === 'success' ? '✓' : '!'}</Text>
+            </View>
+            <Text style={[styles.feedbackTitle, feedbackModal.type === 'success' ? styles.feedbackTitleSuccess : styles.feedbackTitleError]}>
+              {feedbackModal.title}
+            </Text>
+            <Text style={styles.feedbackMessage}>{feedbackModal.message}</Text>
+            <TouchableOpacity
+              style={[styles.feedbackOkBtn, feedbackModal.type === 'success' ? styles.feedbackOkSuccess : styles.feedbackOkError]}
+              activeOpacity={0.85}
+              onPress={() => {
+                const cb = feedbackModal.onOk;
+                setFeedbackModal(prev => ({ ...prev, visible: false }));
+                cb?.();
+              }}
+            >
+              <Text style={styles.confirmYesText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm Submit Modal */}
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.confirmHeading}>Are you sure want to submit this report?</Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                activeOpacity={0.8}
+                onPress={() => setConfirmVisible(false)}
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmYesBtn}
+                activeOpacity={0.85}
+                onPress={() => { setConfirmVisible(false); handleSubmit(); }}
+              >
+                <Text style={styles.confirmYesText}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Product Selection Modal */}
       <Modal
@@ -1198,6 +1286,29 @@ const styles = StyleSheet.create({
   modalFooter: { paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
   saveBtn: { backgroundColor: COLORS.buttonBlue, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
   saveBtnText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.white },
+
+  // Feedback Modal
+  feedbackIconCircle: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 14 },
+  feedbackIconSuccess: { backgroundColor: 'rgba(56,142,60,0.12)' },
+  feedbackIconError: { backgroundColor: 'rgba(211,47,47,0.1)' },
+  feedbackIconText: { fontSize: 26, fontFamily: FONTS.family.bold },
+  feedbackTitle: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, textAlign: 'center', marginBottom: 8 },
+  feedbackTitleSuccess: { color: COLORS.success },
+  feedbackTitleError: { color: '#D32F2F' },
+  feedbackMessage: { fontSize: FONTS.size.md, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  feedbackOkBtn: { height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  feedbackOkSuccess: { backgroundColor: COLORS.success },
+  feedbackOkError: { backgroundColor: '#D32F2F' },
+
+  // Confirm Submit Modal
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  confirmBox: { width: '100%', backgroundColor: COLORS.white, borderRadius: 18, padding: 24 },
+  confirmHeading: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center', marginBottom: 24, lineHeight: 26 },
+  confirmActions: { flexDirection: 'row', gap: 12 },
+  confirmCancelBtn: { flex: 1, height: 48, borderRadius: 24, borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.semibold, color: COLORS.textDark },
+  confirmYesBtn: { flex: 1, height: 48, borderRadius: 24, backgroundColor: COLORS.buttonBlue, justifyContent: 'center', alignItems: 'center' },
+  confirmYesText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.semibold, color: COLORS.white },
 });
 
 export default VisitDetailScreen;

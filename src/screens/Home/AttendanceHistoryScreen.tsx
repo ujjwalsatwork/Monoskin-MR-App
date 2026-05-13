@@ -8,7 +8,9 @@ import {
     FlatList,
     ActivityIndicator,
     Platform,
+    RefreshControl,
 } from 'react-native';
+import dayjs from 'dayjs';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { ENDPOINTS } from '@/constants/endpoints';
@@ -27,8 +29,43 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const FILTERS = ['All Time', 'This Week', 'October', 'September'];
 const PAGE_LIMIT = 20;
+
+// yearMonth is "YYYY-MM" for month filters, null for special filters.
+// Avoids needing dayjs customParseFormat plugin at filter time.
+interface FilterItem {
+    label: string;
+    yearMonth: string | null;
+}
+
+const buildFilters = (): FilterItem[] => {
+    const filters: FilterItem[] = [
+        { label: 'All Time', yearMonth: null },
+        { label: 'This Week', yearMonth: null },
+    ];
+    const now = dayjs();
+    for (let i = 0; i < 5; i++) {
+        const m = now.subtract(i, 'month');
+        filters.push({ label: m.format('MMMM YYYY'), yearMonth: m.format('YYYY-MM') });
+    }
+    return filters;
+};
+
+const FILTERS = buildFilters();
+
+const applyFilter = (records: AttendanceDayItem[], filter: FilterItem): AttendanceDayItem[] => {
+    if (filter.label === 'All Time') return records;
+    if (filter.label === 'This Week') {
+        const start = dayjs().startOf('week');
+        const end = dayjs().endOf('week');
+        return records.filter((r) => {
+            const d = dayjs(r.id);
+            return !d.isBefore(start) && !d.isAfter(end);
+        });
+    }
+    // Month filter: r.id is "YYYY-MM-DD", so startsWith("YYYY-MM") is exact
+    return records.filter((r) => r.id.startsWith(filter.yearMonth!));
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -146,7 +183,7 @@ const AttendanceCard = React.memo(({ item }: { item: AttendanceDayItem }) => {
 
 const EmptyList = () => (
     <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No attendance records found.</Text>
+        <Text style={styles.emptyText}>No attendance available.</Text>
     </View>
 );
 
@@ -163,10 +200,11 @@ const AttendanceHistoryScreen = () => {
     const mrId = useSelector((state: RootState) => state.profile.data?.id);
     const profileLoading = useSelector((state: RootState) => state.profile.isLoading);
 
-    const [activeFilter, setActiveFilter] = useState('All Time');
+    const [activeFilter, setActiveFilter] = useState<FilterItem>(FILTERS[0]);
     const [records, setRecords] = useState<AttendanceDayItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     // Refs prevent stale-closure races: isFetchingRef covers both initial load
     // and load-more so onEndReached can never fire a second concurrent request.
@@ -239,6 +277,20 @@ const AttendanceHistoryScreen = () => {
         doFetch(pageRef.current + 1, false);
     }, [doFetch]);
 
+    const handleRefresh = useCallback(async () => {
+        if (isFetchingRef.current) return;
+        setRefreshing(true);
+        hasMoreRef.current = true;
+        pageRef.current = 1;
+        setRecords([]);
+        await doFetch(1, true);
+        setRefreshing(false);
+    }, [doFetch]);
+
+    const handleFilterPress = useCallback((filter: FilterItem) => {
+        setActiveFilter(filter);
+    }, []);
+
     const renderItem = useCallback(
         ({ item }: { item: AttendanceDayItem }) => <AttendanceCard item={item} />,
         [],
@@ -271,20 +323,20 @@ const AttendanceHistoryScreen = () => {
                 >
                     {FILTERS.map((item) => (
                         <TouchableOpacity
-                            key={item}
+                            key={item.label}
                             style={[
                                 styles.filterPill,
-                                activeFilter === item && styles.filterPillActive,
+                                activeFilter.label === item.label && styles.filterPillActive,
                             ]}
-                            onPress={() => setActiveFilter(item)}
+                            onPress={() => handleFilterPress(item)}
                         >
                             <Text
                                 style={[
                                     styles.filterText,
-                                    activeFilter === item && styles.filterTextActive,
+                                    activeFilter.label === item.label && styles.filterTextActive,
                                 ]}
                             >
-                                {item}
+                                {item.label}
                             </Text>
                         </TouchableOpacity>
                     ))}
@@ -292,7 +344,7 @@ const AttendanceHistoryScreen = () => {
             </View>
 
             <FlatList
-                data={records}
+                data={applyFilter(records, activeFilter)}
                 keyExtractor={keyExtractor}
                 renderItem={renderItem}
                 ListEmptyComponent={EmptyList}
@@ -306,6 +358,14 @@ const AttendanceHistoryScreen = () => {
                 initialNumToRender={10}
                 windowSize={5}
                 removeClippedSubviews={Platform.OS === 'android'}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={handleRefresh}
+                        colors={[COLORS.buttonBlue]}
+                        tintColor={COLORS.buttonBlue}
+                    />
+                }
             />
         </View>
     );
