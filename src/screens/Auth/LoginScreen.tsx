@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  KeyboardAvoidingView, 
-  Platform, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   ImageBackground,
   TextInput,
@@ -12,58 +12,67 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
-import { useAuth } from '@/hooks/useAuth';
-import { MedRepIcon, RightArrowIcon } from '@/assets/images';
+import { FONTS } from '@/constants/fonts';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AuthStackParamList } from '@/navigation/types';
+import { MonoskinLogo, RightArrowIcon } from '@/assets/images';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/redux/store';
+import { sendOtp } from '@/redux/slices/authSlice';
+
+const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
 
 const LoginScreen = () => {
   const [mobileNumber, setMobileNumber] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const dispatch = useDispatch<AppDispatch>();
+  const { otpLoading } = useSelector((state: RootState) => state.auth);
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
 
   const handleSendOTP = async () => {
     if (!mobileNumber || mobileNumber.length < 10) {
       Alert.alert('Error', 'Please enter a valid 10-digit mobile number');
       return;
     }
-    setLoading(true);
-    try {
-      // Simulate network delay for OTP sending and auto-verification
-      await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      // Log the user in with dummy data
-      await login(mobileNumber + '@example.com', 'dummy_pass');
-    } catch {
-      Alert.alert('Error', 'Failed to send OTP');
-    } finally {
-      setLoading(false);
+    const result = await dispatch(sendOtp({ phone: mobileNumber }));
+    if (sendOtp.fulfilled.match(result)) {
+      navigation.navigate('OTP', { mobileNumber });
+    } else {
+      const errorMsg =
+        typeof result.payload === 'string'
+          ? result.payload
+          : 'Failed to send OTP';
+      Alert.alert('Error', errorMsg);
     }
   };
 
   return (
-    <ImageBackground 
-      source={{ uri: '/Users/menttechlabs/Documents/Nimish/Monoskin-MR-App/src/assets/images/background/background.png' }} 
+    <ImageBackground
+      source={BACKGROUND_IMAGE}
       style={styles.backgroundImage}
+      resizeMode="cover"
     >
       <View style={styles.overlay} />
-      
-      <KeyboardAvoidingView 
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
         <View style={styles.logoContainer}>
-          <MedRepIcon />
+          <MonoskinLogo />
         </View>
         <View style={styles.contentContainer}>
-          
+
           <Text style={styles.title}>Welcome Medical{'\n'}Representative</Text>
           <Text style={styles.subtitle}>Safely access your pharmaceutical{'\n'}management dashboard</Text>
 
           <View style={styles.formContainer}>
             <Text style={styles.inputLabel}>Mobile Number</Text>
-            
+
             <View style={styles.inputWrapper}>
               <Text style={styles.countryCode}>+91</Text>
               <View style={styles.separator} />
-              <TextInput 
+              <TextInput
                 style={styles.input}
                 placeholder="Enter 10-digit number"
                 placeholderTextColor={COLORS.textMuted}
@@ -74,13 +83,13 @@ const LoginScreen = () => {
               />
             </View>
 
-            <TouchableOpacity 
-              style={[styles.button, loading && styles.buttonDisabled]} 
+            <TouchableOpacity
+              style={[styles.button, otpLoading && styles.buttonDisabled]}
               onPress={handleSendOTP}
-              disabled={loading}
+              disabled={otpLoading}
               activeOpacity={0.8}
             >
-              {loading ? (
+              {otpLoading ? (
                 <ActivityIndicator color={COLORS.white} />
               ) : (
                 <>
@@ -113,12 +122,12 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: COLORS.overlayAuth, // Matches the dark blue-ish tint in the original design
+    backgroundColor: COLORS.overlayAuth,
   },
   container: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 30,
   },
   logoContainer: {
@@ -129,8 +138,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logoText: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     marginLeft: 8,
     letterSpacing: -0.5,
@@ -145,15 +154,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: FONTS.size.xxxl,
+    fontFamily: FONTS.family.bold,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 34,
     marginBottom: 12,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 20,
@@ -164,7 +174,8 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
     marginBottom: 8,
     alignSelf: 'flex-start',
   },
@@ -178,9 +189,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   countryCode: {
-    fontSize: 16,
+    fontSize: FONTS.size.lg,
     color: COLORS.textDark,
-    fontWeight: '600',
+    fontFamily: FONTS.family.semibold,
   },
   separator: {
     width: 1,
@@ -190,12 +201,12 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 16,
+    fontSize: FONTS.size.lg,
     color: COLORS.textDark,
-    fontWeight: '500',
+    fontFamily: FONTS.family.medium,
   },
   button: {
-    backgroundColor: COLORS.buttonBlue, // Match the solid blue from the design
+    backgroundColor: COLORS.buttonBlue,
     height: 56,
     borderRadius: 28,
     flexDirection: 'row',
@@ -207,8 +218,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.semibold,
     marginRight: 8,
   },
   footerContainer: {
@@ -218,7 +229,8 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
   },
   footerLinksRow: {
     flexDirection: 'row',
@@ -226,7 +238,8 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
     textDecorationLine: 'underline',
   },
 });

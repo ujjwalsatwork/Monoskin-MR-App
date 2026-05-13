@@ -7,23 +7,35 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0C80B921A6F3F58F76C31292 /* libPods-MonoskinMRApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-MonoskinMRApp.a */; };
+		011DBC033A6449B1A1A97852 /* DMSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A8E838B8CDF94542AD170468 /* DMSans-Medium.ttf */; };
+		11736E3C905BC703F90B6FF2 /* libPods-MonoskinMRApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2CA0C16DC2BB5B4E14F7A058 /* libPods-MonoskinMRApp.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		32A1C4D86194842E3C989FDB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		5C8AF75FB73640549AB1ADA0 /* DMSans-Thin.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 239CE987162B42889B3295B9 /* DMSans-Thin.ttf */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		91872B26D23D430C984FE669 /* DMSans-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DC9D78BFF6C3404A88061FF1 /* DMSans-Italic.ttf */; };
+		99679E4E13174C7C89B3C9DD /* DMSans-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 835FAF6F7AB3425788D7E380 /* DMSans-Light.ttf */; };
+		EB97AFE4400C4FA4AC030D3E /* DMSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5D454865029A476DBE425C27 /* DMSans-Bold.ttf */; };
+		F29427B32A824613AF7589F8 /* DMSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 11B7ABBF5D864CDDB63FF062 /* DMSans-Regular.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		11B7ABBF5D864CDDB63FF062 /* DMSans-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Regular.ttf"; path = "../src/assets/fonts/DMSans-Regular.ttf"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* MonoskinMRApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonoskinMRApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = MonoskinMRApp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = MonoskinMRApp/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = MonoskinMRApp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		3B4392A12AC88292D35C810B /* Pods-MonoskinMRApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MonoskinMRApp.debug.xcconfig"; path = "Target Support Files/Pods-MonoskinMRApp/Pods-MonoskinMRApp.debug.xcconfig"; sourceTree = "<group>"; };
-		5709B34CF0A7D63546082F79 /* Pods-MonoskinMRApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MonoskinMRApp.release.xcconfig"; path = "Target Support Files/Pods-MonoskinMRApp/Pods-MonoskinMRApp.release.xcconfig"; sourceTree = "<group>"; };
-		5DCACB8F33CDC322A6C60F78 /* libPods-MonoskinMRApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-MonoskinMRApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		239CE987162B42889B3295B9 /* DMSans-Thin.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Thin.ttf"; path = "../src/assets/fonts/DMSans-Thin.ttf"; sourceTree = "<group>"; };
+		2CA0C16DC2BB5B4E14F7A058 /* libPods-MonoskinMRApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-MonoskinMRApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D454865029A476DBE425C27 /* DMSans-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Bold.ttf"; path = "../src/assets/fonts/DMSans-Bold.ttf"; sourceTree = "<group>"; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = MonoskinMRApp/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MonoskinMRApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		835FAF6F7AB3425788D7E380 /* DMSans-Light.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Light.ttf"; path = "../src/assets/fonts/DMSans-Light.ttf"; sourceTree = "<group>"; };
+		8A8A4C04168E3C9EDC9E664C /* Pods-MonoskinMRApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MonoskinMRApp.debug.xcconfig"; path = "Target Support Files/Pods-MonoskinMRApp/Pods-MonoskinMRApp.debug.xcconfig"; sourceTree = "<group>"; };
+		A8E838B8CDF94542AD170468 /* DMSans-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Medium.ttf"; path = "../src/assets/fonts/DMSans-Medium.ttf"; sourceTree = "<group>"; };
+		C2D22A6C7AF3EEE6C08DD010 /* Pods-MonoskinMRApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MonoskinMRApp.release.xcconfig"; path = "Target Support Files/Pods-MonoskinMRApp/Pods-MonoskinMRApp.release.xcconfig"; sourceTree = "<group>"; };
+		DC9D78BFF6C3404A88061FF1 /* DMSans-Italic.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSans-Italic.ttf"; path = "../src/assets/fonts/DMSans-Italic.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -32,7 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0C80B921A6F3F58F76C31292 /* libPods-MonoskinMRApp.a in Frameworks */,
+				11736E3C905BC703F90B6FF2 /* libPods-MonoskinMRApp.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -51,11 +63,24 @@
 			name = MonoskinMRApp;
 			sourceTree = "<group>";
 		};
+		25BE5878AD094235B41DC669 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				11B7ABBF5D864CDDB63FF062 /* DMSans-Regular.ttf */,
+				A8E838B8CDF94542AD170468 /* DMSans-Medium.ttf */,
+				5D454865029A476DBE425C27 /* DMSans-Bold.ttf */,
+				239CE987162B42889B3295B9 /* DMSans-Thin.ttf */,
+				835FAF6F7AB3425788D7E380 /* DMSans-Light.ttf */,
+				DC9D78BFF6C3404A88061FF1 /* DMSans-Italic.ttf */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				5DCACB8F33CDC322A6C60F78 /* libPods-MonoskinMRApp.a */,
+				2CA0C16DC2BB5B4E14F7A058 /* libPods-MonoskinMRApp.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -75,6 +100,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				25BE5878AD094235B41DC669 /* Resources */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -92,8 +118,8 @@
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				3B4392A12AC88292D35C810B /* Pods-MonoskinMRApp.debug.xcconfig */,
-				5709B34CF0A7D63546082F79 /* Pods-MonoskinMRApp.release.xcconfig */,
+				8A8A4C04168E3C9EDC9E664C /* Pods-MonoskinMRApp.debug.xcconfig */,
+				C2D22A6C7AF3EEE6C08DD010 /* Pods-MonoskinMRApp.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -105,13 +131,13 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "MonoskinMRApp" */;
 			buildPhases = (
-				C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */,
+				751544AF864CF1685FF94D18 /* [CP] Check Pods Manifest.lock */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
-				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				16F385CFF2CC0CB61E5485FB /* [CP] Embed Pods Frameworks */,
+				75389BE1FDA1D53266604262 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -161,6 +187,12 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				32A1C4D86194842E3C989FDB /* PrivacyInfo.xcprivacy in Resources */,
+				F29427B32A824613AF7589F8 /* DMSans-Regular.ttf in Resources */,
+				011DBC033A6449B1A1A97852 /* DMSans-Medium.ttf in Resources */,
+				EB97AFE4400C4FA4AC030D3E /* DMSans-Bold.ttf in Resources */,
+				5C8AF75FB73640549AB1ADA0 /* DMSans-Thin.ttf in Resources */,
+				99679E4E13174C7C89B3C9DD /* DMSans-Light.ttf in Resources */,
+				91872B26D23D430C984FE669 /* DMSans-Italic.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -183,7 +215,7 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$REACT_NATIVE_XCODE\\\"\"\n";
 		};
-		00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */ = {
+		16F385CFF2CC0CB61E5485FB /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -200,7 +232,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-MonoskinMRApp/Pods-MonoskinMRApp-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
+		751544AF864CF1685FF94D18 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -222,7 +254,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		E235C05ADACE081382539298 /* [CP] Copy Pods Resources */ = {
+		75389BE1FDA1D53266604262 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -255,11 +287,14 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-MonoskinMRApp.debug.xcconfig */;
+			baseConfigurationReference = 8A8A4C04168E3C9EDC9E664C /* Pods-MonoskinMRApp.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = MonoskinMRApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -275,6 +310,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
 				PRODUCT_NAME = MonoskinMRApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -285,11 +321,14 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-MonoskinMRApp.release.xcconfig */;
+			baseConfigurationReference = C2D22A6C7AF3EEE6C08DD010 /* Pods-MonoskinMRApp.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = MonoskinMRApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -304,6 +343,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
 				PRODUCT_NAME = MonoskinMRApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
