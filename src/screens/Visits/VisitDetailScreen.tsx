@@ -13,7 +13,9 @@ import {
   FlatList,
   ActivityIndicator,
   Linking,
+  Animated,
 } from 'react-native';
+import * as Vosk from 'react-native-vosk';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -176,10 +178,110 @@ const VisitDetailScreen = () => {
     address: string;
   } | null>(null);
 
+  const [isListening, setIsListening] = useState(false);
+  const [voskReady, setVoskReady] = useState(false);
+  const voiceBaseText = useRef('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   const [sampleExpanded, setSampleExpanded] = useState(true);
   const [prefExpanded, setPrefExpanded] = useState(false);
   const [unprefExpanded, setUnprefExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(true);
+
+  useEffect(() => {
+    type Sub = ReturnType<typeof Vosk.onPartialResult>;
+    let partialSub: Sub | null = null;
+    let finalSub: Sub | null = null;
+    let errorSub: Sub | null = null;
+    let timeoutSub: Sub | null = null;
+
+    Vosk.loadModel('model-en-us')
+      .then(() => {
+        setVoskReady(true);
+
+        partialSub = Vosk.onPartialResult((text: string) => {
+          if (!text) { return; }
+          const base = voiceBaseText.current;
+          setVisitNote(base ? `${base} ${text}` : text);
+        });
+
+        finalSub = Vosk.onFinalResult((text: string) => {
+          if (!text) { return; }
+          const base = voiceBaseText.current;
+          const committed = base ? `${base} ${text}` : text;
+          setVisitNote(committed);
+          voiceBaseText.current = committed;
+          setIsListening(false);
+        });
+
+        errorSub = Vosk.onError((_e: string) => {
+          setIsListening(false);
+        });
+
+        timeoutSub = Vosk.onTimeout(() => {
+          setIsListening(false);
+        });
+      })
+      .catch((err) => {
+        console.log('🚀 ~ Vosk load error:', err);
+        // Model files not yet placed in assets — mic will show a helpful message
+      });
+
+    return () => {
+      partialSub?.remove();
+      finalSub?.remove();
+      errorSub?.remove();
+      timeoutSub?.remove();
+      try { Vosk.stop(); } catch { /* already stopped */ }
+      Vosk.unload();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ]),
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isListening, pulseAnim]);
+
+  const handleMicPress = async () => {
+    if (isListening) {
+      try { Vosk.stop(); } catch { /* already stopped */ }
+      setIsListening(false);
+      return;
+    }
+
+    console.log('🚀 ~ handleMicPress ~ voskReady:', voskReady)
+    if (!voskReady) {
+      showFeedback(
+        'error',
+        'Not Ready',
+        'Speech recognition model is still loading. Please wait a moment and try again.',
+      );
+      return;
+    }
+
+    voiceBaseText.current = visitNote.trim();
+    try {
+      setIsListening(true);
+      await Vosk.start(); // handles Android RECORD_AUDIO permission internally
+    } catch (e: any) {
+      setIsListening(false);
+      const msg: string = e?.message ?? String(e);
+      if (msg.toLowerCase().includes('permission')) {
+        showFeedback('error', 'Permission Denied', 'Microphone access is required for voice input.');
+      } else {
+        showFeedback('error', 'Error', 'Failed to start voice recognition. Please try again.');
+      }
+    }
+  };
 
   useEffect(() => {
     if (doctorId) {
@@ -685,20 +787,38 @@ const VisitDetailScreen = () => {
 
         {/* Visit Notes */}
         <SectionLabel title="VISIT NOTES" />
-        <View style={styles.notesInputWrapper}>
+        <View style={[styles.notesInputWrapper, isListening && styles.notesInputWrapperActive]}>
           <TextInput
             style={styles.notesInput}
-            placeholder="Enter discussion points, objections, and next steps..."
-            placeholderTextColor={COLORS.textMuted}
+            placeholder={isListening ? 'Start speaking...' : 'Enter discussion points, objections, and next steps...'}
+            placeholderTextColor={isListening ? COLORS.buttonBlue : COLORS.textMuted}
             multiline
             value={visitNote}
             onChangeText={setVisitNote}
             textAlignVertical="top"
+            editable={!isListening}
           />
-          <TouchableOpacity style={styles.micButton}>
-            <MicIcon width={20} height={20} />
+          <TouchableOpacity
+            style={styles.micButton}
+            onPress={handleMicPress}
+            activeOpacity={0.7}
+          >
+            {isListening ? (
+              <View style={styles.micActiveWrapper}>
+                <Animated.View style={[styles.micPulseRing, { transform: [{ scale: pulseAnim }] }]} />
+                <View style={styles.micActiveDot} />
+              </View>
+            ) : (
+              <MicIcon width={20} height={20} />
+            )}
           </TouchableOpacity>
         </View>
+        {isListening && (
+          <View style={styles.listeningBanner}>
+            <View style={styles.listeningDot} />
+            <Text style={styles.listeningBannerText}>Listening… Tap the mic to stop</Text>
+          </View>
+        )}
 
         <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
         <TextInput
@@ -1178,7 +1298,27 @@ const styles = StyleSheet.create({
     flex: 1, fontSize: FONTS.size.md, fontFamily: FONTS.family.regular,
     color: COLORS.textDark, padding: 0, maxHeight: 100,
   },
-  micButton: { padding: 4, marginLeft: 8 },
+  micButton: { padding: 4, marginLeft: 8, justifyContent: 'center', alignItems: 'center' },
+
+  // Listening indicator
+  notesInputWrapperActive: { borderColor: COLORS.buttonBlue, borderWidth: 1.5 },
+  micActiveWrapper: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  micPulseRing: {
+    position: 'absolute', width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(211,47,47,0.2)',
+  },
+  micActiveDot: {
+    width: 14, height: 14, borderRadius: 7, backgroundColor: '#D32F2F',
+  },
+  listeningBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(211,47,47,0.07)', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8, marginTop: -8, marginBottom: 12,
+  },
+  listeningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#D32F2F' },
+  listeningBannerText: {
+    fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: '#D32F2F',
+  },
 
   // Time fields in Visit Notes
   timeFieldLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary, marginBottom: 6, marginTop: 2 },

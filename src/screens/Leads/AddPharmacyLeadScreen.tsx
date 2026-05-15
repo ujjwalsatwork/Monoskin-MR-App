@@ -2,8 +2,67 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
-  Modal, FlatList, TouchableWithoutFeedback, Alert,
+  Modal, FlatList, TouchableWithoutFeedback,
 } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
+
+// ── Icons & AlertModal ────────────────────────────────────────────────────────
+
+const CheckCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DCFCE7" />
+    <Path d="M8 12l3 3 5-5" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ErrorCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEE2E2" />
+    <Path d="M15 9l-6 6M9 9l6 6" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+type AlertType = 'success' | 'error' | 'info';
+
+interface AlertState {
+  visible: boolean;
+  type: AlertType;
+  title: string;
+  message: string;
+  confirmText?: string;
+  onConfirm?: () => void;
+}
+
+const ALERT_HIDDEN: AlertState = { visible: false, type: 'info', title: '', message: '' };
+
+const ALERT_ACCENT: Record<AlertType, string> = {
+  success: '#16A34A',
+  error: '#DC2626',
+  info: '#2563EB',
+};
+
+const AlertModal = ({ state, onDismiss }: { state: AlertState; onDismiss: () => void }) => {
+  const accent = ALERT_ACCENT[state.type];
+  const Icon = state.type === 'success' ? CheckCircleIcon : ErrorCircleIcon;
+  const handleConfirm = () => { onDismiss(); state.onConfirm?.(); };
+  return (
+    <Modal visible={state.visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={am.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onDismiss} />
+        <View style={am.card}>
+          <Icon />
+          <Text style={am.title}>{state.title}</Text>
+          <Text style={am.message}>{state.message}</Text>
+          <View style={am.actionsCenter}>
+            <TouchableOpacity style={[am.confirmBtn, { backgroundColor: accent }, am.confirmBtnFull]} activeOpacity={0.8} onPress={handleConfirm}>
+              <Text style={am.confirmText}>{state.confirmText ?? 'OK'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -165,7 +224,7 @@ const MultiSelectDoctorSheet = ({ visible, title, options, selectedIds, onToggle
   </Modal>
 );
 
-const CustomDoctorModal = ({ visible, onClose, onSave }: { visible: boolean, onClose: () => void, onSave: (p: CustomDoctor) => void }) => {
+const CustomDoctorModal = ({ visible, onClose, onSave, onError }: { visible: boolean, onClose: () => void, onSave: (p: CustomDoctor) => void, onError: (msg: string) => void }) => {
   const [data, setData] = useState<CustomDoctor>({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
@@ -183,11 +242,11 @@ const CustomDoctorModal = ({ visible, onClose, onSave }: { visible: boolean, onC
             <Field label="Billing Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.billingDetails} onChangeText={t => setData({...data, billingDetails: t})} placeholder="Billing details..." /></Field>
             <Field label="Delivery Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.deliveryDetails} onChangeText={t => setData({...data, deliveryDetails: t})} placeholder="Delivery details..." /></Field>
             <TouchableOpacity style={styles.saveBtn} onPress={() => {
-              if (!data.name.trim()) { Alert.alert('Validation Error', 'Doctor Name is required.'); return; }
-              if (!data.postalAddress.trim()) { Alert.alert('Validation Error', 'Postal Address is required.'); return; }
-              if (data.phone.length !== 10) { Alert.alert('Validation Error', 'A valid 10-digit Phone Number is required.'); return; }
-              if (!data.billingDetails.trim()) { Alert.alert('Validation Error', 'Billing Details are required.'); return; }
-              if (!data.deliveryDetails.trim()) { Alert.alert('Validation Error', 'Delivery Details are required.'); return; }
+              if (!data.name.trim()) { onError('Doctor Name is required.'); return; }
+              if (!data.postalAddress.trim()) { onError('Postal Address is required.'); return; }
+              if (data.phone.length !== 10) { onError('A valid 10-digit Phone Number is required.'); return; }
+              if (!data.billingDetails.trim()) { onError('Billing Details are required.'); return; }
+              if (!data.deliveryDetails.trim()) { onError('Delivery Details are required.'); return; }
               onSave(data);
               setData({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
             }}>
@@ -229,6 +288,11 @@ const AddPharmacyLeadScreen = () => {
   const [showSource, setShowSource] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
+
+  const showAlert = (title: string, message: string, type: AlertType = 'error') =>
+    setAlertState({ visible: true, type, title, message });
+  const dismissAlert = () => setAlertState(ALERT_HIDDEN);
 
   const [assignedDoctors, setAssignedDoctors] = useState<AssignedDoctor[]>([]);
   const [selectedDoctorIds, setSelectedDoctorIds] = useState<number[]>([]);
@@ -267,11 +331,11 @@ const AddPharmacyLeadScreen = () => {
 
   const handleSave = async () => {
     if (!form.name.trim()) {
-      Alert.alert('Validation Error', 'Pharmacy name is required.');
+      showAlert('Validation Error', 'Pharmacy name is required.');
       return;
     }
     if (!form.city.trim()) {
-      Alert.alert('Validation Error', 'City is required.');
+      showAlert('Validation Error', 'City is required.');
       return;
     }
 
@@ -300,7 +364,7 @@ const AddPharmacyLeadScreen = () => {
       navigation.goBack();
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Something went wrong. Please try again.';
-      Alert.alert('Error', message);
+      showAlert('Error', message);
     } finally {
       setSaving(false);
     }
@@ -564,7 +628,10 @@ const AddPharmacyLeadScreen = () => {
           setCustomDoctors(prev => [...prev, p]);
           setShowCustomDoctorModal(false);
         }}
+        onError={(msg) => { setShowCustomDoctorModal(false); showAlert('Validation Error', msg); }}
       />
+
+      <AlertModal state={alertState} onDismiss={dismissAlert} />
 
       <OptionsSheet
         visible={showStage}
@@ -724,6 +791,57 @@ const styles = StyleSheet.create({
   },
   saveBtnText: {
     fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
+});
+
+const am = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  actionsCenter: { width: '100%', alignItems: 'center' },
+  confirmBtn: {
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmBtnFull: { width: 140 },
+  confirmText: {
+    fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
     color: COLORS.white,
   },

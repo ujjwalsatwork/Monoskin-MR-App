@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import Svg, { Path } from 'react-native-svg';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { RootState } from '@/redux/rootReducer';
 import { AppDispatch } from '@/redux/store';
+import apiClient from '@/services/apiClient';
 
 const LogoutIconUI = ({ stroke = '#FF4D4F' }) => (
   <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -42,6 +43,32 @@ const LogoutIconUI = ({ stroke = '#FF4D4F' }) => (
       strokeLinejoin="round"
     />
   </Svg>
+);
+
+const RupeeListIcon = ({ color = COLORS.primary }) => (
+  <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3.5 0 5.5-1.5 5.5-4.5S12.5 5 9 5H6"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+interface StatCardProps {
+  icon: React.ReactNode;
+  value: string | number;
+  label: string;
+}
+
+const StatCard = ({ icon, value, label }: StatCardProps) => (
+  <View style={styles.statCard}>
+    <View style={styles.statIconWrapper}>{icon}</View>
+    <Text style={styles.statPrimary}>{value}</Text>
+    <Text style={styles.statSubtitle}>{label}</Text>
+  </View>
 );
 
 const ProfileScreen = () => {
@@ -57,10 +84,37 @@ const ProfileScreen = () => {
     dispatch(fetchMyProfile());
   }, [dispatch]);
 
+  const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const now = new Date();
+    apiClient
+      .get<{ expenseDate: string; totalAmount: string; status: string }[]>(
+        `/mrs/${profile.id}/expenses`,
+      )
+      .then(({ data }) => {
+        const total = data
+          .filter(e => {
+            if (e.status !== 'Approved') return false;
+            const d = new Date(e.expenseDate);
+            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+          })
+          .reduce((sum, e) => sum + parseFloat(e.totalAmount), 0);
+        setApprovedMonthlyTotal(total);
+      })
+      .catch(() => setApprovedMonthlyTotal(null));
+  }, [profile?.id]);
+
   const conversionRate =
     profile && profile.leadsAssigned > 0
-      ? Math.round((profile.conversions / profile.leadsAssigned) * 100)
+      ? Math.round((profile?.conversions / profile?.leadsAssigned) * 100)
       : 0;
+
+  const hqLocation =
+    profile?.territory && profile?.region
+      ? `${profile.territory}, ${profile.region}`
+      : profile?.territory ?? profile?.region ?? '—';
 
   return (
     <View style={styles.container}>
@@ -92,16 +146,16 @@ const ProfileScreen = () => {
                   <ProfileIcon width={100} height={100} />
                 )}
               </View>
-              {/* <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
                 <Camera width={16} height={16} />
-              </TouchableOpacity> */}
+              </TouchableOpacity>
             </View>
 
             <Text style={styles.userName}>{profile?.name ?? '—'}</Text>
             <View style={styles.roleRow}>
               <View style={styles.roleBadge}>
                 <Text style={styles.roleBadgeText}>
-                  {'MR'}
+                  {profile?.role ?? 'MR'}
                 </Text>
               </View>
               <Text style={styles.employeeIdInfo}>
@@ -110,26 +164,31 @@ const ProfileScreen = () => {
             </View>
           </View>
 
-          {/* Statistics Cards */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <View style={styles.statHeader}>
-                <CheckCircleIcon stroke={COLORS.success} width={20} height={20} />
-                <Text style={styles.statValuePositive}>
-                  {profile?.conversions ?? 0} conversions
-                </Text>
-              </View>
-              <Text style={styles.statPrimary}>{conversionRate}%</Text>
-              <Text style={styles.statSubtitle}>Target Achieved</Text>
+          {/* Statistics Cards — 2×2 grid */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statsRow}>
+              <StatCard
+                icon={<CheckCircleIcon stroke={COLORS.success} width={22} height={22} />}
+                value={`${conversionRate}%`}
+                label="Target Achieved"
+              />
+              <StatCard
+                icon={<CalendarNoteIcon stroke={COLORS.primary} width={22} height={22} />}
+                value={profile?.sampleAllocation ?? 0}
+                label="Sample Allocation"
+              />
             </View>
-
-            <View style={styles.statCard}>
-              <View style={styles.statHeader}>
-                <CalendarNoteIcon stroke={COLORS.primary} width={20} height={20} />
-                <Text style={styles.statValueNeutral}>Total Leads</Text>
-              </View>
-              <Text style={styles.statPrimary}>{profile?.leadsAssigned ?? '—'}</Text>
-              <Text style={styles.statSubtitle}>Leads Assigned</Text>
+            <View style={styles.statsRow}>
+              <StatCard
+                icon={<RupeeListIcon color={COLORS.accent} />}
+                value={approvedMonthlyTotal !== null ? `₹${approvedMonthlyTotal.toFixed(2)}` : '—'}
+                label="Monthly Expense Summary"
+              />
+              <StatCard
+                icon={<CenterLocationIcon width={22} height={22} fill={COLORS.primary} stroke={COLORS.primary} />}
+                value={profile?.conversions ?? 0}
+                label="Total Visits"
+              />
             </View>
           </View>
 
@@ -167,28 +226,8 @@ const ProfileScreen = () => {
                   <CenterLocationIcon width={18} height={18} fill="#A0ABBB" stroke="#A0ABBB" />
                 </View>
                 <View style={styles.infoTextContainer}>
-                  <Text style={styles.infoLabel}>Territory</Text>
-                  <Text style={styles.infoValue}>
-                    {profile?.territory && profile?.region
-                      ? `${profile.territory}, ${profile.region}`
-                      : profile?.territory ?? profile?.region ?? '—'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.infoRow}>
-                <View style={styles.infoIconWrapper}>
-                  <ProfileIcon width={18} height={18} />
-                </View>
-                <View style={styles.infoTextContainer}>
-                  <Text style={styles.infoLabel}>
-                    Reporting {profile?.managerRole ?? 'Manager'}
-                  </Text>
-                  <Text style={styles.infoValue}>
-                    {profile?.reportingManager ?? '—'}
-                  </Text>
+                  <Text style={styles.infoLabel}>HQ Location</Text>
+                  <Text style={styles.infoValue}>{hqLocation}</Text>
                 </View>
               </View>
             </View>
@@ -241,14 +280,25 @@ const ProfileScreen = () => {
             </View>
           </View>
 
-          {/* Edit Profile */}
-          <TouchableOpacity
-            style={styles.editButton}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate('EditProfile')}
-          >
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </TouchableOpacity>
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.expenseButton, styles.actionRowBtn]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('EditProfile')}
+            >
+              <Text style={styles.expenseButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.expenseButton, styles.actionRowBtn]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('ExpenseManagement')}
+            >
+              <Text style={styles.expenseButtonText}>Expense Management</Text>
+            </TouchableOpacity>
+          </View>
+          
 
           {/* Logout */}
           <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={logout}>
@@ -350,12 +400,15 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // Statistics Container
-  statsContainer: {
-    flexDirection: 'row',
+  // Statistics Grid
+  statsGrid: {
     paddingHorizontal: 16,
     gap: 12,
     marginBottom: 24,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
   statCard: {
     flex: 1,
@@ -370,24 +423,17 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  statHeader: {
-    flexDirection: 'row',
+  statIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  statValuePositive: {
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.success,
-  },
-  statValueNeutral: {
-    fontSize: FONTS.size.xs,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.primary,
-  },
   statPrimary: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: FONTS.family.bold,
     color: '#111827',
     marginBottom: 4,
@@ -401,7 +447,7 @@ const styles = StyleSheet.create({
   // Personal Info Section
   personalInfoSection: {
     paddingHorizontal: 16,
-    marginBottom: 30,
+    marginBottom: 24,
   },
   sectionTitle: {
     fontSize: FONTS.size.sm,
@@ -430,7 +476,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F7F9FB',
+    backgroundColor: '#F0F4FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -455,19 +501,32 @@ const styles = StyleSheet.create({
     marginLeft: 72,
   },
 
-  // Edit Profile Button
-  editButton: {
+  // Action row (side-by-side buttons)
+  actionRow: {
+    flexDirection: 'row',
     marginHorizontal: 16,
     marginBottom: 12,
-    backgroundColor: '#4263EB',
-    height: 56,
+    gap: 10,
+  },
+  actionRowBtn: {
+    flex: 1,
+    marginHorizontal: 0,
+    marginBottom: 0,
+  },
+
+  // Expense Management Button
+  expenseButton: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: COLORS.primary,
+    height: 40,
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  editButtonText: {
+  expenseButtonText: {
     color: COLORS.white,
-    fontSize: FONTS.size.md,
+    fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.bold,
   },
 

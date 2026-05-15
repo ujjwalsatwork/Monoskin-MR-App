@@ -5,10 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Platform,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -114,6 +114,7 @@ function buildListItems(notifications: Notification[]): ListItem[] {
 
 const NotificationsScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<UIFilterType>('All');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -206,7 +207,7 @@ const NotificationsScreen = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <BackArrowIconBlack />
         </TouchableOpacity>
@@ -364,7 +365,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,

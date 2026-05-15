@@ -11,8 +11,88 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+const CheckCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DCFCE7" />
+    <Path d="M8 12l3 3 5-5" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ErrorCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEE2E2" />
+    <Path d="M15 9l-6 6M9 9l6 6" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const InfoCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DBEAFE" />
+    <Path d="M12 8v4M12 16h.01" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
+  </Svg>
+);
+
+// ── AlertModal ────────────────────────────────────────────────────────────────
+
+type AlertType = 'success' | 'error' | 'info';
+
+interface AlertState {
+  visible: boolean;
+  type: AlertType;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
+const ALERT_HIDDEN: AlertState = { visible: false, type: 'info', title: '', message: '' };
+
+const ALERT_ACCENT: Record<AlertType, string> = {
+  success: '#16A34A',
+  error: '#DC2626',
+  info: '#2563EB',
+};
+
+const AlertModal = ({ state, onDismiss }: { state: AlertState; onDismiss: () => void }) => {
+  const accent = ALERT_ACCENT[state.type];
+  const Icon = state.type === 'success' ? CheckCircleIcon : state.type === 'error' ? ErrorCircleIcon : InfoCircleIcon;
+  const handleConfirm = () => { onDismiss(); state.onConfirm?.(); };
+  const handleCancel = () => { onDismiss(); state.onCancel?.(); };
+  return (
+    <Modal visible={state.visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={am.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={state.cancelText ? undefined : onDismiss} />
+        <View style={am.card}>
+          <Icon />
+          <Text style={am.title}>{state.title}</Text>
+          <Text style={am.message}>{state.message}</Text>
+          <View style={[am.actions, !state.cancelText && am.actionsCenter]}>
+            {!!state.cancelText && (
+              <TouchableOpacity style={am.cancelBtn} activeOpacity={0.7} onPress={handleCancel}>
+                <Text style={am.cancelText}>{state.cancelText}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[am.confirmBtn, { backgroundColor: accent }, !state.cancelText && am.confirmBtnFull]}
+              activeOpacity={0.8}
+              onPress={handleConfirm}
+            >
+              <Text style={am.confirmText}>{state.confirmText ?? 'OK'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -152,6 +232,11 @@ const PharmacyOrderScreen = () => {
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [priority, setPriority] = useState<Priority>('Medium');
   const [addItemsVisible, setAddItemsVisible] = useState(false);
+  const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
+
+  const showAlert = (config: Omit<AlertState, 'visible'>) =>
+    setAlertState({ ...config, visible: true });
+  const dismissAlert = () => setAlertState(ALERT_HIDDEN);
 
   const fetchCatalogue = async () => {
     setCatalogueLoading(true);
@@ -220,28 +305,25 @@ const PharmacyOrderScreen = () => {
   const remainingCredit = creditLimit - outstanding - orderValue;
 
   const handlePlaceOrder = () => {
-    // Validation 1: Check if at least one product is added
     if (products.length === 0) {
-      Alert.alert('No Products', 'Please add at least one product to create an order.');
+      showAlert({ type: 'error', title: 'No Products', message: 'Please add at least one product to create an order.' });
       return;
     }
 
-    // Validation 2: Check if order total is greater than 0
     if (orderValue <= 0) {
-      Alert.alert('Invalid Amount', 'Order amount must be greater than ₹0. Please add products with valid prices.');
+      showAlert({ type: 'error', title: 'Invalid Amount', message: 'Order amount must be greater than ₹0. Please add products with valid prices.' });
       return;
     }
 
-    // Validation 3: Check if order exceeds credit limit
     if (orderValue + outstanding > creditLimit) {
-      Alert.alert(
-        'Credit Limit Exceeded',
-        `This order exceeds the pharmacy's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
-        [
-          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-          { text: 'Create Order Anyway', onPress: () => proceedWithOrder() },
-        ]
-      );
+      showAlert({
+        type: 'info',
+        title: 'Credit Limit Exceeded',
+        message: `This order exceeds the pharmacy's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
+        confirmText: 'Create Order',
+        cancelText: 'Cancel',
+        onConfirm: () => proceedWithOrder(),
+      });
       return;
     }
 
@@ -487,6 +569,8 @@ const PharmacyOrderScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <AlertModal state={alertState} onDismiss={dismissAlert} />
 
       {/* Bottom Bar */}
       <View style={styles.bottomBar}>
@@ -768,6 +852,73 @@ const styles = StyleSheet.create({
     borderRadius: 28, justifyContent: 'center', alignItems: 'center',
   },
   placeOrderBtnText: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.semibold, color: COLORS.white },
+});
+
+const am = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  actions: { flexDirection: 'row', gap: 10, width: '100%' },
+  actionsCenter: { justifyContent: 'center' },
+  cancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D1D9E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: '#6B7280',
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmBtnFull: { flex: 0, width: 140 },
+  confirmText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
 });
 
 export default PharmacyOrderScreen;

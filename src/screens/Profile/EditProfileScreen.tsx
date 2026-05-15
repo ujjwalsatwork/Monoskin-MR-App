@@ -6,10 +6,14 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Alert,
+  Modal,
   ActivityIndicator,
   Image,
+  Platform,
+  PermissionsAndroid,
+  Linking,
 } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -18,15 +22,167 @@ import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { ProfileIcon, Camera } from '@/assets/images';
 import Config from 'react-native-config';
-import { updateMyProfile, clearUpdateError } from '@/redux/slices/profileSlice';
+import { updateMyProfile } from '@/redux/slices/profileSlice';
 import { RootState } from '@/redux/rootReducer';
 import { AppDispatch } from '@/redux/store';
+import ImagePickerModal from '@/components/common/ImagePickerModal';
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+const CheckCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DCFCE7" />
+    <Path
+      d="M8 12l3 3 5-5"
+      stroke="#16A34A"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+const ErrorCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEE2E2" />
+    <Path
+      d="M15 9l-6 6M9 9l6 6"
+      stroke="#DC2626"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+const InfoCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DBEAFE" />
+    <Path
+      d="M12 8v4M12 16h.01"
+      stroke="#2563EB"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+// ── AlertModal ────────────────────────────────────────────────────────────────
+
+type AlertType = 'success' | 'error' | 'info';
+
+interface AlertState {
+  visible: boolean;
+  type: AlertType;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
+const ALERT_HIDDEN: AlertState = { visible: false, type: 'info', title: '', message: '' };
+
+const ALERT_ACCENT: Record<AlertType, string> = {
+  success: '#16A34A',
+  error: '#DC2626',
+  info: '#2563EB',
+};
+
+const AlertModal = ({ state, onDismiss }: { state: AlertState; onDismiss: () => void }) => {
+  const accent = ALERT_ACCENT[state.type];
+  const Icon =
+    state.type === 'success' ? CheckCircleIcon
+    : state.type === 'error' ? ErrorCircleIcon
+    : InfoCircleIcon;
+
+  const handleConfirm = () => { onDismiss(); state.onConfirm?.(); };
+  const handleCancel = () => { onDismiss(); state.onCancel?.(); };
+
+  return (
+    <Modal visible={state.visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={am.overlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={state.cancelText ? undefined : onDismiss}
+        />
+        <View style={am.card}>
+          <Icon />
+          <Text style={am.title}>{state.title}</Text>
+          <Text style={am.message}>{state.message}</Text>
+          <View style={[am.actions, !state.cancelText && am.actionsCenter]}>
+            {!!state.cancelText && (
+              <TouchableOpacity style={am.cancelBtn} activeOpacity={0.7} onPress={handleCancel}>
+                <Text style={am.cancelText}>{state.cancelText}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[am.confirmBtn, { backgroundColor: accent }, !state.cancelText && am.confirmBtnFull]}
+              activeOpacity={0.8}
+              onPress={handleConfirm}
+            >
+              <Text style={am.confirmText}>{state.confirmText ?? 'OK'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ── Permission helpers ────────────────────────────────────────────────────────
+
+const requestAndroidPermission = async (
+  permission: (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS],
+  rationale: PermissionsAndroid.Rationale,
+): Promise<'granted' | 'denied' | 'never_ask_again'> => {
+  const current = await PermissionsAndroid.check(permission);
+  if (current) return 'granted';
+  const result = await PermissionsAndroid.request(permission, rationale);
+  if (result === PermissionsAndroid.RESULTS.GRANTED) return 'granted';
+  if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) return 'never_ask_again';
+  return 'denied';
+};
+
+const ensureCameraPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
+  if (Platform.OS !== 'android') return 'granted';
+  const result = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA, {
+    title: 'Camera Permission',
+    message: 'Monoskin MR needs camera access to take a profile photo.',
+    buttonPositive: 'Allow',
+    buttonNegative: 'Deny',
+  });
+  if (result === 'granted') return 'granted';
+  if (result === 'never_ask_again') return 'settings';
+  return 'denied';
+};
+
+const ensureGalleryPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
+  if (Platform.OS !== 'android') return 'granted';
+  const permission =
+    Number(Platform.Version) >= 33
+      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+  const result = await requestAndroidPermission(permission, {
+    title: 'Gallery Permission',
+    message: 'Monoskin MR needs access to your photo library to choose a profile photo.',
+    buttonPositive: 'Allow',
+    buttonNegative: 'Deny',
+  });
+  if (result === 'granted') return 'granted';
+  if (result === 'never_ask_again') return 'settings';
+  return 'denied';
+};
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 const EditProfileScreen = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
 
-  const { data: profile, isUpdating, updateError } = useSelector(
+  const { data: profile, isUpdating } = useSelector(
     (state: RootState) => state.profile,
   );
 
@@ -34,35 +190,52 @@ const EditProfileScreen = () => {
   const [territory, setTerritory] = useState(profile?.territory ?? '');
   const [region, setRegion] = useState(profile?.region ?? '');
   const [photoUri, setPhotoUri] = useState<string | null>(profile?.profilePhoto ?? null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
 
-  const handlePickImage = () => {
-    Alert.alert('Profile Photo', 'Choose an option', [
-      {
-        text: 'Take Photo',
-        onPress: () =>
-          launchCamera(
-            { mediaType: 'photo', quality: 0.8, saveToPhotos: false },
-            (res) => {
-              if (!res.didCancel && !res.errorCode && res.assets?.[0]?.uri) {
-                setPhotoUri(res.assets[0].uri);
-              }
-            },
-          ),
-      },
-      {
-        text: 'Choose from Gallery',
-        onPress: () =>
-          launchImageLibrary(
-            { mediaType: 'photo', quality: 0.8, selectionLimit: 1 },
-            (res) => {
-              if (!res.didCancel && !res.errorCode && res.assets?.[0]?.uri) {
-                setPhotoUri(res.assets[0].uri);
-              }
-            },
-          ),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const showAlert = (config: Omit<AlertState, 'visible'>) =>
+    setAlertState({ ...config, visible: true });
+
+  const dismissAlert = () => setAlertState(ALERT_HIDDEN);
+
+  const handleTakePhoto = async () => {
+    const status = await ensureCameraPermission();
+    if (status === 'settings') {
+      showAlert({
+        type: 'info',
+        title: 'Camera Permission Required',
+        message: 'Camera access has been denied. Please enable it in your device Settings to take a photo.',
+        confirmText: 'Open Settings',
+        cancelText: 'Cancel',
+        onConfirm: () => Linking.openSettings(),
+      });
+      return;
+    }
+    if (status === 'denied') return;
+    const res = await launchCamera({ mediaType: 'photo', quality: 0.8, saveToPhotos: false });
+    if (!res.didCancel && !res.errorCode && res.assets?.[0]?.uri) {
+      setPhotoUri(res.assets[0].uri);
+    }
+  };
+
+  const handleChooseGallery = async () => {
+    const status = await ensureGalleryPermission();
+    if (status === 'settings') {
+      showAlert({
+        type: 'info',
+        title: 'Gallery Permission Required',
+        message: 'Photo library access has been denied. Please enable it in your device Settings.',
+        confirmText: 'Open Settings',
+        cancelText: 'Cancel',
+        onConfirm: () => Linking.openSettings(),
+      });
+      return;
+    }
+    if (status === 'denied') return;
+    const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+    if (!res.didCancel && !res.errorCode && res.assets?.[0]?.uri) {
+      setPhotoUri(res.assets[0].uri);
+    }
   };
 
   const handleSave = async () => {
@@ -76,18 +249,24 @@ const EditProfileScreen = () => {
       const filename = photoUri.split('/').pop() ?? 'photo.jpg';
       const ext = filename.split('.').pop()?.toLowerCase();
       const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
-      formData.append('profilePhoto', {
-        uri: photoUri,
-        name: filename,
-        type: mimeType,
-      } as any);
+      formData.append('profilePhoto', { uri: photoUri, name: filename, type: mimeType } as any);
     }
-    console.log('🚀 ~ handleSave ~ formData:', formData)
 
     const result = await dispatch(updateMyProfile(formData));
     if (updateMyProfile.fulfilled.match(result)) {
-      Alert.alert('Success', 'Profile updated successfully.');
-      navigation.goBack();
+      showAlert({
+        type: 'success',
+        title: 'Profile Updated',
+        message: 'Your profile has been updated successfully.',
+        confirmText: 'Done',
+        onConfirm: () => navigation.goBack(),
+      });
+    } else {
+      showAlert({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Something went wrong while updating your profile. Please try again.',
+      });
     }
   };
 
@@ -102,7 +281,7 @@ const EditProfileScreen = () => {
       >
         {/* Photo Picker */}
         <View style={styles.avatarSection}>
-          <TouchableOpacity onPress={handlePickImage} activeOpacity={0.8}>
+          <TouchableOpacity onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
             <View style={styles.avatarCircle}>
               {photoUri ? (
                 <Image
@@ -134,10 +313,7 @@ const EditProfileScreen = () => {
           <View style={styles.divider} />
           <ReadOnlyRow label="Role" value={profile?.managerRole ?? '—'} />
           <View style={styles.divider} />
-          <ReadOnlyRow
-            label="Reporting Manager"
-            value={profile?.reportingManager ?? '—'}
-          />
+          <ReadOnlyRow label="Reporting Manager" value={profile?.reportingManager ?? '—'} />
         </View>
 
         <Text style={styles.sectionLabel}>EDITABLE INFO</Text>
@@ -168,10 +344,6 @@ const EditProfileScreen = () => {
           />
         </View>
 
-        {updateError ? (
-          <Text style={styles.errorText}>{updateError}</Text>
-        ) : null}
-
         <TouchableOpacity
           style={[styles.saveButton, isUpdating && styles.saveButtonDisabled]}
           activeOpacity={0.8}
@@ -185,9 +357,20 @@ const EditProfileScreen = () => {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <ImagePickerModal
+        visible={pickerVisible}
+        onCamera={handleTakePhoto}
+        onGallery={handleChooseGallery}
+        onClose={() => setPickerVisible(false)}
+      />
+
+      <AlertModal state={alertState} onDismiss={dismissAlert} />
     </View>
   );
 };
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 const ReadOnlyRow = ({ label, value }: { label: string; value: string }) => (
   <View style={styles.infoRow}>
@@ -224,6 +407,8 @@ const InputRow = ({
     />
   </View>
 );
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
@@ -301,10 +486,7 @@ const styles = StyleSheet.create({
   },
   divider: { height: 1, backgroundColor: '#E8EDF1', marginLeft: 16 },
 
-  infoRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
+  infoRow: { paddingHorizontal: 16, paddingVertical: 12 },
   infoLabel: {
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
@@ -317,10 +499,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
 
-  inputRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
+  inputRow: { paddingHorizontal: 16, paddingVertical: 12 },
   inputLabel: {
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
@@ -334,15 +513,6 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  errorText: {
-    color: '#E44B4B',
-    fontSize: FONTS.size.sm,
-    fontFamily: FONTS.family.medium,
-    textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 24,
-  },
-
   saveButton: {
     marginHorizontal: 16,
     marginTop: 24,
@@ -352,13 +522,82 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
+  saveButtonDisabled: { opacity: 0.6 },
   saveButtonText: {
     color: COLORS.white,
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
+  },
+});
+
+const am = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  actionsCenter: { justifyContent: 'center' },
+  cancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D1D9E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: '#6B7280',
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmBtnFull: { flex: 0, width: 140 },
+  confirmText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
   },
 });
 

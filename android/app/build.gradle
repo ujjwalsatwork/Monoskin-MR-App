@@ -86,6 +86,11 @@ android {
         versionCode 1
         versionName "1.0"
         manifestPlaceholders = [GOOGLE_MAPS_API_KEY: project.env.get("GOOGLE_MAPS_API_KEY")]
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF"
+            }
+        }
     }
     signingConfigs {
         debug {
