@@ -238,10 +238,11 @@ const PharmacyOrderScreen = () => {
     setAlertState({ ...config, visible: true });
   const dismissAlert = () => setAlertState(ALERT_HIDDEN);
 
-  const fetchCatalogue = async () => {
+  const fetchCatalogue = async (): Promise<CatalogueItem[]> => {
+    if (catalogue.length > 0) return catalogue;
     setCatalogueLoading(true);
     try {
-      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.list);
+      const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.available);
       const items: CatalogueItem[] = res.data.map(p => ({
         id: String(p.id),
         name: p.name,
@@ -254,11 +255,24 @@ const PharmacyOrderScreen = () => {
         selected: false,
       }));
       setCatalogue(items);
+      return items;
     } catch {
-      // keep empty
+      return [];
     } finally {
       setCatalogueLoading(false);
     }
+  };
+
+  const openAddItems = async () => {
+    const baseItems = await fetchCatalogue();
+    const source = baseItems.length > 0 ? baseItems : catalogue;
+    setCatalogue(source.map(item => {
+      const existing = products.find(p => p.id === item.id);
+      return existing
+        ? { ...item, selected: true, qty: existing.qty }
+        : { ...item, selected: false, qty: 1 };
+    }));
+    setAddItemsVisible(true);
   };
 
   const updateQty = (id: string, delta: number) => {
@@ -280,29 +294,34 @@ const PharmacyOrderScreen = () => {
     setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c));
 
   const handleSaveItems = () => {
-    const newItems: PharmacyProduct[] = catalogue
-      .filter(c => c.selected && !products.find(p => p.id === c.id))
+    const selectedItems: PharmacyProduct[] = catalogue
+      .filter(c => c.selected && c.qty > 0)
       .map(c => ({
         id: c.id,
         name: c.name,
         category: `${c.category} • ${c.packSize}`,
         price: c.price,
         gst: c.gst,
-        bulkOrder: false,
+        bulkOrder: products.find(p => p.id === c.id)?.bulkOrder ?? false,
         qty: c.qty,
       }));
-    if (newItems.length) setProducts(prev => [...prev, ...newItems]);
-    setCatalogue(prev => prev.map(c => ({ ...c, selected: false })));
+    setProducts(selectedItems);
     setAddItemsVisible(false);
   };
 
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
+  const baseTax = products.reduce((s, p) => {
+    const base = p.price * p.qty;
+    const gstRate = (parseFloat(p.gst) || 0) / 100;
+    return s + base * gstRate;
+  }, 0);
+  const baseTotal = orderValue + baseTax;
 
   // Credit limit calculations
   const creditLimit = pharmacy?.creditLimit ? parseFloat(pharmacy.creditLimit) : 0;
   const outstanding = pharmacy?.outstanding ? parseFloat(pharmacy.outstanding) : 0;
-  const remainingCredit = creditLimit - outstanding - orderValue;
+  const remainingCredit = creditLimit - outstanding - baseTotal;
 
   const handlePlaceOrder = () => {
     if (products.length === 0) {
@@ -315,11 +334,11 @@ const PharmacyOrderScreen = () => {
       return;
     }
 
-    if (orderValue + outstanding > creditLimit) {
+    if (baseTotal + outstanding > creditLimit && creditLimit > 0) {
       showAlert({
         type: 'info',
         title: 'Credit Limit Exceeded',
-        message: `This order exceeds the pharmacy's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
+        message: `This order exceeds the pharmacy's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nEst. Total: ₹${baseTotal.toFixed(2)}`,
         confirmText: 'Create Order',
         cancelText: 'Cancel',
         onConfirm: () => proceedWithOrder(),
@@ -332,13 +351,14 @@ const PharmacyOrderScreen = () => {
 
   const proceedWithOrder = () => {
     const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
-    const items = products.map(p => {
+    const items = products.filter(p => p.qty > 0).map(p => {
       const base = p.price * p.qty;
       const gstRate = parseFloat(p.gst || '12') / 100;
       const itemTax = parseFloat((base * gstRate).toFixed(2));
       const itemTotal = parseFloat((base + itemTax).toFixed(2));
       return {
         productId: parseInt(p.id, 10),
+        productName: p.name,
         quantity: p.qty,
         unitPrice: p.price.toFixed(2),
         discount: '0',
@@ -351,7 +371,6 @@ const PharmacyOrderScreen = () => {
       orderNumber,
       orderCreateData: {
         pharmacyId: parseInt(pharmacyId, 10),
-        warehouseId: 1,
         shippingAddress,
         notes,
         reasonTag: 'Pharmacy Order',
@@ -422,7 +441,7 @@ const PharmacyOrderScreen = () => {
           <Text style={styles.productSummaryTitle}>Product Summary</Text>
           <TouchableOpacity
             style={styles.addItemsBtn}
-            onPress={() => { setAddItemsVisible(true); fetchCatalogue(); }}
+            onPress={openAddItems}
             activeOpacity={0.8}
           >
             <AddCircle width={18} height={18} />
@@ -577,12 +596,20 @@ const PharmacyOrderScreen = () => {
         <View style={styles.bottomBarTop}>
           <Text style={styles.bottomBarItems}>{totalItems} ITEMS</Text>
           <View style={styles.bottomBarValueRow}>
-            <Text style={styles.bottomBarValueLabel}>EST. ORDER VALUE</Text>
-            <Text style={styles.bottomBarValue}>₹{orderValue.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValueLabel}>SUBTOTAL</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{orderValue.toFixed(2)}</Text>
+          </View>
+          <View style={styles.bottomBarValueRow}>
+            <Text style={styles.bottomBarValueLabel}>TAX (GST)</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{baseTax.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.bottomBarValueRow, styles.bottomBarTotalRow]}>
+            <Text style={styles.bottomBarTotalLabel}>EST. TOTAL</Text>
+            <Text style={styles.bottomBarValue}>₹{baseTotal.toFixed(2)}</Text>
           </View>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
-            <Text style={[styles.bottomBarValue, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
+            <Text style={[styles.bottomBarValueSmall, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
               ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </View>
@@ -841,10 +868,13 @@ const styles = StyleSheet.create({
   bottomBarTop: { marginBottom: 12 },
   bottomBarItems: {
     fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold,
-    color: COLORS.textSecondary, marginBottom: 4,
+    color: COLORS.textSecondary, marginBottom: 6,
   },
-  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bottomBarValueLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
+  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  bottomBarTotalRow: { marginTop: 4, marginBottom: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
+  bottomBarValueLabel: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4 },
+  bottomBarValueSmall: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  bottomBarTotalLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark },
   bottomBarValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
   remainingCreditNegative: { color: COLORS.error },
   placeOrderBtn: {

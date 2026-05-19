@@ -157,6 +157,7 @@ type CatalogueItem = {
   selected: boolean;
 };
 
+
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
 /* ── CollapsibleSection ── */
@@ -275,7 +276,8 @@ const CreateOrderScreen = () => {
     fetchDoctor();
   }, [doctorId]);
 
-  const fetchCatalogue = async () => {
+  const fetchCatalogue = async (): Promise<CatalogueItem[]> => {
+    if (catalogue.length > 0) return catalogue;
     setCatalogueLoading(true);
     try {
       const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.available);
@@ -291,11 +293,24 @@ const CreateOrderScreen = () => {
         selected: false,
       }));
       setCatalogue(items);
+      return items;
     } catch {
-      // keep empty
+      return [];
     } finally {
       setCatalogueLoading(false);
     }
+  };
+
+  const openAddItems = async () => {
+    const baseItems = await fetchCatalogue();
+    const source = baseItems.length > 0 ? baseItems : catalogue;
+    setCatalogue(source.map(item => {
+      const existing = products.find(p => p.id === item.id);
+      return existing
+        ? { ...item, selected: true, qty: existing.qty }
+        : { ...item, selected: false, qty: 1 };
+    }));
+    setAddItemsVisible(true);
   };
 
   const [search, setSearch] = useState('');
@@ -329,14 +344,20 @@ const CreateOrderScreen = () => {
   };
 
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
-  const focCount  = products.filter(p => p.foc).length;
-  const savings   = products.filter(p => p.foc).reduce((s, p) => s + p.price, 0);
+  const focCount   = products.filter(p => p.foc).length;
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
-  // Credit limit calculations
+  // Base tax (no discounts — discounts are applied in PaymentScreen)
+  const baseTax = products.reduce((s, p) => {
+    const base = p.price * p.qty;
+    const gstRate = (parseFloat(p.gst) || 0) / 100;
+    return s + base * gstRate;
+  }, 0);
+  const baseTotal = orderValue + baseTax;
+
   const creditLimit = doctor?.creditLimit ? parseFloat(doctor.creditLimit) : 0;
   const outstanding = doctor?.outstanding ? parseFloat(doctor.outstanding) : 0;
-  const remainingCredit = creditLimit - outstanding - orderValue;
+  const remainingCredit = creditLimit - outstanding - baseTotal;
 
   const toggleCatalogueItem = (id: string) =>
     setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c));
@@ -345,8 +366,8 @@ const CreateOrderScreen = () => {
     setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c));
 
   const handleSaveItems = () => {
-    const newItems: Product[] = catalogue
-      .filter(c => c.selected && !products.find(p => p.id === c.id))
+    const selectedItems: Product[] = catalogue
+      .filter(c => c.selected && c.qty > 0)
       .map(c => ({
         id: c.id,
         name: c.name,
@@ -355,11 +376,10 @@ const CreateOrderScreen = () => {
         price: c.price,
         gst: c.gst,
         offer: '',
-        foc: false,
+        foc: products.find(p => p.id === c.id)?.foc ?? false,
         qty: c.qty,
       }));
-    if (newItems.length) setProducts(prev => [...prev, ...newItems]);
-    setCatalogue(prev => prev.map(c => ({ ...c, selected: false })));
+    setProducts(selectedItems);
     setAddItemsVisible(false);
   };
 
@@ -368,41 +388,41 @@ const CreateOrderScreen = () => {
       showAlert({ type: 'error', title: 'No Products', message: 'Please add at least one product to create an order.' });
       return;
     }
-
     if (orderValue <= 0) {
       showAlert({ type: 'error', title: 'Invalid Amount', message: 'Order amount must be greater than ₹0. Please add products with valid prices.' });
       return;
     }
-
-    if (orderValue + outstanding > creditLimit) {
+    if (baseTotal + outstanding > creditLimit && creditLimit > 0) {
       showAlert({
         type: 'info',
         title: 'Credit Limit Exceeded',
-        message: `This order exceeds the doctor's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
-        confirmText: 'Create Order',
+        message: `This order exceeds the doctor's available credit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nEst. Total: ₹${baseTotal.toFixed(2)}\n\nOrder will be submitted for approval.`,
+        confirmText: 'Proceed Anyway',
         cancelText: 'Cancel',
         onConfirm: () => proceedWithOrder(),
       });
       return;
     }
-
     proceedWithOrder();
   };
 
   const proceedWithOrder = () => {
-    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`
-    const items = products.map(p => {
+    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`;
+    const items = products.filter(p => p.qty > 0).map(p => {
       const base = p.price * p.qty;
-      const gstRate = parseFloat(p.gst || '12') / 100;
+      const gstRate = (parseFloat(p.gst) || 0) / 100;
       const itemTax = parseFloat((base * gstRate).toFixed(2));
       const itemTotal = parseFloat((base + itemTax).toFixed(2));
       return {
         productId: parseInt(p.id, 10),
+        productName: p.name,
         quantity: p.qty,
         unitPrice: p.price.toFixed(2),
-        discount: '0',
+        gst: p.gst,
+        discount: '0.00',
         tax: itemTax.toFixed(2),
         total: itemTotal.toFixed(2),
+        isFreeGood: false,
       };
     });
     navigation.navigate('Payment', {
@@ -515,7 +535,7 @@ const CreateOrderScreen = () => {
           <View style={styles.addItemsRow}>
             <TouchableOpacity
               style={styles.addItemsBtn}
-              onPress={() => { setAddItemsVisible(true); fetchCatalogue(); }}
+              onPress={openAddItems}
             >
               <AddCircle />
               <Text style={styles.addItemsBtnText}>  Add Items</Text>
@@ -705,15 +725,22 @@ const CreateOrderScreen = () => {
         <View style={styles.bottomBarTop}>
           <Text style={styles.bottomBarItems}>
             {totalItems} ITEMS ({focCount} FOC)
-            <Text style={styles.bottomBarSavings}>  ·  SAVINGS: ₹{savings.toFixed(2)}</Text>
           </Text>
           <View style={styles.bottomBarValueRow}>
-            <Text style={styles.bottomBarValueLabel}>EST. ORDER VALUE</Text>
-            <Text style={styles.bottomBarValue}>₹{orderValue.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValueLabel}>SUBTOTAL</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{orderValue.toFixed(2)}</Text>
+          </View>
+          <View style={styles.bottomBarValueRow}>
+            <Text style={styles.bottomBarValueLabel}>TAX (GST)</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{baseTax.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.bottomBarValueRow, styles.bottomBarTotalRow]}>
+            <Text style={styles.bottomBarTotalLabel}>EST. TOTAL</Text>
+            <Text style={styles.bottomBarValue}>₹{baseTotal.toFixed(2)}</Text>
           </View>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
-            <Text style={[styles.bottomBarValue, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
+            <Text style={[styles.bottomBarValueSmall, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
               ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </View>
@@ -811,7 +838,6 @@ const styles = StyleSheet.create({
   doctorStatTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   doctorStatSub: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
   outstandingRed: { color: COLORS.error },
-  remainingCreditPositive: { color: COLORS.success },
 
   // Collapsible
   collapsibleCard: {
@@ -997,13 +1023,16 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.bold,
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  bottomBarSavings: { color: COLORS.success },
-  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bottomBarValueLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
+  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  bottomBarTotalRow: { marginTop: 4, marginBottom: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
+  bottomBarValueLabel: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4 },
+  bottomBarValueSmall: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  bottomBarTotalLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark },
   bottomBarValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
   remainingCreditNegative: { color: COLORS.error },
+  remainingCreditPositive: { color: COLORS.success },
   placeOrderBtn: {
     backgroundColor: COLORS.buttonBlue,
     height: 56,

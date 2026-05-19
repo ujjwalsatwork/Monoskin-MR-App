@@ -59,6 +59,18 @@ export const ENDPOINTS = {
         end: '/mr-breaks/end',
         today: '/mr-breaks/today',
     },
+    schemes: {
+        list: '/schemes',
+    },
+    promoCodes: {
+        list: '/promo-codes',
+    },
+    clinicCodes: {
+        list: '/clinic-codes',
+    },
+    pricingSlabs: {
+        detail: (id: number) => `/pricing-slabs/${id}`,
+    },
     // user: {
     //     profile: '/user/profile',
     //     updateProfile: '/user/update-profile',

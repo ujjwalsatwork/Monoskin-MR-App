@@ -1,10 +1,13 @@
 export type OrderItemPayload = {
     productId: number;
+    productName?: string;
     quantity: number;
     unitPrice: string;
     discount: string;
     tax: string;
     total: string;
+    gst?: string;
+    isFreeGood?: boolean;
 };
 
 export type OrderCreateData = {
