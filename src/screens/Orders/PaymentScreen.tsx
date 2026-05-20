@@ -482,7 +482,7 @@ const PaymentScreen = () => {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <View style={styles.safeArea}>
-      <Header title="Review & Pay" showBack showNotification showProfile />
+      <Header title="Review & Order" showBack showNotification showProfile />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 

@@ -19,7 +19,6 @@ import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import {
   ProfileIcon,
-  Camera,
   CheckCircleIcon,
   CalendarNoteIcon,
   EmailIcon,
@@ -146,9 +145,7 @@ const ProfileScreen = () => {
                   <ProfileIcon width={100} height={100} />
                 )}
               </View>
-              <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.8}>
-                <Camera width={16} height={16} />
-              </TouchableOpacity>
+
             </View>
 
             <Text style={styles.userName}>{profile?.name ?? '—'}</Text>

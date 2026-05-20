@@ -15,7 +15,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue, CheckCircleIcon } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -119,7 +119,8 @@ const AttendanceScreen = () => {
     }, []);
 
     // GPS + reverse geocode
-    useEffect(() => {
+    const fetchLocation = useCallback(() => {
+        setLocationError('');
         Geolocation.getCurrentPosition(
             async (position) => {
                 const lat = position.coords.latitude;
@@ -129,12 +130,16 @@ const AttendanceScreen = () => {
                 setAddressText(addr || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
             },
             (err) => {
-                console.log('🚀 ~ AttendanceScreen ~ err:', err)
+                console.log('🚀 ~ AttendanceScreen ~ err:', err);
                 setLocationError(err.message);
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
         );
     }, []);
+
+    useEffect(() => {
+        fetchLocation();
+    }, [fetchLocation]);
 
     const refetchAll = useCallback(async () => {
         await Promise.all([
@@ -150,15 +155,17 @@ const AttendanceScreen = () => {
 
     useFocusEffect(
         useCallback(() => {
+            fetchLocation();
             refetchAll();
-        }, [refetchAll]),
+        }, [fetchLocation, refetchAll]),
     );
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
+        fetchLocation();
         await refetchAll();
         setRefreshing(false);
-    }, [refetchAll]);
+    }, [fetchLocation, refetchAll]);
 
     // Coordinates string for display; address text used in the API payload
     const coordsString = location
@@ -289,6 +296,8 @@ const AttendanceScreen = () => {
                     <View style={styles.infoIconWrapper}>
                         {todayLoading ? (
                             <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : isCheckedIn ? (
+                            <CheckCircleIcon height={25}/>
                         ) : (
                             <InfoIcon />
                         )}
