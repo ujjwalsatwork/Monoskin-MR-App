@@ -283,7 +283,7 @@ interface ReceiptPickerSheetProps {
 }
 
 const ReceiptPickerSheet = ({ visible, onCamera, onGallery, onClose }: ReceiptPickerSheetProps) => (
-  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <View style={rp.overlay}>
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
       <View style={rp.sheet}>
@@ -873,7 +873,7 @@ const styles = StyleSheet.create({
 const am = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -950,7 +950,7 @@ const am = StyleSheet.create({
 const rp = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'flex-end',
   },
   sheet: {

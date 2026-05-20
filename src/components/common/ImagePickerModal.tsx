@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Modal,
   View,
   Text,
   TouchableOpacity,
@@ -9,6 +8,7 @@ import {
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import BottomSheetModal from './BottomSheetModal';
 
 type Props = {
   visible: boolean;
@@ -18,37 +18,29 @@ type Props = {
 };
 
 const ImagePickerModal = ({ visible, onCamera, onGallery, onClose }: Props) => (
-  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-    <View style={styles.overlay}>
-      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.handle} />
-        <Text style={styles.title}>Profile Photo</Text>
+  <BottomSheetModal visible={visible} onClose={onClose}>
+    <View style={styles.sheet}>
+      <View style={styles.handle} />
+      <Text style={styles.title}>Profile Photo</Text>
 
-        <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onCamera(); }}>
-          <Text style={styles.optionText}>Take Photo</Text>
-        </TouchableOpacity>
+      <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onCamera(); }}>
+        <Text style={styles.optionText}>Take Photo</Text>
+      </TouchableOpacity>
 
-        <View style={styles.divider} />
+      <View style={styles.divider} />
 
-        <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onGallery(); }}>
-          <Text style={styles.optionText}>Choose from Gallery</Text>
-        </TouchableOpacity>
+      <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onGallery(); }}>
+        <Text style={styles.optionText}>Choose from Gallery</Text>
+      </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.option, styles.cancelOption]} activeOpacity={0.7} onPress={onClose}>
-          <Text style={styles.cancelOptionText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={[styles.option, styles.cancelOption]} activeOpacity={0.7} onPress={onClose}>
+        <Text style={styles.cancelOptionText}>Cancel</Text>
+      </TouchableOpacity>
     </View>
-  </Modal>
+  </BottomSheetModal>
 );
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
   sheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20,

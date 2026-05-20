@@ -94,7 +94,7 @@ type OptionsSheetProps = {
 };
 
 const OptionsSheet = ({ visible, title, options, selected, onSelect, onClose }: OptionsSheetProps) => (
-  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+  <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
     <TouchableWithoutFeedback onPress={onClose}>
       <View style={sheet.overlay} />
     </TouchableWithoutFeedback>
@@ -125,7 +125,7 @@ const OptionsSheet = ({ visible, title, options, selected, onSelect, onClose }: 
 );
 
 const sheet = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   container: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20,
@@ -187,7 +187,7 @@ type MultiSelectDoctorSheetProps = {
 };
 
 const MultiSelectDoctorSheet = ({ visible, title, options, selectedIds, onToggle, onAddCustom, onClose }: MultiSelectDoctorSheetProps) => (
-  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+  <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
     <TouchableWithoutFeedback onPress={onClose}>
       <View style={sheet.overlay} />
     </TouchableWithoutFeedback>
@@ -227,7 +227,7 @@ const MultiSelectDoctorSheet = ({ visible, title, options, selectedIds, onToggle
 const CustomDoctorModal = ({ visible, onClose, onSave, onError }: { visible: boolean, onClose: () => void, onSave: (p: CustomDoctor) => void, onError: (msg: string) => void }) => {
   const [data, setData] = useState<CustomDoctor>({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
   return (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={[sheet.overlay, { justifyContent: 'flex-end' }]}>
         <View style={[sheet.container, { paddingBottom: Platform.OS === 'ios' ? 40 : 20, maxHeight: '90%' }]}>
           <View style={sheet.handle} />
@@ -799,7 +799,7 @@ const styles = StyleSheet.create({
 const am = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,

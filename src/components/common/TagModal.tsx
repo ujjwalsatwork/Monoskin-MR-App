@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Modal,
   View,
   Text,
   TouchableOpacity,
@@ -8,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import BottomSheetModal from './BottomSheetModal';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '@/redux/store';
 import { updateDoctorTags, updatePharmacyTags, fetchDoctors, fetchPharmacies } from '@/redux/slices/portfolioSlice';
@@ -72,17 +72,7 @@ const TagModal = ({ visible, type, id, initialTags, onClose }: Props) => {
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity
-        style={styles.backdrop}
-        activeOpacity={1}
-        onPress={onClose}
-      />
+    <BottomSheetModal visible={visible} onClose={onClose}>
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <Text style={styles.title}>Select Tags</Text>
@@ -120,15 +110,11 @@ const TagModal = ({ visible, type, id, initialTags, onClose }: Props) => {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+    </BottomSheetModal>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
   sheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20,

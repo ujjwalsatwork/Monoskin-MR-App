@@ -149,7 +149,7 @@ import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AppStackParamList } from '@/navigation/types';
+import { AppStackParamList, OrderItemPayload } from '@/navigation/types';
 import { Down } from '@/assets/images';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
@@ -187,7 +187,7 @@ const PaymentScreen = () => {
   const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
 
   const showAlert  = (config: Omit<AlertState, 'visible'>) => setAlertState({ ...config, visible: true });
-  const dismissAlert = () => setAlertState(ALERT_HIDDEN);
+  const dismissAlert = () => setAlertState(prev => ({ ...ALERT_HIDDEN, type: prev.type }));
 
   // ── Fetch pricing data on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -280,19 +280,20 @@ const PaymentScreen = () => {
 
   // BXGY free goods
   const freeGoods: FreeGood[] = (selectedScheme?.type === 'buyXgetY')
-    ? orderCreateData.items.flatMap(item => {
+    ? orderCreateData.items.reduce<FreeGood[]>((acc, item: OrderItemPayload) => {
         const pid = item.productId;
         const excluded = selectedScheme.excludedProducts?.includes(pid) ?? false;
         const applicable = !excluded && (
           !selectedScheme.applicableProducts?.length ||
           (selectedScheme.applicableProducts?.includes(pid) ?? false)
         );
-        if (!applicable) return [];
+        if (!applicable) return acc;
         const freeQty = Math.floor(item.quantity / selectedScheme.buyQty) * selectedScheme.getQty;
-        return freeQty > 0
-          ? [{ productId: pid, productName: item.productName ?? `Product #${pid}`, quantity: freeQty }]
-          : [];
-      })
+        if (freeQty > 0) {
+          acc.push({ productId: pid, productName: item.productName ?? `Product #${pid}`, quantity: freeQty });
+        }
+        return acc;
+      }, [])
     : [];
 
   // Eligible schemes for current order
@@ -688,7 +689,7 @@ const PaymentScreen = () => {
       <Modal
         visible={schemePickerVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setSchemePickerVisible(false)}
       >
         <TouchableOpacity
@@ -942,7 +943,7 @@ const styles = StyleSheet.create({
   summaryTotalValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
 
   // Scheme picker modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   modalSheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
@@ -1007,7 +1008,7 @@ const styles = StyleSheet.create({
 const am = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,

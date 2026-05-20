@@ -54,7 +54,7 @@ type LeaveTypeSheetProps = {
 };
 
 const LeaveTypeSheet = ({ visible, selectedValue, onSelect, onClose }: LeaveTypeSheetProps) => (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
         <TouchableWithoutFeedback onPress={onClose}>
             <View style={sheet.overlay} />
         </TouchableWithoutFeedback>
@@ -85,7 +85,7 @@ const LeaveTypeSheet = ({ visible, selectedValue, onSelect, onClose }: LeaveType
 );
 
 const sheet = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
     container: {
         backgroundColor: COLORS.white,
         borderTopLeftRadius: 20,

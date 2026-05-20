@@ -1,8 +1,9 @@
 import React from 'react';
 import {
-  Modal, View, Text, TouchableOpacity,
-  StyleSheet, FlatList, TouchableWithoutFeedback,
+  View, Text, TouchableOpacity,
+  StyleSheet, FlatList,
 } from 'react-native';
+import BottomSheetModal from '../BottomSheetModal';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { CheckCircleIcon } from '@/assets/images';
@@ -22,11 +23,7 @@ type Props = {
 };
 
 const AssignModal = ({ visible, selected, onSelect, onClose }: Props) => (
-  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-    <TouchableWithoutFeedback onPress={onClose}>
-      <View style={styles.overlay} />
-    </TouchableWithoutFeedback>
-
+  <BottomSheetModal visible={visible} onClose={onClose}>
     <View style={styles.sheet}>
       <View style={styles.handle} />
       <Text style={styles.title}>Assign To</Text>
@@ -53,14 +50,10 @@ const AssignModal = ({ visible, selected, onSelect, onClose }: Props) => (
         ItemSeparatorComponent={() => <View style={styles.sep} />}
       />
     </View>
-  </Modal>
+  </BottomSheetModal>
 );
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
   sheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20,

@@ -1117,7 +1117,7 @@ const VisitDetailScreen = () => {
       <Modal
         visible={addSampleVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setAddSampleVisible(false)}
       >
         <TouchableOpacity
@@ -1396,7 +1396,7 @@ const styles = StyleSheet.create({
 
   // Product Modal
   catalogueLoader: { marginVertical: 32 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   modalSheet: {
     backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: '75%', paddingTop: 12,
@@ -1441,7 +1441,7 @@ const styles = StyleSheet.create({
   feedbackOkError: { backgroundColor: '#D32F2F' },
 
   // Confirm Submit Modal
-  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   confirmBox: { width: '100%', backgroundColor: COLORS.white, borderRadius: 18, padding: 24 },
   confirmHeading: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center', marginBottom: 24, lineHeight: 26 },
   confirmActions: { flexDirection: 'row', gap: 12 },

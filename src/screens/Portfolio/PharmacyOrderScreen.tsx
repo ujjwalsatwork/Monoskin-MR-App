@@ -236,7 +236,7 @@ const PharmacyOrderScreen = () => {
 
   const showAlert = (config: Omit<AlertState, 'visible'>) =>
     setAlertState({ ...config, visible: true });
-  const dismissAlert = () => setAlertState(ALERT_HIDDEN);
+  const dismissAlert = () => setAlertState(prev => ({ ...ALERT_HIDDEN, type: prev.type }));
 
   const fetchCatalogue = async (): Promise<CatalogueItem[]> => {
     if (catalogue.length > 0) return catalogue;
@@ -536,7 +536,7 @@ const PharmacyOrderScreen = () => {
       <Modal
         visible={addItemsVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setAddItemsVisible(false)}
       >
         <TouchableOpacity
@@ -798,7 +798,7 @@ const styles = StyleSheet.create({
   scrollSpacer: { height: 120 },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   modalSheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
@@ -887,7 +887,7 @@ const styles = StyleSheet.create({
 const am = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
