@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -159,6 +159,40 @@ type CatalogueItem = {
 
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
+
+const CatalogueRow = React.memo(({
+  item,
+  onToggle,
+  onQtyUpdate,
+}: {
+  item: CatalogueItem;
+  onToggle: (id: string) => void;
+  onQtyUpdate: (id: string, delta: number) => void;
+}) => (
+  <View style={styles.modalItem}>
+    <TouchableOpacity
+      style={[styles.checkbox, item.selected && styles.checkboxSelected]}
+      onPress={() => onToggle(item.id)}
+      activeOpacity={0.8}
+    >
+      {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
+    </TouchableOpacity>
+    <View style={styles.modalItemInfo}>
+      <Text style={styles.modalItemTime}>{item.name}</Text>
+      <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+      <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
+    </View>
+    <View style={styles.stepper}>
+      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, -1)}>
+        <Text style={styles.stepperBtnText}>−</Text>
+      </TouchableOpacity>
+      <Text style={styles.stepperValue}>{item.qty}</Text>
+      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, 1)}>
+        <Text style={styles.stepperBtnText}>+</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+));
 
 /* ── CollapsibleSection ── */
 const CollapsibleSection = ({
@@ -359,11 +393,11 @@ const CreateOrderScreen = () => {
   const outstanding = doctor?.outstanding ? parseFloat(doctor.outstanding) : 0;
   const remainingCredit = creditLimit - outstanding - baseTotal;
 
-  const toggleCatalogueItem = (id: string) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c));
+  const toggleCatalogueItem = useCallback((id: string) =>
+    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c)), []);
 
-  const updateCatalogueQty = (id: string, delta: number) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c));
+  const updateCatalogueQty = useCallback((id: string, delta: number) =>
+    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c)), []);
 
   const handleSaveItems = () => {
     const selectedItems: Product[] = catalogue
@@ -678,34 +712,11 @@ const CreateOrderScreen = () => {
             keyExtractor={item => item.id}
             style={styles.modalList}
             renderItem={({ item }) => (
-              <View style={styles.modalItem}>
-                {/* Checkbox */}
-                <TouchableOpacity
-                  style={[styles.checkbox, item.selected && styles.checkboxSelected]}
-                  onPress={() => toggleCatalogueItem(item.id)}
-                  activeOpacity={0.8}
-                >
-                  {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
-                </TouchableOpacity>
-
-                {/* Info */}
-                <View style={styles.modalItemInfo}>
-                  <Text style={styles.modalItemTime}>{item.name}</Text>
-                  <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
-                  <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
-                </View>
-
-                {/* Stepper */}
-                <View style={styles.stepper}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => updateCatalogueQty(item.id, -1)}>
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.stepperValue}>{item.qty}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => updateCatalogueQty(item.id, 1)}>
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <CatalogueRow
+                item={item}
+                onToggle={toggleCatalogueItem}
+                onQtyUpdate={updateCatalogueQty}
+              />
             )}
             ItemSeparatorComponent={ModalSeparator}
           />

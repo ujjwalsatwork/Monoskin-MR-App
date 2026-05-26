@@ -73,6 +73,7 @@ import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import DatePickerModal from '@/components/common/DatePickerModal';
+import StateCitySelector from '@/components/common/StateCitySelector';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 
@@ -483,29 +484,15 @@ const AddLeadScreen = () => {
           />
         </Field>
 
-        {/* City * + State row */}
-        <View style={styles.row}>
-          <View style={styles.halfField}>
-            <Text style={styles.label}>City *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="City"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.city}
-              onChangeText={set('city')}
-            />
-          </View>
-          <View style={styles.halfField}>
-            <Text style={styles.label}>State</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="State"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.state}
-              onChangeText={set('state')}
-            />
-          </View>
-        </View>
+        {/* State → City dependent dropdowns */}
+        <StateCitySelector
+          stateValue={form.state}
+          cityValue={form.city}
+          onStateChange={set('state')}
+          onCityChange={set('city')}
+          stateLabel="State"
+          cityLabel="City *"
+        />
 
         {/* Address */}
         <Field label="Address">

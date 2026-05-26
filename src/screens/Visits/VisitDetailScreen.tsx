@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Linking,
   Animated,
+  PermissionsAndroid,
 } from 'react-native';
 import * as Vosk from 'react-native-vosk';
 import { COLORS } from '@/constants/colors';
@@ -258,7 +259,22 @@ const VisitDetailScreen = () => {
       return;
     }
 
-    console.log('🚀 ~ handleMicPress ~ voskReady:', voskReady)
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Microphone Permission',
+          message: 'Microphone access is required for voice input.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        },
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        showFeedback('error', 'Permission Denied', 'Microphone access is required for voice input.');
+        return;
+      }
+    }
+
     if (!voskReady) {
       showFeedback(
         'error',
@@ -271,15 +287,10 @@ const VisitDetailScreen = () => {
     voiceBaseText.current = visitNote.trim();
     try {
       setIsListening(true);
-      await Vosk.start(); // handles Android RECORD_AUDIO permission internally
-    } catch (e: any) {
+      await Vosk.start();
+    } catch {
       setIsListening(false);
-      const msg: string = e?.message ?? String(e);
-      if (msg.toLowerCase().includes('permission')) {
-        showFeedback('error', 'Permission Denied', 'Microphone access is required for voice input.');
-      } else {
-        showFeedback('error', 'Error', 'Failed to start voice recognition. Please try again.');
-      }
+      showFeedback('error', 'Error', 'Failed to start voice recognition. Please try again.');
     }
   };
 
