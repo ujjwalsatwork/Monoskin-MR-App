@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import DeviceInfo from 'react-native-device-info';
 import {
   View,
   Text,
@@ -84,6 +85,11 @@ const ProfileScreen = () => {
   }, [dispatch]);
 
   const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    setAppVersion(DeviceInfo.getVersion());
+  }, []);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -302,6 +308,8 @@ const ProfileScreen = () => {
             <LogoutIconUI stroke="#E44B4B" />
             <Text style={styles.logoutButtonText}>Logout</Text>
           </TouchableOpacity>
+
+          <Text style={styles.versionText}>Version: v{appVersion}</Text>
         </ScrollView>
       )}
     </View>
@@ -542,6 +550,13 @@ const styles = StyleSheet.create({
     color: '#E44B4B',
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
+  },
+  versionText: {
+    textAlign: 'center',
+    marginTop: 16,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#B0B8C4',
   },
 });
 
