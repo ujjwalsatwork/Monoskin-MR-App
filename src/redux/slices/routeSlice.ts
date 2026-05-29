@@ -42,6 +42,7 @@ export interface RouteStop {
     id: number;
     doctorId?: number;
     pharmacyId?: number;
+    leadId?: number;
     name: string;
     address: string;
     lat: number;
@@ -66,6 +67,7 @@ export interface RouteData {
     summary: {
         totalDoctors: number;
         totalChemists: number;
+        totalLeads: number;
         completed: number;
         total: number;
     };
@@ -136,6 +138,7 @@ const mapApiResponse = (api: ApiRouteResponse): RouteData => {
             id: s.id,
             doctorId: s.doctorId ?? undefined,
             pharmacyId: s.pharmacyId ?? undefined,
+            leadId: s.leadId ?? undefined,
             name: s.name,
             address: s.address ?? '',
             lat: s.latitude ?? 0,
@@ -152,6 +155,7 @@ const mapApiResponse = (api: ApiRouteResponse): RouteData => {
     const completed = stops.filter(s => s.status === 'DONE').length;
     const totalDoctors = api.stops.filter(s => s.doctorId != null).length;
     const totalChemists = api.stops.filter(s => s.pharmacyId != null).length;
+    const totalLeads = api.stops.filter(s => s.leadId != null).length;
 
     return {
         date: api.date,
@@ -165,6 +169,7 @@ const mapApiResponse = (api: ApiRouteResponse): RouteData => {
         summary: {
             totalDoctors,
             totalChemists,
+            totalLeads,
             completed,
             total: stops.length,
         },

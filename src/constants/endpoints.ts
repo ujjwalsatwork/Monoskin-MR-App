@@ -15,6 +15,7 @@ export const ENDPOINTS = {
         doctorDetail: (id: string) => `/doctors/${id}`,
         pharmacies: '/pharmacies',
         pharmacyDetail: (id: string) => `/pharmacies/${id}`,
+        leadDetail: (id: string) => `/leads/${id}`,
     },
     products: {
         list: '/products',

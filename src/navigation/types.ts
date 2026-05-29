@@ -40,7 +40,7 @@ export type MainTabParamList = {
 export type AppStackParamList = {
     Auth: undefined;
     Main: undefined;
-    VisitDetail: { doctorId?: string; pharmacyId?: string; routeStopId?: number; visitId?: string };
+    VisitDetail: { doctorId?: string; pharmacyId?: string; leadId?: string; routeStopId?: number; visitId?: string };
     CreateOrder: { doctorId: string };
     ProductDetail: { productId: string; productName: string; productTime: string };
     Payment: { subtotal: number; orderNumber: string; orderCreateData: OrderCreateData };

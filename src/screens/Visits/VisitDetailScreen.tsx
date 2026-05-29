@@ -91,6 +91,22 @@ type PharmacyDetails = {
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
 };
 
+type LeadDetails = {
+  id: number;
+  name: string;
+  leadType: 'doctor' | 'pharmacy';
+  designation?: string | null;
+  specialization?: string | null;
+  clinic?: string | null;
+  city?: string | null;
+  state?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  whatsappNumber?: string | null;
+  stage?: string | null;
+  priority?: string | null;
+};
+
 type CatalogueItem = {
   id: string;
   name: string;
@@ -129,14 +145,22 @@ const ModalSeparator = () => <View style={styles.modalSeparator} />;
 const VisitDetailScreen = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
+  console.log('🚀 ~ VisitDetailScreen ~ route:', route)
   const dispatch = useDispatch<AppDispatch>();
-  const { doctorId, pharmacyId, routeStopId } = route.params;
+  const { doctorId, pharmacyId, leadId, routeStopId } = route.params;
   const profile = useSelector((state: any) => state.profile.data);
   const authUser = useSelector((state: any) => state.auth.user);
   const mrId = profile?.id ?? authUser?.id;
 
+  const defaultVisitType = leadId
+    ? 'Lead Visit'
+    : pharmacyId
+    ? 'Pharmacy Visit'
+    : 'Doctor Visit';
+
   const [doctorData, setDoctorData] = useState<DoctorDetails | null>(null);
   const [pharmacyData, setPharmacyData] = useState<PharmacyDetails | null>(null);
+  const [leadData, setLeadData] = useState<LeadDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -167,7 +191,7 @@ const VisitDetailScreen = () => {
   const [doctorArrivalTime, setDoctorArrivalTime] = useState('');
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [visitType, setVisitType] = useState('Lead Visit');
+  const [visitType, setVisitType] = useState(defaultVisitType);
   const [outcome, setOutcome] = useState('Follow-up Required');
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
@@ -178,6 +202,8 @@ const VisitDetailScreen = () => {
     longitude: string;
     address: string;
   } | null>(null);
+  const [locationFetching, setLocationFetching] = useState(true);
+  const [locationError, setLocationError] = useState('');
 
   const [isListening, setIsListening] = useState(false);
   const [voskReady, setVoskReady] = useState(false);
@@ -299,9 +325,13 @@ const VisitDetailScreen = () => {
       fetchDoctorDetails();
     } else if (pharmacyId) {
       fetchPharmacyDetails();
+    } else if (leadId) {
+      fetchLeadDetails();
     } else {
       setLoading(false);
     }
+    setLocationFetching(true);
+    setLocationError('');
     Geolocation.getCurrentPosition(
       async pos => {
         const lat = String(pos.coords.latitude);
@@ -314,16 +344,20 @@ const VisitDetailScreen = () => {
           );
           const json = await res.json();
           if (json?.display_name) { address = json.display_name; }
-        } catch (err) { 
+        } catch (err) {
           console.log('🚀 ~ VisitDetailScreen ~ Geocoding error:', err);
-         }
+        }
         setLocation({ latitude: lat, longitude: lng, address });
+        setLocationFetching(false);
       },
-      () => {},
+      (err) => {
+        setLocationError(err.message);
+        setLocationFetching(false);
+      },
       { enableHighAccuracy: false, timeout: 10000 },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doctorId, pharmacyId]);
+  }, [doctorId, pharmacyId, leadId]);
 
   const fetchDoctorDetails = async () => {
     try {
@@ -348,6 +382,20 @@ const VisitDetailScreen = () => {
     } catch(fetchErr) {
       console.log('🚀 ~ fetchPharmacyDetails ~ error:', fetchErr);
       setError('Failed to load pharmacy details. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLeadDetails = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.get(ENDPOINTS.portfolio.leadDetail(leadId!));
+      setLeadData(res.data);
+    } catch(fetchErr) {
+      console.log('🚀 ~ fetchLeadDetails ~ error:', fetchErr);
+      setError('Failed to load lead details. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -456,6 +504,16 @@ const VisitDetailScreen = () => {
   };
 
   const handleSubmit = async () => {
+    if (!location) {
+      showFeedback(
+        'error',
+        'Location Required',
+        locationError
+          ? `Unable to fetch GPS location: ${locationError}. Please enable location permissions and try again.`
+          : 'GPS location is still being fetched. Please wait a moment and try again.',
+      );
+      return;
+    }
     if (!visitType) { showFeedback('error', 'Validation', 'Please select a visit type.'); return; }
     if (!outcome) { showFeedback('error', 'Validation', 'Please select an outcome.'); return; }
     if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
@@ -465,6 +523,7 @@ const VisitDetailScreen = () => {
     formData.append('mrId', String(mrId));
     if (doctorId) formData.append('doctorId', String(doctorId));
     if (pharmacyId) formData.append('pharmacyId', String(pharmacyId));
+    if (leadId) formData.append('leadId', String(leadId));
     if (routeStopId) formData.append('routeStopId', String(routeStopId));
     
     formData.append('visitType', visitType);
@@ -574,7 +633,7 @@ const VisitDetailScreen = () => {
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={pharmacyId ? fetchPharmacyDetails : fetchDoctorDetails}
+            onPress={leadId ? fetchLeadDetails : pharmacyId ? fetchPharmacyDetails : fetchDoctorDetails}
           >
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
@@ -583,12 +642,12 @@ const VisitDetailScreen = () => {
     );
   }
 
-  const entityName = doctorData?.name ?? pharmacyData?.name;
+  const entityName = doctorData?.name ?? pharmacyData?.name ?? leadData?.name;
   const initials = entityName
     ?.split(' ')
     .map(w => w[0])
     .slice(0, 2)
-    .join('') ?? (pharmacyId ? 'PH' : 'DR');
+    .join('') ?? (pharmacyId ? 'PH' : leadId ? 'LD' : 'DR');
 
   return (
     <View style={styles.safeArea}>
@@ -612,7 +671,7 @@ const VisitDetailScreen = () => {
             <View style={styles.doctorLocationRow}>
               <LocationPinIcon width={13} height={13} style={{ marginTop: 3 }}  />
               <Text style={styles.doctorHospital}>
-                {doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? '—'}
+                {doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? leadData?.clinic ?? leadData?.address ?? '—'}
               </Text>
             </View>
             {(doctorData?.tier || doctorData?.importance) && (
@@ -634,7 +693,7 @@ const VisitDetailScreen = () => {
             <TouchableOpacity
               style={[styles.contactBtn, {backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.black}]}
               onPress={() => {
-                const phone = doctorData?.phone ?? pharmacyData?.phone;
+                const phone = doctorData?.phone ?? pharmacyData?.phone ?? leadData?.phone;
                 if (phone) { Linking.openURL(`tel:${phone}`); }
               }}
             >
@@ -643,7 +702,7 @@ const VisitDetailScreen = () => {
             <TouchableOpacity
               style={styles.contactBtn}
               onPress={() => {
-                const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber;
+                const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber ?? leadData?.whatsappNumber;
                 if (whatsapp) { Linking.openURL(`whatsapp://send?phone=${whatsapp}`); }
               }}
             >
@@ -655,18 +714,22 @@ const VisitDetailScreen = () => {
         {/* Stats Row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>LAST VISIT</Text>
+            <Text style={styles.statLabel}>{leadData ? 'STAGE' : 'LAST VISIT'}</Text>
             <Text style={styles.statValue}>
-              {(doctorData?.lastVisitDate || pharmacyData?.lastVisitDate)
+              {leadData
+                ? leadData.stage ?? '—'
+                : (doctorData?.lastVisitDate || pharmacyData?.lastVisitDate)
                 ? formatDateTime(doctorData?.lastVisitDate ?? pharmacyData?.lastVisitDate!)
                 : doctorData?.lastVisit ?? pharmacyData?.lastVisit ?? '—'}
             </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>AVG TIME</Text>
+            <Text style={styles.statLabel}>{leadData ? 'PRIORITY' : 'AVG TIME'}</Text>
             <Text style={styles.statValue}>
-              {doctorData?.avgTime ?? pharmacyData?.avgTime ?? '—'}
+              {leadData
+                ? leadData.priority ?? '—'
+                : doctorData?.avgTime ?? pharmacyData?.avgTime ?? '—'}
             </Text>
           </View>
         </View>
@@ -705,8 +768,8 @@ const VisitDetailScreen = () => {
           <Text style={styles.gpsIndicator}>Location captured</Text>
         )} */}
 
-        {/* Sample Products */}
-        <CollapsibleSection
+        {/* Sample Products — hidden for lead visits */}
+        {!leadId && <CollapsibleSection
           title="Sample Products"
           expanded={sampleExpanded}
           onToggle={() => setSampleExpanded(p => !p)}
@@ -739,7 +802,7 @@ const VisitDetailScreen = () => {
               </TouchableOpacity>
             ))
           )}
-        </CollapsibleSection>
+        </CollapsibleSection>}
 
         {/* Pharmacy Network – only when API provides it */}
         {doctorData?.pharmacyNetwork && doctorData.pharmacyNetwork.length > 0 && (
@@ -1051,11 +1114,20 @@ const VisitDetailScreen = () => {
 
       {/* Submit Report */}
       <View style={styles.submitContainer}>
+        {locationError ? (
+          <View style={styles.gpsErrorBanner}>
+            <Text style={styles.gpsErrorText}>GPS unavailable: {locationError}</Text>
+          </View>
+        ) : !location ? (
+          <View style={styles.gpsErrorBanner}>
+            <Text style={styles.gpsErrorText}>Fetching GPS location…</Text>
+          </View>
+        ) : null}
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[styles.submitButton, (submitting || !location) && styles.submitButtonDisabled]}
           activeOpacity={0.85}
           onPress={() => setConfirmVisible(true)}
-          disabled={submitting}
+          disabled={submitting || !location}
         >
           {submitting
             ? <ActivityIndicator color={COLORS.white} />
@@ -1392,6 +1464,22 @@ const styles = StyleSheet.create({
   orderValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark },
 
   bottomSpacer: { height: 16 },
+
+  // GPS status banner
+  gpsErrorBanner: {
+    marginBottom: 8,
+    padding: 10,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+  },
+  gpsErrorText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#E65100',
+    textAlign: 'center',
+  },
 
   // Submit
   submitContainer: {

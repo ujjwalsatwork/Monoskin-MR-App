@@ -17,6 +17,7 @@ import Header from '@/components/common/Header';
 import {
   DoctorBagIcon,
   PillIcon,
+  LeadsTabIcon,
   MapPinOutlineIcon,
   PlayIcon,
   MapIcon,
@@ -146,6 +147,7 @@ const RouteScreen = () => {
     navigation.navigate('VisitDetail', {
       doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
       pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+      leadId: stop.leadId ? String(stop.leadId) : undefined,
       routeStopId: stop.id,
     });
   };
@@ -343,17 +345,24 @@ const RouteScreen = () => {
             <View style={styles.summaryRow}>
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
-                  <DoctorBagIcon />
+                  <DoctorBagIcon width={16} height={16} />
                   <Text style={styles.metricLabel}>Doctors</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalDoctors}</Text>
               </View>
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
-                  <PillIcon />
+                  <PillIcon width={16} height={16} />
                   <Text style={styles.metricLabel}>Chemists</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalChemists}</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <View style={styles.metricCardHeader}>
+                  <LeadsTabIcon width={16} height={16} />
+                  <Text style={styles.metricLabel}>Leads</Text>
+                </View>
+                <Text style={styles.metricValue}>{routeData.summary.totalLeads}</Text>
               </View>
             </View>
 
@@ -597,32 +606,32 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     justifyContent: 'space-between',
     marginBottom: 20,
-    gap: 16,
+    gap: 8,
   },
   metricCard: {
     flex: 1,
     borderWidth: 1,
     borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 16,
+    padding: 10,
     backgroundColor: '#FFFFFF',
   },
   metricCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   metricLabel: {
-    fontSize: FONTS.size.sm,
+    fontSize: FONTS.size.xs,
     fontFamily: FONTS.family.medium,
     color: COLORS.textSecondary,
-    marginLeft: 8,
+    marginLeft: 5,
   },
   metricValue: {
-    fontSize: 28,
+    fontSize: 22,
     fontFamily: FONTS.family.bold,
     color: '#000',
   },
