@@ -17,6 +17,7 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import * as Vosk from 'react-native-vosk';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -189,6 +190,10 @@ const VisitDetailScreen = () => {
   const [clinicConsultationTime, setClinicConsultationTime] = useState('');
   const [mrInteractionTime, setMrInteractionTime] = useState('');
   const [doctorArrivalTime, setDoctorArrivalTime] = useState('');
+
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
+  const [activeTimeField, setActiveTimeField] = useState<'clinic' | 'mr' | 'arrival' | null>(null);
+  const [pickerDate, setPickerDate] = useState(new Date());
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [visitType, setVisitType] = useState(defaultVisitType);
@@ -461,6 +466,48 @@ const VisitDetailScreen = () => {
     setSampleProducts(newSamples);
     setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 1 })));
     setAddSampleVisible(false);
+  };
+
+  const formatTime = (date: Date): string => {
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes} ${ampm}`;
+  };
+
+  const applyTime = (field: typeof activeTimeField, date: Date) => {
+    const formatted = formatTime(date);
+    if (field === 'clinic') { setClinicConsultationTime(formatted); }
+    else if (field === 'mr') { setMrInteractionTime(formatted); }
+    else if (field === 'arrival') { setDoctorArrivalTime(formatted); }
+  };
+
+  const openTimePicker = (field: 'clinic' | 'mr' | 'arrival') => {
+    const currentValue =
+      field === 'clinic' ? clinicConsultationTime
+      : field === 'mr' ? mrInteractionTime
+      : doctorArrivalTime;
+    const date = new Date();
+    if (currentValue) {
+      const match = currentValue.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        if (match[3].toUpperCase() === 'PM' && h !== 12) { h += 12; }
+        if (match[3].toUpperCase() === 'AM' && h === 12) { h = 0; }
+        date.setHours(h, m, 0, 0);
+      }
+    }
+    setPickerDate(date);
+    setActiveTimeField(field);
+    setTimePickerVisible(true);
+  };
+
+  const confirmTimePicker = () => {
+    applyTime(activeTimeField, pickerDate);
+    setTimePickerVisible(false);
+    setActiveTimeField(null);
   };
 
   const toggleObjection = (chip: string) => {
@@ -895,31 +942,37 @@ const VisitDetailScreen = () => {
         )}
 
         <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={clinicConsultationTime}
-          onChangeText={setClinicConsultationTime}
-          placeholder="e.g. 10:30 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('clinic')}
+        >
+          <Text style={clinicConsultationTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {clinicConsultationTime || 'Select time (e.g. 10:30 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         <Text style={styles.timeFieldLabel}>MR Interaction Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={mrInteractionTime}
-          onChangeText={setMrInteractionTime}
-          placeholder="e.g. 10:45 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('mr')}
+        >
+          <Text style={mrInteractionTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {mrInteractionTime || 'Select time (e.g. 10:45 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         <Text style={styles.timeFieldLabel}>Doctor Arrival Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={doctorArrivalTime}
-          onChangeText={setDoctorArrivalTime}
-          placeholder="e.g. 11:00 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('arrival')}
+        >
+          <Text style={doctorArrivalTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {doctorArrivalTime || 'Select time (e.g. 11:00 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         {/* Objection Handling */}
         <SectionLabel title="OBJECTION HANDLING" />
@@ -1196,6 +1249,62 @@ const VisitDetailScreen = () => {
         </View>
       </Modal>
 
+      {/* iOS — bottom sheet with spinner wheel */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={timePickerVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setTimePickerVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.timePickerOverlay}
+            activeOpacity={1}
+            onPress={() => setTimePickerVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1}>
+              <View style={styles.timePickerSheet}>
+                <View style={styles.timePickerHandle} />
+                <View style={styles.timePickerIOSHeader}>
+                  <TouchableOpacity onPress={() => setTimePickerVisible(false)}>
+                    <Text style={styles.timePickerCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timePickerTitle}>Select Time</Text>
+                  <TouchableOpacity onPress={confirmTimePicker}>
+                    <Text style={styles.timePickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="time"
+                  display="spinner"
+                  onValueChange={(_e, date) => setPickerDate(date)}
+                  style={styles.timePickerSpinner}
+                />
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Android — native time picker dialog (OS dialog has its own Cancel/OK) */}
+      {Platform.OS === 'android' && timePickerVisible && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="time"
+          display="default"
+          onValueChange={(_e, date) => {
+            setTimePickerVisible(false);
+            setActiveTimeField(null);
+            applyTime(activeTimeField, date);
+          }}
+          onDismiss={() => {
+            setTimePickerVisible(false);
+            setActiveTimeField(null);
+          }}
+        />
+      )}
+
       {/* Product Selection Modal */}
       <Modal
         visible={addSampleVisible}
@@ -1375,7 +1484,7 @@ const styles = StyleSheet.create({
   // Visit Notes
   notesInputWrapper: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, flexDirection: 'row',
-    alignItems: 'flex-end', paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, minHeight: 60,
+    alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, minHeight: 60,
   },
   notesInput: {
     flex: 1, fontSize: FONTS.size.md, fontFamily: FONTS.family.regular,
@@ -1407,10 +1516,21 @@ const styles = StyleSheet.create({
   timeFieldLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary, marginBottom: 6, marginTop: 2 },
   timeFieldInput: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark,
-    marginBottom: 14,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+    marginBottom: 14, justifyContent: 'center',
   },
+  timeFieldValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  timeFieldPlaceholder: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textMuted },
+
+  // Time Picker Modal (iOS sheet)
+  timePickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  timePickerSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
+  timePickerHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D0D0D0', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
+  timePickerIOSHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
+  timePickerTitle: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark },
+  timePickerCancelText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textSecondary },
+  timePickerDoneText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  timePickerSpinner: { width: '100%' },
 
   // Documentation
   attachmentsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
