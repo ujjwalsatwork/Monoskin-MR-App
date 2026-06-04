@@ -700,7 +700,7 @@ const VisitDetailScreen = () => {
     <View style={styles.safeArea}>
       <Header title="Visit Details" showBack showNotification showProfile />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} scrollEnabled={!submitting}>
 
         {/* Profile Card */}
         <View style={styles.doctorCard}>
@@ -1305,6 +1305,16 @@ const VisitDetailScreen = () => {
         />
       )}
 
+      {/* Fullscreen Submitting Loader */}
+      {submitting && (
+        <View style={styles.fullscreenLoader} pointerEvents="box-only">
+          <View style={styles.fullscreenLoaderBox}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+            <Text style={styles.fullscreenLoaderText}>Submitting Visit...</Text>
+          </View>
+        </View>
+      )}
+
       {/* Product Selection Modal */}
       <Modal
         visible={addSampleVisible}
@@ -1645,6 +1655,14 @@ const styles = StyleSheet.create({
   modalFooter: { paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
   saveBtn: { backgroundColor: COLORS.buttonBlue, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
   saveBtnText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.white },
+
+  // Fullscreen Loader
+  fullscreenLoader: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  fullscreenLoaderBox: {
+    backgroundColor: COLORS.white, borderRadius: 16, paddingHorizontal: 40, paddingVertical: 32,
+    alignItems: 'center', gap: 16, minWidth: 180,
+  },
+  fullscreenLoaderText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
 
   // Feedback Modal
   feedbackIconCircle: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 14 },

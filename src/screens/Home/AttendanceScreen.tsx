@@ -15,7 +15,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue, CheckCircleIcon } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue, CheckCircleIcon, CalendarNoteIcon, QuickStatsCalendar, QuickStatsCompleted } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -520,10 +520,12 @@ const AttendanceScreen = () => {
                     <Text style={styles.statsTitle}>QUICK STATS</Text>
                     <View style={styles.statsRow}>
                         <View style={styles.statCard}>
+                            <QuickStatsCalendar style={styles.statIcon} />
                             <Text style={styles.statLabel}>PLANNED CALLS</Text>
                             <Text style={styles.statValue}>{plannedCalls}</Text>
                         </View>
                         <View style={styles.statCard}>
+                            <QuickStatsCompleted style={styles.statIcon} />
                             <Text style={styles.statLabel}>COMPLETED</Text>
                             <Text style={styles.statValue}>{completedCalls}</Text>
                         </View>
@@ -821,6 +823,9 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontFamily: FONTS.family.bold,
         color: '#000',
+    },
+    statIcon: {
+        marginBottom: 10,
     },
 
     // ── Location error banner ─────────────────────────────────────────────

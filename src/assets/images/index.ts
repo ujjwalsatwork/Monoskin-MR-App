@@ -62,6 +62,8 @@ export { default as ShieldIcon } from './ShieldIcon.svg';
 export { default as CardIcon } from './CardIcon.svg';
 export { default as UpiIcon } from './UpiIcon.svg';
 export { default as BankIcon } from './BankIcon.svg';
+export { default as QuickStatsCalendar } from './QuickStatsCalendar.svg';
+export { default as QuickStatsCompleted } from './QuickStatsCompleted.svg';
 
 
 
