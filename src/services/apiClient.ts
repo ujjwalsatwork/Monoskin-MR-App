@@ -1,13 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Config from 'react-native-config';
 import { store } from '@/redux/store';
 import { logout } from '@/redux/slices/authSlice';
 
-const BASE_URL = 'https://monoskin-development.ment.tech/api';
+const BASE_URL = Config.BASE_URL_API ?? 'https://erp.monoskin.in/api';
 
 const apiClient = axios.create({
     baseURL: BASE_URL,
     timeout: 15000,
+    withCredentials: true, // include cookies from the native cookie store
     headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -15,15 +16,14 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use(
-    async (config: InternalAxiosRequestConfig) => {
+    (config: InternalAxiosRequestConfig) => {
         const token = store.getState().auth.token;
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
-        const sessionCookie = await AsyncStorage.getItem('session_cookie');
-        if (sessionCookie) {
-            config.headers.Cookie = sessionCookie;
-        }
+        // Cookie-session auth is handled by the native cookie store (withCredentials).
+        // We intentionally do NOT inject a manual `Cookie` header — doing so overrode
+        // the native cookie and was rejected by the server, causing a 401 on first login.
         return config;
     },
     (error: AxiosError) => Promise.reject(error),

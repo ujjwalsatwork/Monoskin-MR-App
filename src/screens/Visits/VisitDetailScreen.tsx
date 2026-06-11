@@ -13,10 +13,7 @@ import {
   FlatList,
   ActivityIndicator,
   Linking,
-  Animated,
-  PermissionsAndroid,
 } from 'react-native';
-import * as Vosk from 'react-native-vosk';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -210,120 +207,11 @@ const VisitDetailScreen = () => {
   const [locationFetching, setLocationFetching] = useState(true);
   const [locationError, setLocationError] = useState('');
 
-  const [isListening, setIsListening] = useState(false);
-  const [voskReady, setVoskReady] = useState(false);
-  const voiceBaseText = useRef('');
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const [sampleExpanded, setSampleExpanded] = useState(true);
   const [prefExpanded, setPrefExpanded] = useState(false);
   const [unprefExpanded, setUnprefExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(true);
-
-  useEffect(() => {
-    type Sub = ReturnType<typeof Vosk.onPartialResult>;
-    let partialSub: Sub | null = null;
-    let finalSub: Sub | null = null;
-    let errorSub: Sub | null = null;
-    let timeoutSub: Sub | null = null;
-
-    Vosk.loadModel('model-en-us')
-      .then(() => {
-        setVoskReady(true);
-
-        partialSub = Vosk.onPartialResult((text: string) => {
-          if (!text) { return; }
-          const base = voiceBaseText.current;
-          setVisitNote(base ? `${base} ${text}` : text);
-        });
-
-        finalSub = Vosk.onFinalResult((text: string) => {
-          if (!text) { return; }
-          const base = voiceBaseText.current;
-          const committed = base ? `${base} ${text}` : text;
-          setVisitNote(committed);
-          voiceBaseText.current = committed;
-          setIsListening(false);
-        });
-
-        errorSub = Vosk.onError((_e: string) => {
-          setIsListening(false);
-        });
-
-        timeoutSub = Vosk.onTimeout(() => {
-          setIsListening(false);
-        });
-      })
-      .catch((err) => {
-        console.log('🚀 ~ Vosk load error:', err);
-        // Model files not yet placed in assets — mic will show a helpful message
-      });
-
-    return () => {
-      partialSub?.remove();
-      finalSub?.remove();
-      errorSub?.remove();
-      timeoutSub?.remove();
-      try { Vosk.stop(); } catch { /* already stopped */ }
-      Vosk.unload();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isListening) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.5, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ]),
-      ).start();
-    } else {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-    }
-  }, [isListening, pulseAnim]);
-
-  const handleMicPress = async () => {
-    if (isListening) {
-      try { Vosk.stop(); } catch { /* already stopped */ }
-      setIsListening(false);
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: 'Microphone Permission',
-          message: 'Microphone access is required for voice input.',
-          buttonPositive: 'Allow',
-          buttonNegative: 'Deny',
-        },
-      );
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        showFeedback('error', 'Permission Denied', 'Microphone access is required for voice input.');
-        return;
-      }
-    }
-
-    if (!voskReady) {
-      showFeedback(
-        'error',
-        'Not Ready',
-        'Speech recognition model is still loading. Please wait a moment and try again.',
-      );
-      return;
-    }
-
-    voiceBaseText.current = visitNote.trim();
-    try {
-      setIsListening(true);
-      await Vosk.start();
-    } catch {
-      setIsListening(false);
-      showFeedback('error', 'Error', 'Failed to start voice recognition. Please try again.');
-    }
-  };
 
   useEffect(() => {
     if (doctorId) {
@@ -422,8 +310,9 @@ const VisitDetailScreen = () => {
       }));
       setCatalogue(items);
       return items;
-    } catch {
-      showFeedback('error', 'Error', 'Failed to load products.');
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load products.';
+      showFeedback('error', 'Error', message);
       return [];
     } finally {
       setCatalogueLoading(false);
@@ -908,38 +797,24 @@ const VisitDetailScreen = () => {
 
         {/* Visit Notes */}
         <SectionLabel title="VISIT NOTES" />
-        <View style={[styles.notesInputWrapper, isListening && styles.notesInputWrapperActive]}>
+        <View style={styles.notesInputWrapper}>
           <TextInput
             style={styles.notesInput}
-            placeholder={isListening ? 'Start speaking...' : 'Enter discussion points, objections, and next steps...'}
-            placeholderTextColor={isListening ? COLORS.buttonBlue : COLORS.textMuted}
+            placeholder="Enter discussion points, objections, and next steps..."
+            placeholderTextColor={COLORS.textMuted}
             multiline
             value={visitNote}
             onChangeText={setVisitNote}
             textAlignVertical="top"
-            editable={!isListening}
           />
-          <TouchableOpacity
-            style={styles.micButton}
+          {/* <TouchableOpacity
+            style={[styles.micButton, { opacity: 0.35 }]}
             onPress={handleMicPress}
             activeOpacity={0.7}
           >
-            {isListening ? (
-              <View style={styles.micActiveWrapper}>
-                <Animated.View style={[styles.micPulseRing, { transform: [{ scale: pulseAnim }] }]} />
-                <View style={styles.micActiveDot} />
-              </View>
-            ) : (
-              <MicIcon width={20} height={20} />
-            )}
-          </TouchableOpacity>
+            <MicIcon width={20} height={20} />
+          </TouchableOpacity> */}
         </View>
-        {isListening && (
-          <View style={styles.listeningBanner}>
-            <View style={styles.listeningDot} />
-            <Text style={styles.listeningBannerText}>Listening… Tap the mic to stop</Text>
-          </View>
-        )}
 
         <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
         <TouchableOpacity

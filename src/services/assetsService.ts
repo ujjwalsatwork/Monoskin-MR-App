@@ -1,7 +1,7 @@
 import apiClient from './apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 import { store } from '@/redux/store';
-import RNFS from 'react-native-fs';
+import RNFS from '@dr.pogodin/react-native-fs';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import Video from 'react-native-video';
-import RNFS from 'react-native-fs';
+import RNFS from '@dr.pogodin/react-native-fs';
 import Share from 'react-native-share';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';

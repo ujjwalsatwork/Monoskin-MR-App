@@ -215,8 +215,9 @@ const PharmacyDetailScreen = () => {
         selected: false,
       }));
       setCatalogue(items);
-    } catch {
-      Alert.alert('Error', 'Failed to load products.');
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load products.';
+      Alert.alert('Error', message);
     } finally {
       setCatalogueLoading(false);
     }

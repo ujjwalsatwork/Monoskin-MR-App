@@ -33,6 +33,15 @@ import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { fetchTodayRoute } from '@/redux/slices/routeSlice';
 import { formatBreakDuration, formatDurationSeconds, formatElapsedSeconds } from '@/utils/attendanceFormatter';
 
+// Use the Google Play Services fused provider on Android (falls back automatically
+// when unavailable). This is dramatically faster than the legacy LocationManager,
+// which is the main reason the first GPS fix was timing out.
+Geolocation.setRNConfiguration({
+    skipPermissionRequests: false,
+    authorizationLevel: 'whenInUse',
+    locationProvider: 'auto',
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const friendlyError = (err: AttendanceError, action: 'check-in' | 'check-out'): string => {
@@ -119,25 +128,51 @@ const AttendanceScreen = () => {
         return () => clearInterval(timer);
     }, []);
 
-    // GPS + reverse geocode
+    // GPS + reverse geocode.
+    // Strategy: get a fast coarse fix first (accepts a recent cached location so the
+    // UI fills in almost instantly), then silently refine with a precise GPS fix in
+    // the background. If the coarse fix fails, retry once with a longer timeout before
+    // surfacing an error — this fixes the slow first-load and "request timed out".
     const fetchLocation = useCallback(() => {
         setLocationError('');
         setLocationFetching(true);
+
+        const applyPosition = async (position: { coords: { latitude: number; longitude: number } }) => {
+            const lat = position.coords.latitude;
+            const long = position.coords.longitude;
+            setLocation({ lat, long });
+            setLocationFetching(false);
+            setLocationError('');
+            const addr = await reverseGeocode(lat, long);
+            // Don't wipe an already-resolved address if a later geocode call fails.
+            setAddressText(prev => addr || prev || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
+        };
+
+        // Stage 2 (background): refine the coarse fix with a precise GPS reading.
+        const refineHighAccuracy = () => {
+            Geolocation.getCurrentPosition(
+                applyPosition,
+                () => { /* keep the coarse fix we already showed */ },
+                { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
+            );
+        };
+
+        // Stage 1: fast, low-accuracy fix that accepts a recent cached location.
         Geolocation.getCurrentPosition(
-            async (position) => {
-                const lat = position.coords.latitude;
-                const long = position.coords.longitude;
-                setLocation({ lat, long });
-                setLocationFetching(false);
-                const addr = await reverseGeocode(lat, long);
-                setAddressText(addr || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
+            (position) => { applyPosition(position); refineHighAccuracy(); },
+            () => {
+                // Coarse attempt failed → retry once with a longer timeout.
+                Geolocation.getCurrentPosition(
+                    applyPosition,
+                    (err) => {
+                        console.log('🚀 ~ AttendanceScreen ~ location err:', err);
+                        setLocationError(err.message);
+                        setLocationFetching(false);
+                    },
+                    { enableHighAccuracy: true, timeout: 30000, maximumAge: 60000 },
+                );
             },
-            (err) => {
-                console.log('🚀 ~ AttendanceScreen ~ err:', err);
-                setLocationError(err.message);
-                setLocationFetching(false);
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
         );
     }, []);
 

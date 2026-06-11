@@ -70,10 +70,12 @@ const DeviceBindingScreen = ({ navigation }: Props) => {
   const handleUnbindViaManager = () => {
     navigation.navigate('RequestUnbind');
   };
+  const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
+
 
   return (
     <ImageBackground 
-      source={{ uri: '/Users/menttechlabs/Documents/Nimish/Monoskin-MR-App/src/assets/images/background/background.png' }} 
+      source={BACKGROUND_IMAGE}      
       style={styles.backgroundImage}
     >
       <View style={styles.overlay} />

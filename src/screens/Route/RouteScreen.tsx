@@ -17,12 +17,11 @@ import Header from '@/components/common/Header';
 import {
   DoctorBagIcon,
   PillIcon,
-  LeadsTabIcon,
   MapPinOutlineIcon,
   PlayIcon,
-  MapIcon,
   CheckCircleIcon,
   ClockIcon,
+  LeadsIcon,
 } from '@/assets/images';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -89,6 +88,7 @@ const RouteScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+  const [activeFilter, setActiveFilter] = useState<'Doctor' | 'Pharmacy' | 'Leads' | null>(null);
 
   const { data: routeData, loading, error, needsRefresh } = useSelector(
     (state: RootState) => state.route,
@@ -152,17 +152,17 @@ const RouteScreen = () => {
     });
   };
 
-  const handleViewMap = () => {
-    console.log('🚀 ~ handleViewMap ~ routeData:', routeData)
-    if (!routeData) return;
-    navigation.navigate('RouteMapScreen', {
-      routeData: {
-        readOnly: routeData.readOnly,
-        origin: routeData.origin,
-        stops: routeData.stops,
-      },
-    });
-  };
+  // const handleViewMap = () => {
+  //   console.log('🚀 ~ handleViewMap ~ routeData:', routeData)
+  //   if (!routeData) return;
+  //   navigation.navigate('RouteMapScreen', {
+  //     routeData: {
+  //       readOnly: routeData.readOnly,
+  //       origin: routeData.origin,
+  //       stops: routeData.stops,
+  //     },
+  //   });
+  // };
 
   const progress =
     routeData && routeData.summary.total > 0
@@ -353,13 +353,13 @@ const RouteScreen = () => {
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
                   <PillIcon width={16} height={16} />
-                  <Text style={styles.metricLabel}>Chemists</Text>
+                  <Text style={styles.metricLabel}>Pharmacy</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalChemists}</Text>
               </View>
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
-                  <LeadsTabIcon width={16} height={16} />
+                  <LeadsIcon width={16} height={16} />
                   <Text style={styles.metricLabel}>Leads</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalLeads}</Text>
@@ -400,6 +400,21 @@ const RouteScreen = () => {
             {/* Timeline Section */}
             <Text style={styles.timelineTitle}>TIMELINE OF VISITS</Text>
 
+            {/* Filter Tabs */}
+            <View style={styles.filterTabsRow}>
+              {(['Doctor', 'Pharmacy', 'Leads'] as const).map(tab => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.filterTab, activeFilter === tab && styles.filterTabActive]}
+                  onPress={() => setActiveFilter(prev => prev === tab ? null : tab)}
+                >
+                  <Text style={[styles.filterTabText, activeFilter === tab && styles.filterTabTextActive]}>
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {allDone ? (
               <View style={styles.completedBanner}>
                 <CheckCircleIcon height={24} />
@@ -413,12 +428,37 @@ const RouteScreen = () => {
               </View>
             ) : (
               (() => {
+                const filteredStops = activeFilter
+                  ? routeData.stops.filter(stop => {
+                      if (activeFilter === 'Doctor') return !!stop.doctorId;
+                      if (activeFilter === 'Pharmacy') return !!stop.pharmacyId;
+                      if (activeFilter === 'Leads') return !!stop.leadId;
+                      return true;
+                    })
+                  : routeData.stops;
                 const stepMap = buildStepMap(routeData.stops);
+
+                if (filteredStops.length === 0) {
+                  const emptyLabel =
+                    activeFilter === 'Doctor' ? 'No doctors available'
+                    : activeFilter === 'Pharmacy' ? 'No pharmacies available'
+                    : 'No leads available';
+                  return (
+                    <View style={styles.centeredContainer}>
+                      <Text style={styles.emptyText}>{emptyLabel}</Text>
+                    </View>
+                  );
+                }
+
                 return (
                   <View style={styles.timelineContainer}>
                     <View style={styles.timelineLine} />
-                    {routeData.stops.map(stop => {
-                      console.log('🚀 ~ RouteScreen ~ stop:', stop)
+                    {filteredStops.map(stop => {
+                      const stopIcon = stop.doctorId
+                        ? <DoctorBagIcon width={13} height={13} />
+                        : stop.pharmacyId
+                        ? <PillIcon width={13} height={13} />
+                        : <LeadsIcon width={13} height={13} />;
                       return <View key={stop.id} style={styles.timelineRow}>
                         <View style={styles.nodeWrapper}>
                           {stop.status === 'DONE' ? (
@@ -441,12 +481,17 @@ const RouteScreen = () => {
 
                         <View style={styles.timelineCard}>
                           <View style={styles.timelineCardHeader}>
-                            <Text style={styles.timelineCardTitle} numberOfLines={1}>
-                              {stop.name}
-                            </Text>
+                            <View style={styles.timelineNameRow}>
+                              <View style={styles.stopIconCircle}>
+                                {stopIcon}
+                              </View>
+                              <Text style={styles.timelineCardTitle} numberOfLines={1}>
+                                {stop.name}
+                              </Text>
+                            </View>
                             {stop.status === 'DONE' && (
                               <View style={styles.donePill}>
-                                <Text style={styles.donePillText}>DONE</Text>
+                                <Text style={styles.donePillText}>Visited</Text>
                               </View>
                             )}
                             {stop.status !== 'DONE' && !!stop.distanceStr && (
@@ -825,7 +870,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
     color: '#000',
-    marginRight: 8,
   },
   donePill: {
     backgroundColor: '#ECFDF5',
@@ -995,6 +1039,49 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.medium,
     color: COLORS.textSecondary,
+  },
+  filterTabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    gap: 10,
+  },
+  filterTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#F9FAFB',
+  },
+  filterTabActive: {
+    borderColor: COLORS.buttonBlue,
+    backgroundColor: '#EFF6FF',
+  },
+  filterTabText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+  },
+  filterTabTextActive: {
+    color: COLORS.buttonBlue,
+    fontFamily: FONTS.family.bold,
+  },
+  timelineNameRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  stopIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    flexShrink: 0,
   },
 });
 

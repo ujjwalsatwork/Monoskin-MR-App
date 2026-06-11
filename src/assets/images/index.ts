@@ -64,6 +64,7 @@ export { default as UpiIcon } from './UpiIcon.svg';
 export { default as BankIcon } from './BankIcon.svg';
 export { default as QuickStatsCalendar } from './QuickStatsCalendar.svg';
 export { default as QuickStatsCompleted } from './QuickStatsCompleted.svg';
+export { default as LeadsIcon } from './LeadsIcon.svg';
 
 
 

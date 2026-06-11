@@ -1,7 +1,7 @@
 import { useDispatch } from 'react-redux';
 import { useCallback } from 'react';
 import { AppDispatch } from '@/redux/store';
-import { checkSession, logout as logoutAction } from '@/redux/slices/authSlice';
+import { checkSession, performLogout } from '@/redux/slices/authSlice';
 
 export const useAuth = () => {
     const dispatch = useDispatch<AppDispatch>();
@@ -11,7 +11,7 @@ export const useAuth = () => {
     }, [dispatch]);
 
     const logout = useCallback(async () => {
-        dispatch(logoutAction());
+        await dispatch(performLogout());
     }, [dispatch]);
 
     return { checkAuth, logout };

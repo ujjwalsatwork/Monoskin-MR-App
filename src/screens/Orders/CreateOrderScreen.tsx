@@ -96,9 +96,7 @@ import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import {
-  SearchIcon,
   PillIcon,
-  InfoIcon,
   CalendarNoteIcon,
   Up,
   Down,
@@ -328,7 +326,9 @@ const CreateOrderScreen = () => {
       }));
       setCatalogue(items);
       return items;
-    } catch {
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load products.';
+      showAlert({ type: 'error', title: 'Error', message });
       return [];
     } finally {
       setCatalogueLoading(false);
@@ -347,12 +347,10 @@ const CreateOrderScreen = () => {
     setAddItemsVisible(true);
   };
 
-  const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [inventoryExpanded, setInventoryExpanded] = useState(true);
-  const [lastOrderedExpanded, setLastOrderedExpanded] = useState(false);
   const [priority, setPriority] = useState<Priority>('Medium');
   const [deliveryDate, setDeliveryDate] = useState<Date | null>(null);
   const [calendarVisible, setCalendarVisible] = useState(false);

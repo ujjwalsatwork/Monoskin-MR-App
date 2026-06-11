@@ -2,16 +2,22 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   Modal, FlatList, TouchableWithoutFeedback, Platform,
+  KeyboardAvoidingView, Dimensions,
 } from 'react-native';
-import { State, City } from 'country-state-city';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import { Down } from '@/assets/images';
+import INDIA_DATA from '@/assets/data/indiaStatesCities.json';
 
-const INDIA = 'IN';
+// Fixed result-list height keeps the sheet a constant size regardless of how
+// many results match — so it no longer grows/shrinks while the user types.
+const LIST_HEIGHT = Math.round(Dimensions.get('window').height * 0.38);
 
-// Pre-computed once at module level — avoids re-computing on every render
-const ALL_STATES = State.getStatesOfCountry(INDIA);
+// India-only states/cities (≈49KB). Replaces `country-state-city`, whose
+// getCitiesOfState() eagerly inflates all 148k global cities on first call —
+// that synchronous allocation crashed Hermes when the city field was opened.
+const ALL_STATES: { isoCode: string; name: string }[] = INDIA_DATA.states;
+const CITIES_BY_STATE = INDIA_DATA.cities as Record<string, string[]>;
 
 type Props = {
   stateValue: string;
@@ -60,9 +66,9 @@ const StateCitySelector: React.FC<Props> = ({
       setIsCustomState(false);
 
       if (cityValue) {
-        const cities = City.getCitiesOfState(INDIA, matchedState.isoCode);
+        const cities = CITIES_BY_STATE[matchedState.isoCode] ?? [];
         const matchedCity = cities.find(
-          c => c.name.toLowerCase() === cityValue.toLowerCase(),
+          c => c.toLowerCase() === cityValue.toLowerCase(),
         );
         if (!matchedCity) {
           setIsCustomCity(true);
@@ -70,7 +76,7 @@ const StateCitySelector: React.FC<Props> = ({
         }
       }
     } else {
-      // Saved state not in library → treat as "Other"
+      // Saved state not in our dataset → treat as "Other"
       setIsCustomState(true);
       setCustomStateText(stateValue);
       if (cityValue) {
@@ -80,9 +86,9 @@ const StateCitySelector: React.FC<Props> = ({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const allCities = useMemo(() => {
+  const allCities = useMemo<{ name: string }[]>(() => {
     if (!selectedStateCode) return [];
-    return City.getCitiesOfState(INDIA, selectedStateCode);
+    return (CITIES_BY_STATE[selectedStateCode] ?? []).map(name => ({ name }));
   }, [selectedStateCode]);
 
   const filteredStates = useMemo(() => {
@@ -232,30 +238,35 @@ const StateCitySelector: React.FC<Props> = ({
       {/* ── State Search Modal ── */}
       <Modal
         transparent
-        animationType="fade"
+        statusBarTranslucent
+        animationType="slide"
         visible={showStateModal}
         onRequestClose={() => setShowStateModal(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowStateModal(false)}>
-          <View style={styles.overlay} />
-        </TouchableWithoutFeedback>
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>Select State</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search state..."
-            placeholderTextColor={COLORS.textMuted}
-            value={stateSearch}
-            onChangeText={setStateSearch}
-            autoFocus
-          />
-          <FlatList
-            data={filteredStates}
-            keyExtractor={s => s.isoCode}
-            style={styles.list}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowStateModal(false)}>
+            <View style={styles.backdrop} />
+          </TouchableWithoutFeedback>
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>Select State</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search state..."
+              placeholderTextColor={COLORS.textMuted}
+              value={stateSearch}
+              onChangeText={setStateSearch}
+              autoFocus
+            />
+            <FlatList
+              data={filteredStates}
+              keyExtractor={s => s.isoCode}
+              style={styles.list}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             renderItem={({ item }) => {
               const active = item.name === stateValue && !isCustomState;
               return (
@@ -285,68 +296,75 @@ const StateCitySelector: React.FC<Props> = ({
                 </TouchableOpacity>
               </>
             )}
-          />
-        </View>
+            />
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── City Search Modal ── */}
       <Modal
         transparent
-        animationType="fade"
+        statusBarTranslucent
+        animationType="slide"
         visible={showCityModal}
         onRequestClose={() => setShowCityModal(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowCityModal(false)}>
-          <View style={styles.overlay} />
-        </TouchableWithoutFeedback>
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>Select City</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search city..."
-            placeholderTextColor={COLORS.textMuted}
-            value={citySearch}
-            onChangeText={setCitySearch}
-            autoFocus
-          />
-          <FlatList
-            data={filteredCities}
-            keyExtractor={(item, idx) => `${item.name}-${idx}`}
-            style={styles.list}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => {
-              const active = item.name === cityValue && !isCustomCity;
-              return (
-                <TouchableOpacity
-                  style={styles.option}
-                  activeOpacity={0.7}
-                  onPress={() => handleSelectCity(item.name)}
-                >
-                  <Text style={[styles.optionText, active ? styles.optionActive : null]}>
-                    {item.name}
-                  </Text>
-                  {active && <Text style={styles.check}>✓</Text>}
-                </TouchableOpacity>
-              );
-            }}
-            ItemSeparatorComponent={() => <View style={styles.sep} />}
-            ListFooterComponent={() => (
-              <>
-                <View style={styles.sep} />
-                <TouchableOpacity
-                  style={styles.option}
-                  activeOpacity={0.7}
-                  onPress={handleSelectOtherCity}
-                >
-                  <Text style={[styles.optionText, styles.otherOption]}>Other (Custom)</Text>
-                  {isCustomCity && <Text style={styles.check}>✓</Text>}
-                </TouchableOpacity>
-              </>
-            )}
-          />
-        </View>
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowCityModal(false)}>
+            <View style={styles.backdrop} />
+          </TouchableWithoutFeedback>
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>Select City</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search city..."
+              placeholderTextColor={COLORS.textMuted}
+              value={citySearch}
+              onChangeText={setCitySearch}
+              autoFocus
+            />
+            <FlatList
+              data={filteredCities}
+              keyExtractor={(item, idx) => `${item.name}-${idx}`}
+              style={styles.list}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const active = item.name === cityValue && !isCustomCity;
+                return (
+                  <TouchableOpacity
+                    style={styles.option}
+                    activeOpacity={0.7}
+                    onPress={() => handleSelectCity(item.name)}
+                  >
+                    <Text style={[styles.optionText, active ? styles.optionActive : null]}>
+                      {item.name}
+                    </Text>
+                    {active && <Text style={styles.check}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={styles.sep} />}
+              ListFooterComponent={() => (
+                <>
+                  <View style={styles.sep} />
+                  <TouchableOpacity
+                    style={styles.option}
+                    activeOpacity={0.7}
+                    onPress={handleSelectOtherCity}
+                  >
+                    <Text style={[styles.optionText, styles.otherOption]}>Other (Custom)</Text>
+                    {isCustomCity && <Text style={styles.check}>✓</Text>}
+                  </TouchableOpacity>
+                </>
+              )}
+            />
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -400,8 +418,10 @@ const styles = StyleSheet.create({
   customInput: {
     marginTop: 8,
   },
-  // Modal layout: overlay takes all remaining height, sheet sits below it
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  // Modal layout: KAV fills the screen and pins the sheet to the bottom,
+  // lifting it above the keyboard. The backdrop sits behind the sheet.
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20,
@@ -409,7 +429,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: Platform.OS === 'ios' ? 36 : 24,
     paddingTop: 12,
-    maxHeight: '75%',
   },
   handle: {
     width: 40,
@@ -436,7 +455,7 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     marginBottom: 8,
   },
-  list: { maxHeight: 350 },
+  list: { height: LIST_HEIGHT },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
