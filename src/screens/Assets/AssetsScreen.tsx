@@ -872,7 +872,7 @@ const styles = StyleSheet.create({
   },
   featuredOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   featuredLoader: {
     ...StyleSheet.absoluteFillObject,

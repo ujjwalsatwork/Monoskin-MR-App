@@ -816,7 +816,7 @@ const PharmacyDetailScreen = () => {
       <Modal
         visible={addSampleVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setAddSampleVisible(false)}
       >
         <TouchableOpacity
@@ -1043,7 +1043,7 @@ const styles = StyleSheet.create({
 
   // Product Modal
   catalogueLoader: { marginVertical: 32 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   modalSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%', paddingTop: 12 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D0D0D0', alignSelf: 'center', marginBottom: 16 },
   modalTitle: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center', marginBottom: 16 },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,87 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+const CheckCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DCFCE7" />
+    <Path d="M8 12l3 3 5-5" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ErrorCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEE2E2" />
+    <Path d="M15 9l-6 6M9 9l6 6" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const InfoCircleIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DBEAFE" />
+    <Path d="M12 8v4M12 16h.01" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
+  </Svg>
+);
+
+// ── AlertModal ────────────────────────────────────────────────────────────────
+
+type AlertType = 'success' | 'error' | 'info';
+
+interface AlertState {
+  visible: boolean;
+  type: AlertType;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
+const ALERT_HIDDEN: AlertState = { visible: false, type: 'info', title: '', message: '' };
+
+const ALERT_ACCENT: Record<AlertType, string> = {
+  success: '#16A34A',
+  error: '#DC2626',
+  info: '#2563EB',
+};
+
+const AlertModal = ({ state, onDismiss }: { state: AlertState; onDismiss: () => void }) => {
+  const accent = ALERT_ACCENT[state.type];
+  const Icon = state.type === 'success' ? CheckCircleIcon : state.type === 'error' ? ErrorCircleIcon : InfoCircleIcon;
+  const handleConfirm = () => { onDismiss(); state.onConfirm?.(); };
+  const handleCancel = () => { onDismiss(); state.onCancel?.(); };
+  return (
+    <Modal visible={state.visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={am.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={state.cancelText ? undefined : onDismiss} />
+        <View style={am.card}>
+          <Icon />
+          <Text style={am.title}>{state.title}</Text>
+          <Text style={am.message}>{state.message}</Text>
+          <View style={[am.actions, !state.cancelText && am.actionsCenter]}>
+            {!!state.cancelText && (
+              <TouchableOpacity style={am.cancelBtn} activeOpacity={0.7} onPress={handleCancel}>
+                <Text style={am.cancelText}>{state.cancelText}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[am.confirmBtn, { backgroundColor: accent }, !state.cancelText && am.confirmBtnFull]}
+              activeOpacity={0.8}
+              onPress={handleConfirm}
+            >
+              <Text style={am.confirmText}>{state.confirmText ?? 'OK'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -78,7 +157,42 @@ type CatalogueItem = {
   selected: boolean;
 };
 
+
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
+
+const CatalogueRow = React.memo(({
+  item,
+  onToggle,
+  onQtyUpdate,
+}: {
+  item: CatalogueItem;
+  onToggle: (id: string) => void;
+  onQtyUpdate: (id: string, delta: number) => void;
+}) => (
+  <View style={styles.modalItem}>
+    <TouchableOpacity
+      style={[styles.checkbox, item.selected && styles.checkboxSelected]}
+      onPress={() => onToggle(item.id)}
+      activeOpacity={0.8}
+    >
+      {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
+    </TouchableOpacity>
+    <View style={styles.modalItemInfo}>
+      <Text style={styles.modalItemTime}>{item.name}</Text>
+      <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+      <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
+    </View>
+    <View style={styles.stepper}>
+      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, -1)}>
+        <Text style={styles.stepperBtnText}>−</Text>
+      </TouchableOpacity>
+      <Text style={styles.stepperValue}>{item.qty}</Text>
+      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, 1)}>
+        <Text style={styles.stepperBtnText}>+</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+));
 
 /* ── CollapsibleSection ── */
 const CollapsibleSection = ({
@@ -196,7 +310,8 @@ const CreateOrderScreen = () => {
     fetchDoctor();
   }, [doctorId]);
 
-  const fetchCatalogue = async () => {
+  const fetchCatalogue = async (): Promise<CatalogueItem[]> => {
+    if (catalogue.length > 0) return catalogue;
     setCatalogueLoading(true);
     try {
       const res = await apiClient.get<ApiProduct[]>(ENDPOINTS.products.available);
@@ -212,11 +327,24 @@ const CreateOrderScreen = () => {
         selected: false,
       }));
       setCatalogue(items);
+      return items;
     } catch {
-      // keep empty
+      return [];
     } finally {
       setCatalogueLoading(false);
     }
+  };
+
+  const openAddItems = async () => {
+    const baseItems = await fetchCatalogue();
+    const source = baseItems.length > 0 ? baseItems : catalogue;
+    setCatalogue(source.map(item => {
+      const existing = products.find(p => p.id === item.id);
+      return existing
+        ? { ...item, selected: true, qty: existing.qty }
+        : { ...item, selected: false, qty: 1 };
+    }));
+    setAddItemsVisible(true);
   };
 
   const [search, setSearch] = useState('');
@@ -231,6 +359,11 @@ const CreateOrderScreen = () => {
   const [notes, setNotes] = useState('');
   const [shippingAddress, setShippingAddress] = useState('');
   const [addItemsVisible, setAddItemsVisible] = useState(false);
+  const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
+
+  const showAlert = (config: Omit<AlertState, 'visible'>) =>
+    setAlertState({ ...config, visible: true });
+  const dismissAlert = () => setAlertState(prev => ({ ...ALERT_HIDDEN, type: prev.type }));
 
   const updateQty = (id: string, delta: number) => {
     setProducts(prev =>
@@ -245,24 +378,30 @@ const CreateOrderScreen = () => {
   };
 
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
-  const focCount  = products.filter(p => p.foc).length;
-  const savings   = products.filter(p => p.foc).reduce((s, p) => s + p.price, 0);
+  const focCount   = products.filter(p => p.foc).length;
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
-  // Credit limit calculations
+  // Base tax (no discounts — discounts are applied in PaymentScreen)
+  const baseTax = products.reduce((s, p) => {
+    const base = p.price * p.qty;
+    const gstRate = (parseFloat(p.gst) || 0) / 100;
+    return s + base * gstRate;
+  }, 0);
+  const baseTotal = orderValue + baseTax;
+
   const creditLimit = doctor?.creditLimit ? parseFloat(doctor.creditLimit) : 0;
   const outstanding = doctor?.outstanding ? parseFloat(doctor.outstanding) : 0;
-  const remainingCredit = creditLimit - outstanding - orderValue;
+  const remainingCredit = creditLimit - outstanding - baseTotal;
 
-  const toggleCatalogueItem = (id: string) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c));
+  const toggleCatalogueItem = useCallback((id: string) =>
+    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c)), []);
 
-  const updateCatalogueQty = (id: string, delta: number) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c));
+  const updateCatalogueQty = useCallback((id: string, delta: number) =>
+    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c)), []);
 
   const handleSaveItems = () => {
-    const newItems: Product[] = catalogue
-      .filter(c => c.selected && !products.find(p => p.id === c.id))
+    const selectedItems: Product[] = catalogue
+      .filter(c => c.selected && c.qty > 0)
       .map(c => ({
         id: c.id,
         name: c.name,
@@ -271,57 +410,53 @@ const CreateOrderScreen = () => {
         price: c.price,
         gst: c.gst,
         offer: '',
-        foc: false,
+        foc: products.find(p => p.id === c.id)?.foc ?? false,
         qty: c.qty,
       }));
-    if (newItems.length) setProducts(prev => [...prev, ...newItems]);
-    setCatalogue(prev => prev.map(c => ({ ...c, selected: false })));
+    setProducts(selectedItems);
     setAddItemsVisible(false);
   };
 
   const handlePlaceOrder = () => {
-    // Validation 1: Check if at least one product is added
     if (products.length === 0) {
-      Alert.alert('No Products', 'Please add at least one product to create an order.');
+      showAlert({ type: 'error', title: 'No Products', message: 'Please add at least one product to create an order.' });
       return;
     }
-
-    // Validation 2: Check if order total is greater than 0
     if (orderValue <= 0) {
-      Alert.alert('Invalid Amount', 'Order amount must be greater than ₹0. Please add products with valid prices.');
+      showAlert({ type: 'error', title: 'Invalid Amount', message: 'Order amount must be greater than ₹0. Please add products with valid prices.' });
       return;
     }
-
-    // Validation 3: Check if order exceeds credit limit
-    if (orderValue + outstanding > creditLimit) {
-      Alert.alert(
-        'Credit Limit Exceeded',
-        `This order exceeds the doctor's available credit limit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nOrder Value: ₹${orderValue.toFixed(2)}`,
-        [
-          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-          { text: 'Create Order Anyway', onPress: () => proceedWithOrder() },
-        ]
-      );
+    if (baseTotal + outstanding > creditLimit && creditLimit > 0) {
+      showAlert({
+        type: 'info',
+        title: 'Credit Limit Exceeded',
+        message: `This order exceeds the doctor's available credit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nEst. Total: ₹${baseTotal.toFixed(2)}\n\nOrder will be submitted for approval.`,
+        confirmText: 'Proceed Anyway',
+        cancelText: 'Cancel',
+        onConfirm: () => proceedWithOrder(),
+      });
       return;
     }
-
     proceedWithOrder();
   };
 
   const proceedWithOrder = () => {
-    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`
-    const items = products.map(p => {
+    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`;
+    const items = products.filter(p => p.qty > 0).map(p => {
       const base = p.price * p.qty;
-      const gstRate = parseFloat(p.gst || '12') / 100;
+      const gstRate = (parseFloat(p.gst) || 0) / 100;
       const itemTax = parseFloat((base * gstRate).toFixed(2));
       const itemTotal = parseFloat((base + itemTax).toFixed(2));
       return {
         productId: parseInt(p.id, 10),
+        productName: p.name,
         quantity: p.qty,
         unitPrice: p.price.toFixed(2),
-        discount: '0',
+        gst: p.gst,
+        discount: '0.00',
         tax: itemTax.toFixed(2),
         total: itemTotal.toFixed(2),
+        isFreeGood: false,
       };
     });
     navigation.navigate('Payment', {
@@ -434,7 +569,7 @@ const CreateOrderScreen = () => {
           <View style={styles.addItemsRow}>
             <TouchableOpacity
               style={styles.addItemsBtn}
-              onPress={() => { setAddItemsVisible(true); fetchCatalogue(); }}
+              onPress={openAddItems}
             >
               <AddCircle />
               <Text style={styles.addItemsBtnText}>  Add Items</Text>
@@ -556,7 +691,7 @@ const CreateOrderScreen = () => {
       <Modal
         visible={addItemsVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setAddItemsVisible(false)}
       >
         <TouchableOpacity
@@ -577,34 +712,11 @@ const CreateOrderScreen = () => {
             keyExtractor={item => item.id}
             style={styles.modalList}
             renderItem={({ item }) => (
-              <View style={styles.modalItem}>
-                {/* Checkbox */}
-                <TouchableOpacity
-                  style={[styles.checkbox, item.selected && styles.checkboxSelected]}
-                  onPress={() => toggleCatalogueItem(item.id)}
-                  activeOpacity={0.8}
-                >
-                  {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
-                </TouchableOpacity>
-
-                {/* Info */}
-                <View style={styles.modalItemInfo}>
-                  <Text style={styles.modalItemTime}>{item.name}</Text>
-                  <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
-                  <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
-                </View>
-
-                {/* Stepper */}
-                <View style={styles.stepper}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => updateCatalogueQty(item.id, -1)}>
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.stepperValue}>{item.qty}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => updateCatalogueQty(item.id, 1)}>
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <CatalogueRow
+                item={item}
+                onToggle={toggleCatalogueItem}
+                onQtyUpdate={updateCatalogueQty}
+              />
             )}
             ItemSeparatorComponent={ModalSeparator}
           />
@@ -617,20 +729,29 @@ const CreateOrderScreen = () => {
         </View>
       </Modal>
 
+      <AlertModal state={alertState} onDismiss={dismissAlert} />
+
       {/* Bottom Bar */}
       <View style={styles.bottomBar}>
         <View style={styles.bottomBarTop}>
           <Text style={styles.bottomBarItems}>
             {totalItems} ITEMS ({focCount} FOC)
-            <Text style={styles.bottomBarSavings}>  ·  SAVINGS: ₹{savings.toFixed(2)}</Text>
           </Text>
           <View style={styles.bottomBarValueRow}>
-            <Text style={styles.bottomBarValueLabel}>EST. ORDER VALUE</Text>
-            <Text style={styles.bottomBarValue}>₹{orderValue.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValueLabel}>SUBTOTAL</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{orderValue.toFixed(2)}</Text>
+          </View>
+          <View style={styles.bottomBarValueRow}>
+            <Text style={styles.bottomBarValueLabel}>TAX (GST)</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{baseTax.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.bottomBarValueRow, styles.bottomBarTotalRow]}>
+            <Text style={styles.bottomBarTotalLabel}>EST. TOTAL</Text>
+            <Text style={styles.bottomBarValue}>₹{baseTotal.toFixed(2)}</Text>
           </View>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
-            <Text style={[styles.bottomBarValue, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
+            <Text style={[styles.bottomBarValueSmall, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
               ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </View>
@@ -728,8 +849,6 @@ const styles = StyleSheet.create({
   doctorStatTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 2 },
   doctorStatSub: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
   outstandingRed: { color: COLORS.error },
-  remainingCreditPositive: { color: COLORS.success },
-  remainingCreditNegative: { color: COLORS.error },
 
   // Collapsible
   collapsibleCard: {
@@ -915,13 +1034,16 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.bold,
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  bottomBarSavings: { color: COLORS.success },
-  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bottomBarValueLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
+  bottomBarValueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  bottomBarTotalRow: { marginTop: 4, marginBottom: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
+  bottomBarValueLabel: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4 },
+  bottomBarValueSmall: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  bottomBarTotalLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark },
   bottomBarValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
   remainingCreditNegative: { color: COLORS.error },
+  remainingCreditPositive: { color: COLORS.success },
   placeOrderBtn: {
     backgroundColor: COLORS.buttonBlue,
     height: 56,
@@ -934,7 +1056,7 @@ const styles = StyleSheet.create({
   // Add Items Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   modalSheet: {
     backgroundColor: COLORS.white,
@@ -1032,6 +1154,73 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   scrollSpacer: { height: 120 },
+});
+
+const am = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  actions: { flexDirection: 'row', gap: 10, width: '100%' },
+  actionsCenter: { justifyContent: 'center' },
+  cancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D1D9E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.medium,
+    color: '#6B7280',
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmBtnFull: { flex: 0, width: 140 },
+  confirmText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
 });
 
 export default CreateOrderScreen;

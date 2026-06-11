@@ -4,6 +4,9 @@ import {
   TouchableOpacity, TextInput, Platform, ActivityIndicator,
   RefreshControl, Linking,
 } from 'react-native';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState, AppDispatch } from '@/redux/store';
+import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -57,7 +60,6 @@ const PIPELINE_STAGES = [
 
 /* ─── Lead Card ──────────────────────────────────────────────────── */
 const LeadCard = ({ item }: { item: Lead }) => {
-  console.log('🚀 ~ LeadCard ~ item:', item)
   const stageStyle = STAGE_COLORS[item.stage] ?? { bg: '#F0F0F0', color: '#666666' };
   const priorityStyle = PRIORITY_COLORS[item.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const navigation = useNavigation<NavProp>();
@@ -185,6 +187,8 @@ const LeadCard = ({ item }: { item: Lead }) => {
 /* ─── Screen ─────────────────────────────────────────────────────── */
 const LeadsScreen = () => {
   const navigation = useNavigation<NavProp>();
+  const dispatch = useDispatch<AppDispatch>();
+  const currentUserId = useSelector((state: RootState) => state.profile.data?.id);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'Doctors' | 'Pharmacies'>('Doctors');
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -205,21 +209,21 @@ const LeadsScreen = () => {
     }
   }, []);
 
-  // Refresh list every time this screen comes into focus (e.g. after adding a lead)
   useFocusEffect(
     useCallback(() => {
+      if (!currentUserId) dispatch(fetchMyProfile());
       fetchLeads();
-    }, [fetchLeads])
+    }, [fetchLeads, currentUserId, dispatch])
   );
 
   const filteredDoctors = leads.filter(l => {
+    if (l.assignedMRId !== currentUserId) return false;
     const q = search.toLowerCase();
     const matchesSearch = (
       l.name.toLowerCase().includes(q) ||
       (l.clinic || '').toLowerCase().includes(q) ||
       (l.city || '').toLowerCase().includes(q)
     );
-    
     if (activeTab === 'Doctors') {
       return l.leadType === 'doctor' && matchesSearch;
     } else {

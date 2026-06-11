@@ -15,6 +15,7 @@ export const ENDPOINTS = {
         doctorDetail: (id: string) => `/doctors/${id}`,
         pharmacies: '/pharmacies',
         pharmacyDetail: (id: string) => `/pharmacies/${id}`,
+        leadDetail: (id: string) => `/leads/${id}`,
     },
     products: {
         list: '/products',
@@ -58,6 +59,18 @@ export const ENDPOINTS = {
         start: '/mr-breaks/start',
         end: '/mr-breaks/end',
         today: '/mr-breaks/today',
+    },
+    schemes: {
+        list: '/schemes',
+    },
+    promoCodes: {
+        list: '/promo-codes',
+    },
+    clinicCodes: {
+        list: '/clinic-codes',
+    },
+    pricingSlabs: {
+        detail: (id: number) => `/pricing-slabs/${id}`,
     },
     // user: {
     //     profile: '/user/profile',

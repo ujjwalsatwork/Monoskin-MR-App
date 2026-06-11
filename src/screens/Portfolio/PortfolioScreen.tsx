@@ -127,7 +127,7 @@ const FilterModal = ({
   const totalSelected = pending.category.length + pending.lastVisited.length + pending.tags.length;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={filterModalStyles.overlay} activeOpacity={1} onPress={onClose} />
       <View style={filterModalStyles.sheet}>
         <View style={filterModalStyles.handle} />
@@ -1115,7 +1115,7 @@ const emptyStyles = StyleSheet.create({
 const filterModalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   sheet: {
     backgroundColor: COLORS.white,

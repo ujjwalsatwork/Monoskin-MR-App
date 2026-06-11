@@ -1,10 +1,13 @@
 export type OrderItemPayload = {
     productId: number;
+    productName?: string;
     quantity: number;
     unitPrice: string;
     discount: string;
     tax: string;
     total: string;
+    gst?: string;
+    isFreeGood?: boolean;
 };
 
 export type OrderCreateData = {
@@ -37,7 +40,7 @@ export type MainTabParamList = {
 export type AppStackParamList = {
     Auth: undefined;
     Main: undefined;
-    VisitDetail: { doctorId?: string; pharmacyId?: string; routeStopId?: number; visitId?: string };
+    VisitDetail: { doctorId?: string; pharmacyId?: string; leadId?: string; routeStopId?: number; visitId?: string };
     CreateOrder: { doctorId: string };
     ProductDetail: { productId: string; productName: string; productTime: string };
     Payment: { subtotal: number; orderNumber: string; orderCreateData: OrderCreateData };
@@ -85,6 +88,7 @@ export type AppStackParamList = {
     Profile: undefined;
     EditProfile: undefined;
     SubmitLeave: undefined;
+    ExpenseManagement: undefined;
     RouteMapScreen: {
         routeData: {
             readOnly: boolean;

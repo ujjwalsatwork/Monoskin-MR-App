@@ -16,6 +16,11 @@ export interface MRProfile {
     profilePhoto: string | null;
     leadsAssigned: number;
     conversions: number;
+    role?: string;
+    totalVisits?: number;
+    sampleAllocation?: number;
+    sampleUsed?: number;
+    monthlyExpenseSummary?: number;
 }
 
 export interface UpdateProfilePayload {

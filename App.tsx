@@ -15,7 +15,7 @@ const AppContent = () => {
 
   return (
     <>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <AppNavigator />
     </>
   );

@@ -15,7 +15,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue, CheckCircleIcon, CalendarNoteIcon, QuickStatsCalendar, QuickStatsCompleted } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -79,6 +79,7 @@ const AttendanceScreen = () => {
     const [location, setLocation] = useState<{ lat: number; long: number } | null>(null);
     const [addressText, setAddressText] = useState('');
     const [locationError, setLocationError] = useState('');
+    const [locationFetching, setLocationFetching] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [breakElapsed, setBreakElapsed] = useState(0);
 
@@ -119,22 +120,30 @@ const AttendanceScreen = () => {
     }, []);
 
     // GPS + reverse geocode
-    useEffect(() => {
+    const fetchLocation = useCallback(() => {
+        setLocationError('');
+        setLocationFetching(true);
         Geolocation.getCurrentPosition(
             async (position) => {
                 const lat = position.coords.latitude;
                 const long = position.coords.longitude;
                 setLocation({ lat, long });
+                setLocationFetching(false);
                 const addr = await reverseGeocode(lat, long);
                 setAddressText(addr || `${lat.toFixed(6)}, ${long.toFixed(6)}`);
             },
             (err) => {
-                console.log('🚀 ~ AttendanceScreen ~ err:', err)
+                console.log('🚀 ~ AttendanceScreen ~ err:', err);
                 setLocationError(err.message);
+                setLocationFetching(false);
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
         );
     }, []);
+
+    useEffect(() => {
+        fetchLocation();
+    }, [fetchLocation]);
 
     const refetchAll = useCallback(async () => {
         await Promise.all([
@@ -150,15 +159,17 @@ const AttendanceScreen = () => {
 
     useFocusEffect(
         useCallback(() => {
+            fetchLocation();
             refetchAll();
-        }, [refetchAll]),
+        }, [fetchLocation, refetchAll]),
     );
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
+        fetchLocation();
         await refetchAll();
         setRefreshing(false);
-    }, [refetchAll]);
+    }, [fetchLocation, refetchAll]);
 
     // Coordinates string for display; address text used in the API payload
     const coordsString = location
@@ -166,6 +177,15 @@ const AttendanceScreen = () => {
         : 'Unknown';
 
     const handleCheckIn = useCallback(async () => {
+        if (!location) {
+            Alert.alert(
+                'Location Required',
+                locationError
+                    ? `Unable to fetch GPS location: ${locationError}. Please enable location permissions and try again.`
+                    : 'GPS location is still being fetched. Please wait a moment and try again.',
+            );
+            return;
+        }
         dispatch(clearAttendanceError());
         const result = await dispatch(
             logAttendance({
@@ -186,7 +206,7 @@ const AttendanceScreen = () => {
                 friendlyError(payload ?? { message: 'Unknown error' }, 'check-in'),
             );
         }
-    }, [dispatch, addressText, coordsString, currentDate, navigation]);
+    }, [dispatch, location, locationError, addressText, coordsString, currentDate, navigation]);
 
     const handleCheckOut = useCallback(async () => {
         dispatch(clearAttendanceError());
@@ -289,6 +309,8 @@ const AttendanceScreen = () => {
                     <View style={styles.infoIconWrapper}>
                         {todayLoading ? (
                             <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : isCheckedIn ? (
+                            <CheckCircleIcon height={25}/>
                         ) : (
                             <InfoIcon />
                         )}
@@ -338,16 +360,28 @@ const AttendanceScreen = () => {
                     </View>
                 </View>
 
+                {/* Location error banner */}
+                {locationError ? (
+                    <View style={styles.locationErrorBanner}>
+                        <Text style={styles.locationErrorText}>
+                            GPS unavailable: {locationError}
+                        </Text>
+                        <TouchableOpacity onPress={fetchLocation}>
+                            <Text style={styles.locationRetryText}>Retry</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : null}
+
                 {/* Check-In / Check-Out */}
                 <View style={styles.actionButtonsContainer}>
                     <TouchableOpacity
                         style={[
                             styles.primaryButton,
                             styles.halfButton,
-                            (isActionLoading || isCheckedIn) && styles.buttonDisabled,
+                            (isActionLoading || isCheckedIn || !location) && styles.buttonDisabled,
                         ]}
                         onPress={handleCheckIn}
-                        disabled={isActionLoading || isCheckedIn}
+                        disabled={isActionLoading || isCheckedIn || !location}
                         activeOpacity={0.8}
                     >
                         {checkInLoading ? (
@@ -486,10 +520,12 @@ const AttendanceScreen = () => {
                     <Text style={styles.statsTitle}>QUICK STATS</Text>
                     <View style={styles.statsRow}>
                         <View style={styles.statCard}>
+                            <QuickStatsCalendar style={styles.statIcon} />
                             <Text style={styles.statLabel}>PLANNED CALLS</Text>
                             <Text style={styles.statValue}>{plannedCalls}</Text>
                         </View>
                         <View style={styles.statCard}>
+                            <QuickStatsCompleted style={styles.statIcon} />
                             <Text style={styles.statLabel}>COMPLETED</Text>
                             <Text style={styles.statValue}>{completedCalls}</Text>
                         </View>
@@ -787,6 +823,35 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontFamily: FONTS.family.bold,
         color: '#000',
+    },
+    statIcon: {
+        marginBottom: 10,
+    },
+
+    // ── Location error banner ─────────────────────────────────────────────
+    locationErrorBanner: {
+        marginHorizontal: 20,
+        marginBottom: 12,
+        padding: 12,
+        backgroundColor: '#FFF3E0',
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#FFB74D',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    locationErrorText: {
+        flex: 1,
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.regular,
+        color: '#E65100',
+        marginRight: 8,
+    },
+    locationRetryText: {
+        fontSize: FONTS.size.sm,
+        fontFamily: FONTS.family.bold,
+        color: COLORS.primary,
     },
 
     // ── Leave Request Button ───────────────────────────────────────────────

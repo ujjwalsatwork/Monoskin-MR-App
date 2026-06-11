@@ -101,14 +101,14 @@ const LoginScreen = () => {
           </View>
         </View>
 
-        <View style={styles.footerContainer}>
+        {/* <View style={styles.footerContainer}>
           <Text style={styles.footerText}>By continuing, you agree to our</Text>
           <View style={styles.footerLinksRow}>
             <Text style={styles.footerLink}>Terms of Service</Text>
             <Text style={styles.footerText}> and </Text>
             <Text style={styles.footerLink}>Privacy Policy</Text>
           </View>
-        </View>
+        </View> */}
       </KeyboardAvoidingView>
     </ImageBackground>
   );

@@ -13,7 +13,11 @@ import {
   FlatList,
   ActivityIndicator,
   Linking,
+  Animated,
+  PermissionsAndroid,
 } from 'react-native';
+import * as Vosk from 'react-native-vosk';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -88,6 +92,22 @@ type PharmacyDetails = {
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
 };
 
+type LeadDetails = {
+  id: number;
+  name: string;
+  leadType: 'doctor' | 'pharmacy';
+  designation?: string | null;
+  specialization?: string | null;
+  clinic?: string | null;
+  city?: string | null;
+  state?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  whatsappNumber?: string | null;
+  stage?: string | null;
+  priority?: string | null;
+};
+
 type CatalogueItem = {
   id: string;
   name: string;
@@ -126,14 +146,22 @@ const ModalSeparator = () => <View style={styles.modalSeparator} />;
 const VisitDetailScreen = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
+  console.log('🚀 ~ VisitDetailScreen ~ route:', route)
   const dispatch = useDispatch<AppDispatch>();
-  const { doctorId, pharmacyId, routeStopId } = route.params;
+  const { doctorId, pharmacyId, leadId, routeStopId } = route.params;
   const profile = useSelector((state: any) => state.profile.data);
   const authUser = useSelector((state: any) => state.auth.user);
   const mrId = profile?.id ?? authUser?.id;
 
+  const defaultVisitType = leadId
+    ? 'Lead Visit'
+    : pharmacyId
+    ? 'Pharmacy Visit'
+    : 'Doctor Visit';
+
   const [doctorData, setDoctorData] = useState<DoctorDetails | null>(null);
   const [pharmacyData, setPharmacyData] = useState<PharmacyDetails | null>(null);
+  const [leadData, setLeadData] = useState<LeadDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -162,9 +190,13 @@ const VisitDetailScreen = () => {
   const [clinicConsultationTime, setClinicConsultationTime] = useState('');
   const [mrInteractionTime, setMrInteractionTime] = useState('');
   const [doctorArrivalTime, setDoctorArrivalTime] = useState('');
+
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
+  const [activeTimeField, setActiveTimeField] = useState<'clinic' | 'mr' | 'arrival' | null>(null);
+  const [pickerDate, setPickerDate] = useState(new Date());
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [visitType, setVisitType] = useState('Lead Visit');
+  const [visitType, setVisitType] = useState(defaultVisitType);
   const [outcome, setOutcome] = useState('Follow-up Required');
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
@@ -175,6 +207,13 @@ const VisitDetailScreen = () => {
     longitude: string;
     address: string;
   } | null>(null);
+  const [locationFetching, setLocationFetching] = useState(true);
+  const [locationError, setLocationError] = useState('');
+
+  const [isListening, setIsListening] = useState(false);
+  const [voskReady, setVoskReady] = useState(false);
+  const voiceBaseText = useRef('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const [sampleExpanded, setSampleExpanded] = useState(true);
   const [prefExpanded, setPrefExpanded] = useState(false);
@@ -182,13 +221,122 @@ const VisitDetailScreen = () => {
   const [orderExpanded, setOrderExpanded] = useState(true);
 
   useEffect(() => {
+    type Sub = ReturnType<typeof Vosk.onPartialResult>;
+    let partialSub: Sub | null = null;
+    let finalSub: Sub | null = null;
+    let errorSub: Sub | null = null;
+    let timeoutSub: Sub | null = null;
+
+    Vosk.loadModel('model-en-us')
+      .then(() => {
+        setVoskReady(true);
+
+        partialSub = Vosk.onPartialResult((text: string) => {
+          if (!text) { return; }
+          const base = voiceBaseText.current;
+          setVisitNote(base ? `${base} ${text}` : text);
+        });
+
+        finalSub = Vosk.onFinalResult((text: string) => {
+          if (!text) { return; }
+          const base = voiceBaseText.current;
+          const committed = base ? `${base} ${text}` : text;
+          setVisitNote(committed);
+          voiceBaseText.current = committed;
+          setIsListening(false);
+        });
+
+        errorSub = Vosk.onError((_e: string) => {
+          setIsListening(false);
+        });
+
+        timeoutSub = Vosk.onTimeout(() => {
+          setIsListening(false);
+        });
+      })
+      .catch((err) => {
+        console.log('🚀 ~ Vosk load error:', err);
+        // Model files not yet placed in assets — mic will show a helpful message
+      });
+
+    return () => {
+      partialSub?.remove();
+      finalSub?.remove();
+      errorSub?.remove();
+      timeoutSub?.remove();
+      try { Vosk.stop(); } catch { /* already stopped */ }
+      Vosk.unload();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ]),
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isListening, pulseAnim]);
+
+  const handleMicPress = async () => {
+    if (isListening) {
+      try { Vosk.stop(); } catch { /* already stopped */ }
+      setIsListening(false);
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Microphone Permission',
+          message: 'Microphone access is required for voice input.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        },
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        showFeedback('error', 'Permission Denied', 'Microphone access is required for voice input.');
+        return;
+      }
+    }
+
+    if (!voskReady) {
+      showFeedback(
+        'error',
+        'Not Ready',
+        'Speech recognition model is still loading. Please wait a moment and try again.',
+      );
+      return;
+    }
+
+    voiceBaseText.current = visitNote.trim();
+    try {
+      setIsListening(true);
+      await Vosk.start();
+    } catch {
+      setIsListening(false);
+      showFeedback('error', 'Error', 'Failed to start voice recognition. Please try again.');
+    }
+  };
+
+  useEffect(() => {
     if (doctorId) {
       fetchDoctorDetails();
     } else if (pharmacyId) {
       fetchPharmacyDetails();
+    } else if (leadId) {
+      fetchLeadDetails();
     } else {
       setLoading(false);
     }
+    setLocationFetching(true);
+    setLocationError('');
     Geolocation.getCurrentPosition(
       async pos => {
         const lat = String(pos.coords.latitude);
@@ -201,16 +349,20 @@ const VisitDetailScreen = () => {
           );
           const json = await res.json();
           if (json?.display_name) { address = json.display_name; }
-        } catch (err) { 
+        } catch (err) {
           console.log('🚀 ~ VisitDetailScreen ~ Geocoding error:', err);
-         }
+        }
         setLocation({ latitude: lat, longitude: lng, address });
+        setLocationFetching(false);
       },
-      () => {},
+      (err) => {
+        setLocationError(err.message);
+        setLocationFetching(false);
+      },
       { enableHighAccuracy: false, timeout: 10000 },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doctorId, pharmacyId]);
+  }, [doctorId, pharmacyId, leadId]);
 
   const fetchDoctorDetails = async () => {
     try {
@@ -235,6 +387,20 @@ const VisitDetailScreen = () => {
     } catch(fetchErr) {
       console.log('🚀 ~ fetchPharmacyDetails ~ error:', fetchErr);
       setError('Failed to load pharmacy details. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLeadDetails = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.get(ENDPOINTS.portfolio.leadDetail(leadId!));
+      setLeadData(res.data);
+    } catch(fetchErr) {
+      console.log('🚀 ~ fetchLeadDetails ~ error:', fetchErr);
+      setError('Failed to load lead details. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -302,6 +468,48 @@ const VisitDetailScreen = () => {
     setAddSampleVisible(false);
   };
 
+  const formatTime = (date: Date): string => {
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes} ${ampm}`;
+  };
+
+  const applyTime = (field: typeof activeTimeField, date: Date) => {
+    const formatted = formatTime(date);
+    if (field === 'clinic') { setClinicConsultationTime(formatted); }
+    else if (field === 'mr') { setMrInteractionTime(formatted); }
+    else if (field === 'arrival') { setDoctorArrivalTime(formatted); }
+  };
+
+  const openTimePicker = (field: 'clinic' | 'mr' | 'arrival') => {
+    const currentValue =
+      field === 'clinic' ? clinicConsultationTime
+      : field === 'mr' ? mrInteractionTime
+      : doctorArrivalTime;
+    const date = new Date();
+    if (currentValue) {
+      const match = currentValue.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        if (match[3].toUpperCase() === 'PM' && h !== 12) { h += 12; }
+        if (match[3].toUpperCase() === 'AM' && h === 12) { h = 0; }
+        date.setHours(h, m, 0, 0);
+      }
+    }
+    setPickerDate(date);
+    setActiveTimeField(field);
+    setTimePickerVisible(true);
+  };
+
+  const confirmTimePicker = () => {
+    applyTime(activeTimeField, pickerDate);
+    setTimePickerVisible(false);
+    setActiveTimeField(null);
+  };
+
   const toggleObjection = (chip: string) => {
     setObjections(prev =>
       prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip],
@@ -343,6 +551,16 @@ const VisitDetailScreen = () => {
   };
 
   const handleSubmit = async () => {
+    if (!location) {
+      showFeedback(
+        'error',
+        'Location Required',
+        locationError
+          ? `Unable to fetch GPS location: ${locationError}. Please enable location permissions and try again.`
+          : 'GPS location is still being fetched. Please wait a moment and try again.',
+      );
+      return;
+    }
     if (!visitType) { showFeedback('error', 'Validation', 'Please select a visit type.'); return; }
     if (!outcome) { showFeedback('error', 'Validation', 'Please select an outcome.'); return; }
     if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
@@ -352,6 +570,7 @@ const VisitDetailScreen = () => {
     formData.append('mrId', String(mrId));
     if (doctorId) formData.append('doctorId', String(doctorId));
     if (pharmacyId) formData.append('pharmacyId', String(pharmacyId));
+    if (leadId) formData.append('leadId', String(leadId));
     if (routeStopId) formData.append('routeStopId', String(routeStopId));
     
     formData.append('visitType', visitType);
@@ -461,7 +680,7 @@ const VisitDetailScreen = () => {
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={pharmacyId ? fetchPharmacyDetails : fetchDoctorDetails}
+            onPress={leadId ? fetchLeadDetails : pharmacyId ? fetchPharmacyDetails : fetchDoctorDetails}
           >
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
@@ -470,18 +689,18 @@ const VisitDetailScreen = () => {
     );
   }
 
-  const entityName = doctorData?.name ?? pharmacyData?.name;
+  const entityName = doctorData?.name ?? pharmacyData?.name ?? leadData?.name;
   const initials = entityName
     ?.split(' ')
     .map(w => w[0])
     .slice(0, 2)
-    .join('') ?? (pharmacyId ? 'PH' : 'DR');
+    .join('') ?? (pharmacyId ? 'PH' : leadId ? 'LD' : 'DR');
 
   return (
     <View style={styles.safeArea}>
       <Header title="Visit Details" showBack showNotification showProfile />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} scrollEnabled={!submitting}>
 
         {/* Profile Card */}
         <View style={styles.doctorCard}>
@@ -499,7 +718,7 @@ const VisitDetailScreen = () => {
             <View style={styles.doctorLocationRow}>
               <LocationPinIcon width={13} height={13} style={{ marginTop: 3 }}  />
               <Text style={styles.doctorHospital}>
-                {doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? '—'}
+                {doctorData?.clinic ?? doctorData?.address ?? pharmacyData?.address ?? leadData?.clinic ?? leadData?.address ?? '—'}
               </Text>
             </View>
             {(doctorData?.tier || doctorData?.importance) && (
@@ -521,7 +740,7 @@ const VisitDetailScreen = () => {
             <TouchableOpacity
               style={[styles.contactBtn, {backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.black}]}
               onPress={() => {
-                const phone = doctorData?.phone ?? pharmacyData?.phone;
+                const phone = doctorData?.phone ?? pharmacyData?.phone ?? leadData?.phone;
                 if (phone) { Linking.openURL(`tel:${phone}`); }
               }}
             >
@@ -530,7 +749,7 @@ const VisitDetailScreen = () => {
             <TouchableOpacity
               style={styles.contactBtn}
               onPress={() => {
-                const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber;
+                const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber ?? leadData?.whatsappNumber;
                 if (whatsapp) { Linking.openURL(`whatsapp://send?phone=${whatsapp}`); }
               }}
             >
@@ -542,18 +761,22 @@ const VisitDetailScreen = () => {
         {/* Stats Row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>LAST VISIT</Text>
+            <Text style={styles.statLabel}>{leadData ? 'STAGE' : 'LAST VISIT'}</Text>
             <Text style={styles.statValue}>
-              {(doctorData?.lastVisitDate || pharmacyData?.lastVisitDate)
+              {leadData
+                ? leadData.stage ?? '—'
+                : (doctorData?.lastVisitDate || pharmacyData?.lastVisitDate)
                 ? formatDateTime(doctorData?.lastVisitDate ?? pharmacyData?.lastVisitDate!)
                 : doctorData?.lastVisit ?? pharmacyData?.lastVisit ?? '—'}
             </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>AVG TIME</Text>
+            <Text style={styles.statLabel}>{leadData ? 'PRIORITY' : 'AVG TIME'}</Text>
             <Text style={styles.statValue}>
-              {doctorData?.avgTime ?? pharmacyData?.avgTime ?? '—'}
+              {leadData
+                ? leadData.priority ?? '—'
+                : doctorData?.avgTime ?? pharmacyData?.avgTime ?? '—'}
             </Text>
           </View>
         </View>
@@ -592,8 +815,8 @@ const VisitDetailScreen = () => {
           <Text style={styles.gpsIndicator}>Location captured</Text>
         )} */}
 
-        {/* Sample Products */}
-        <CollapsibleSection
+        {/* Sample Products — hidden for lead visits */}
+        {!leadId && <CollapsibleSection
           title="Sample Products"
           expanded={sampleExpanded}
           onToggle={() => setSampleExpanded(p => !p)}
@@ -626,7 +849,7 @@ const VisitDetailScreen = () => {
               </TouchableOpacity>
             ))
           )}
-        </CollapsibleSection>
+        </CollapsibleSection>}
 
         {/* Pharmacy Network – only when API provides it */}
         {doctorData?.pharmacyNetwork && doctorData.pharmacyNetwork.length > 0 && (
@@ -685,47 +908,71 @@ const VisitDetailScreen = () => {
 
         {/* Visit Notes */}
         <SectionLabel title="VISIT NOTES" />
-        <View style={styles.notesInputWrapper}>
+        <View style={[styles.notesInputWrapper, isListening && styles.notesInputWrapperActive]}>
           <TextInput
             style={styles.notesInput}
-            placeholder="Enter discussion points, objections, and next steps..."
-            placeholderTextColor={COLORS.textMuted}
+            placeholder={isListening ? 'Start speaking...' : 'Enter discussion points, objections, and next steps...'}
+            placeholderTextColor={isListening ? COLORS.buttonBlue : COLORS.textMuted}
             multiline
             value={visitNote}
             onChangeText={setVisitNote}
             textAlignVertical="top"
+            editable={!isListening}
           />
-          <TouchableOpacity style={styles.micButton}>
-            <MicIcon width={20} height={20} />
+          <TouchableOpacity
+            style={styles.micButton}
+            onPress={handleMicPress}
+            activeOpacity={0.7}
+          >
+            {isListening ? (
+              <View style={styles.micActiveWrapper}>
+                <Animated.View style={[styles.micPulseRing, { transform: [{ scale: pulseAnim }] }]} />
+                <View style={styles.micActiveDot} />
+              </View>
+            ) : (
+              <MicIcon width={20} height={20} />
+            )}
           </TouchableOpacity>
         </View>
+        {isListening && (
+          <View style={styles.listeningBanner}>
+            <View style={styles.listeningDot} />
+            <Text style={styles.listeningBannerText}>Listening… Tap the mic to stop</Text>
+          </View>
+        )}
 
         <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={clinicConsultationTime}
-          onChangeText={setClinicConsultationTime}
-          placeholder="e.g. 10:30 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('clinic')}
+        >
+          <Text style={clinicConsultationTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {clinicConsultationTime || 'Select time (e.g. 10:30 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         <Text style={styles.timeFieldLabel}>MR Interaction Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={mrInteractionTime}
-          onChangeText={setMrInteractionTime}
-          placeholder="e.g. 10:45 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('mr')}
+        >
+          <Text style={mrInteractionTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {mrInteractionTime || 'Select time (e.g. 10:45 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         <Text style={styles.timeFieldLabel}>Doctor Arrival Time</Text>
-        <TextInput
+        <TouchableOpacity
           style={styles.timeFieldInput}
-          value={doctorArrivalTime}
-          onChangeText={setDoctorArrivalTime}
-          placeholder="e.g. 11:00 AM"
-          placeholderTextColor={COLORS.textMuted}
-        />
+          activeOpacity={0.7}
+          onPress={() => openTimePicker('arrival')}
+        >
+          <Text style={doctorArrivalTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+            {doctorArrivalTime || 'Select time (e.g. 11:00 AM)'}
+          </Text>
+        </TouchableOpacity>
 
         {/* Objection Handling */}
         <SectionLabel title="OBJECTION HANDLING" />
@@ -920,11 +1167,20 @@ const VisitDetailScreen = () => {
 
       {/* Submit Report */}
       <View style={styles.submitContainer}>
+        {locationError ? (
+          <View style={styles.gpsErrorBanner}>
+            <Text style={styles.gpsErrorText}>GPS unavailable: {locationError}</Text>
+          </View>
+        ) : !location ? (
+          <View style={styles.gpsErrorBanner}>
+            <Text style={styles.gpsErrorText}>Fetching GPS location…</Text>
+          </View>
+        ) : null}
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[styles.submitButton, (submitting || !location) && styles.submitButtonDisabled]}
           activeOpacity={0.85}
           onPress={() => setConfirmVisible(true)}
-          disabled={submitting}
+          disabled={submitting || !location}
         >
           {submitting
             ? <ActivityIndicator color={COLORS.white} />
@@ -993,11 +1249,77 @@ const VisitDetailScreen = () => {
         </View>
       </Modal>
 
+      {/* iOS — bottom sheet with spinner wheel */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={timePickerVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setTimePickerVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.timePickerOverlay}
+            activeOpacity={1}
+            onPress={() => setTimePickerVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1}>
+              <View style={styles.timePickerSheet}>
+                <View style={styles.timePickerHandle} />
+                <View style={styles.timePickerIOSHeader}>
+                  <TouchableOpacity onPress={() => setTimePickerVisible(false)}>
+                    <Text style={styles.timePickerCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timePickerTitle}>Select Time</Text>
+                  <TouchableOpacity onPress={confirmTimePicker}>
+                    <Text style={styles.timePickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="time"
+                  display="spinner"
+                  onValueChange={(_e, date) => setPickerDate(date)}
+                  style={styles.timePickerSpinner}
+                />
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Android — native time picker dialog (OS dialog has its own Cancel/OK) */}
+      {Platform.OS === 'android' && timePickerVisible && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="time"
+          display="default"
+          onValueChange={(_e, date) => {
+            setTimePickerVisible(false);
+            setActiveTimeField(null);
+            applyTime(activeTimeField, date);
+          }}
+          onDismiss={() => {
+            setTimePickerVisible(false);
+            setActiveTimeField(null);
+          }}
+        />
+      )}
+
+      {/* Fullscreen Submitting Loader */}
+      {submitting && (
+        <View style={styles.fullscreenLoader} pointerEvents="box-only">
+          <View style={styles.fullscreenLoaderBox}>
+            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+            <Text style={styles.fullscreenLoaderText}>Submitting Visit...</Text>
+          </View>
+        </View>
+      )}
+
       {/* Product Selection Modal */}
       <Modal
         visible={addSampleVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setAddSampleVisible(false)}
       >
         <TouchableOpacity
@@ -1172,22 +1494,53 @@ const styles = StyleSheet.create({
   // Visit Notes
   notesInputWrapper: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, flexDirection: 'row',
-    alignItems: 'flex-end', paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, minHeight: 60,
+    alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, minHeight: 60,
   },
   notesInput: {
     flex: 1, fontSize: FONTS.size.md, fontFamily: FONTS.family.regular,
     color: COLORS.textDark, padding: 0, maxHeight: 100,
   },
-  micButton: { padding: 4, marginLeft: 8 },
+  micButton: { padding: 4, marginLeft: 8, justifyContent: 'center', alignItems: 'center' },
+
+  // Listening indicator
+  notesInputWrapperActive: { borderColor: COLORS.buttonBlue, borderWidth: 1.5 },
+  micActiveWrapper: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  micPulseRing: {
+    position: 'absolute', width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(211,47,47,0.2)',
+  },
+  micActiveDot: {
+    width: 14, height: 14, borderRadius: 7, backgroundColor: '#D32F2F',
+  },
+  listeningBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(211,47,47,0.07)', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8, marginTop: -8, marginBottom: 12,
+  },
+  listeningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#D32F2F' },
+  listeningBannerText: {
+    fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: '#D32F2F',
+  },
 
   // Time fields in Visit Notes
   timeFieldLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary, marginBottom: 6, marginTop: 2 },
   timeFieldInput: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark,
-    marginBottom: 14,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+    marginBottom: 14, justifyContent: 'center',
   },
+  timeFieldValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  timeFieldPlaceholder: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textMuted },
+
+  // Time Picker Modal (iOS sheet)
+  timePickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  timePickerSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
+  timePickerHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D0D0D0', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
+  timePickerIOSHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
+  timePickerTitle: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark },
+  timePickerCancelText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textSecondary },
+  timePickerDoneText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  timePickerSpinner: { width: '100%' },
 
   // Documentation
   attachmentsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
@@ -1242,6 +1595,22 @@ const styles = StyleSheet.create({
 
   bottomSpacer: { height: 16 },
 
+  // GPS status banner
+  gpsErrorBanner: {
+    marginBottom: 8,
+    padding: 10,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+  },
+  gpsErrorText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#E65100',
+    textAlign: 'center',
+  },
+
   // Submit
   submitContainer: {
     paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1,
@@ -1256,7 +1625,7 @@ const styles = StyleSheet.create({
 
   // Product Modal
   catalogueLoader: { marginVertical: 32 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   modalSheet: {
     backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: '75%', paddingTop: 12,
@@ -1287,6 +1656,14 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: COLORS.buttonBlue, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
   saveBtnText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.white },
 
+  // Fullscreen Loader
+  fullscreenLoader: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  fullscreenLoaderBox: {
+    backgroundColor: COLORS.white, borderRadius: 16, paddingHorizontal: 40, paddingVertical: 32,
+    alignItems: 'center', gap: 16, minWidth: 180,
+  },
+  fullscreenLoaderText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+
   // Feedback Modal
   feedbackIconCircle: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 14 },
   feedbackIconSuccess: { backgroundColor: 'rgba(56,142,60,0.12)' },
@@ -1301,7 +1678,7 @@ const styles = StyleSheet.create({
   feedbackOkError: { backgroundColor: '#D32F2F' },
 
   // Confirm Submit Modal
-  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   confirmBox: { width: '100%', backgroundColor: COLORS.white, borderRadius: 18, padding: 24 },
   confirmHeading: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center', marginBottom: 24, lineHeight: 26 },
   confirmActions: { flexDirection: 'row', gap: 12 },

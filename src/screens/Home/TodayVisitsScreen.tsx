@@ -47,9 +47,9 @@ const TodayVisitsScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
+      dispatch(fetchTodayRoute());
       if (needsRefresh) {
         dispatch(setRouteNeedsRefresh(false));
-        dispatch(fetchTodayRoute());
       }
     }, [needsRefresh, dispatch]),
   );
@@ -68,6 +68,7 @@ const TodayVisitsScreen = () => {
     navigation.navigate('VisitDetail', {
       doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
       pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+      leadId: stop.leadId ? String(stop.leadId) : undefined,
       routeStopId: stop.id,
     });
   };

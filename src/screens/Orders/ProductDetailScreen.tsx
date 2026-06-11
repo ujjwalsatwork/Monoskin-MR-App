@@ -1,56 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  ActivityIndicator,
   Platform,
 } from 'react-native';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
-import {
-  Up,
-  Down,
-} from '@/assets/images';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import { AppStackParamList } from '@/navigation/types';
+import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
-type NavProp = NativeStackNavigationProp<AppStackParamList>;
-
-type Highlight = { label: string; included: boolean };
-type Ingredient = { id: string; name: string; description: string };
-
-const HIGHLIGHTS: Highlight[] = [
-  { label: 'Water-Free',      included: false },
-  { label: 'Alcohol-Free',    included: false },
-  { label: 'Oil-Free',        included: true  },
-  { label: 'Silicone-Free',   included: true  },
-  { label: 'Vegan',           included: true  },
-  { label: 'Gluten-Free',     included: true  },
-  { label: 'Cruelty-Free',    included: true  },
-];
-
-const INGREDIENTS: Ingredient[] = [
-  { id: 'i1', name: 'Oat Extract',    description: 'This product is crafted with quality materials to ensure durability and performance. Designed with your convenience in mind, it seamlessly fits into your everyday life.' },
-  { id: 'i2', name: 'Zinc',           description: 'Zinc helps regulate sebum production and reduces inflammation for clearer skin.' },
-  { id: 'i3', name: 'Allantoin',      description: 'Allantoin soothes and conditions skin, promoting cell renewal and healing.' },
-  { id: 'i4', name: 'All Ingredients', description: 'Aqua, Salicylic Acid, Capryloyl Salicylic Acid, Niacinamide, Zinc PCA, Allantoin, Avena Sativa Kernel Extract, Panthenol, Sodium Hyaluronate.' },
-];
-
-const IngredientSeparator = () => <View style={styles.ingredientSeparator} />;
+type ApiProductDetail = {
+  id: number;
+  code: string;
+  name: string;
+  sku: string;
+  category: string;
+  packSize: string;
+  mrp: string;
+  gst: string;
+  hsnCode: string;
+  availableQty: number;
+  warehouseId: number;
+  warehouseName: string;
+};
 
 const ProductDetailScreen = () => {
   const route = useRoute<RouteProp<AppStackParamList, 'ProductDetail'>>();
-  const navigation = useNavigation<NavProp>();
-  const { productName, productTime } = route.params;
+  const { productId, productName, productTime } = route.params;
 
-  const [expandedIngredient, setExpandedIngredient] = useState<string | null>('i1');
+  const [product, setProduct] = useState<ApiProductDetail | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const toggleIngredient = (id: string) =>
-    setExpandedIngredient(prev => (prev === id ? null : id));
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const res = await apiClient.get<ApiProductDetail>(
+          ENDPOINTS.products.detail(parseInt(productId, 10))
+        );
+        setProduct(res.data);
+      } catch {
+        // keep null — fallback to route params
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProduct();
+  }, [productId]);
+
+  const displayName = product?.name ?? productName;
+  const category = product?.category ?? productTime;
+  const mrp = product ? parseFloat(product.mrp) : 0;
+  const gstRate = product ? parseFloat(product.gst) : 0;
+  const taxAmount = mrp * (gstRate / 100);
+  const mrpInclTax = mrp + taxAmount;
+
+  const specs = product
+    ? [
+        { label: 'SKU', value: product.sku },
+        { label: 'Product Code', value: product.code },
+        { label: 'HSN Code', value: product.hsnCode },
+        { label: 'Pack Size', value: product.packSize },
+        { label: 'Category', value: product.category },
+      ]
+    : [];
+
+  if (loading) {
+    return (
+      <View style={styles.safeArea}>
+        <Header title="Product Details" showBack showNotification showProfile />
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={COLORS.buttonBlue} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.safeArea}>
@@ -64,101 +93,89 @@ const ProductDetailScreen = () => {
             <View style={styles.heroCardIconBox}>
               <Text style={styles.heroCardIcon}>＋</Text>
             </View>
-            <View>
-              <Text style={styles.heroCardTime}>{productTime}</Text>
-              <Text style={styles.heroCardWeight}>100 Gms</Text>
+            <View style={styles.heroCardMeta}>
+              <Text style={styles.heroCardName} numberOfLines={2}>{displayName}</Text>
+              <Text style={styles.heroCardSub}>{product?.packSize ?? '—'}</Text>
             </View>
           </View>
         </View>
 
-        {/* Time + Prescription badge */}
+        {/* Title row */}
         <View style={styles.titleRow}>
-          <Text style={styles.productTime}>{productTime}</Text>
-          <View style={styles.prescriptionBadge}>
-            <Text style={styles.prescriptionText}>PRESCRIPTION</Text>
-          </View>
-        </View>
-
-        {/* Product title */}
-        <Text style={styles.productTitle}>
-          {productName.toUpperCase()}
-        </Text>
-
-        {/* Description card */}
-        <View style={styles.descCard}>
-          <Text style={styles.descBody}>
-            A daily, gentle exfoliating, acne fighting face cleanser. It combines BHA + LHA (Salicylic Acid + Capryloyl Salicylic Acid) in 2% concentration, which provides deep cleansing, pore decongestion & sebum reduction without drying out the skin.
-          </Text>
-          <Text style={styles.descQuote}>
-            "I have seen a reduction in acne and oiliness ever since I started using this face cleanser" -Nikhil V.
-          </Text>
-
-          {['Fragrance Free', 'Essential Oil Free', 'Non-Comedogenic'].map((feat, i) => (
-            <View key={i} style={styles.featureRow}>
-              <Text style={styles.featureCheck}>✓</Text>
-              <Text style={styles.featureText}>{feat}</Text>
+          <Text style={styles.productCategory}>{category}</Text>
+          {product?.sku ? (
+            <View style={styles.skuBadge}>
+              <Text style={styles.skuBadgeText}>SKU: {product.sku}</Text>
             </View>
-          ))}
-
-          <View style={styles.amountRow}>
-            <Text style={styles.amountLabel}>Amount</Text>
-            <Text style={styles.amountValue}>₹1,250.00</Text>
-          </View>
+          ) : null}
         </View>
 
-        {/* Quick Order */}
-        {/* <TouchableOpacity
-          style={styles.quickOrderBtn}
-          activeOpacity={0.85}
-          onPress={() => {
-            const orderNumber = Math.floor(10000 + Math.random() * 90000).toString();
-            navigation.navigate('Payment', { subtotal: 1250, orderNumber });
-          }}
-        >
-          <Text style={styles.quickOrderText}>Quick Order  ›</Text>
-        </TouchableOpacity> */}
+        {/* Product name */}
+        <Text style={styles.productTitle}>{displayName.toUpperCase()}</Text>
 
-        {/* Highlights */}
-        <Text style={styles.sectionLabel}>HIGHLIGHTS</Text>
-        <View style={styles.highlightsCard}>
-          <Text style={styles.phText}>PH  <Text style={styles.phValue}>6.0 - 7.5</Text></Text>
-          {HIGHLIGHTS.map((h, i) => (
-            <View key={i} style={styles.highlightRow}>
-              <View style={[styles.highlightIcon, h.included ? styles.highlightIconIncluded : styles.highlightIconExcluded]}>
-                <Text style={[styles.highlightIconText, h.included ? styles.highlightIconTextIncluded : styles.highlightIconTextExcluded]}>
-                  {h.included ? '✓' : '✕'}
-                </Text>
-              </View>
-              <Text style={[styles.highlightLabel, !h.included && styles.highlightLabelExcluded]}>
-                {h.label}
+        {/* Pricing card */}
+        <View style={styles.pricingCard}>
+          <View style={styles.pricingRow}>
+            <View style={styles.pricingBlock}>
+              <Text style={styles.pricingLabel}>MRP (excl. tax)</Text>
+              <Text style={styles.pricingValue}>
+                ₹{mrp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </Text>
             </View>
-          ))}
+            <View style={styles.pricingDivider} />
+            <View style={styles.pricingBlock}>
+              <Text style={styles.pricingLabel}>GST</Text>
+              <Text style={styles.pricingValue}>{product?.gst ?? '0'}%</Text>
+            </View>
+            <View style={styles.pricingDivider} />
+            <View style={styles.pricingBlock}>
+              <Text style={styles.pricingLabel}>MRP (incl. tax)</Text>
+              <Text style={[styles.pricingValue, styles.pricingValueBlue]}>
+                ₹{mrpInclTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Ingredients */}
-        <Text style={styles.sectionLabel}>INGREDIENTS</Text>
-        <View style={styles.ingredientsCard}>
-          {INGREDIENTS.map((item, i) => (
-            <View key={item.id}>
-              {i > 0 && <IngredientSeparator />}
-              <TouchableOpacity
-                style={styles.ingredientHeader}
-                onPress={() => toggleIngredient(item.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.ingredientName}>{item.name}</Text>
-                {expandedIngredient === item.id
-                  ? <Up width={16} height={16} />
-                  : <Down width={16} height={16} />
-                }
-              </TouchableOpacity>
-              {expandedIngredient === item.id && (
-                <Text style={styles.ingredientDesc}>{item.description}</Text>
+        {/* Stock Card */}
+        <View style={styles.stockCard}>
+          <View style={styles.stockRow}>
+            <View style={styles.stockBlock}>
+              <Text style={styles.stockLabel}>AVAILABLE STOCK</Text>
+              <Text style={[
+                styles.stockValue,
+                (product?.availableQty ?? 0) < 10 && styles.stockValueLow,
+              ]}>
+                {product?.availableQty ?? '—'}
+              </Text>
+              {(product?.availableQty ?? 0) < 10 && (
+                <Text style={styles.stockWarning}>Low Stock</Text>
               )}
             </View>
-          ))}
+            <View style={styles.stockDivider} />
+            <View style={styles.stockBlock}>
+              <Text style={styles.stockLabel}>WAREHOUSE</Text>
+              <Text style={styles.stockValue} numberOfLines={2}>
+                {product?.warehouseName ?? '—'}
+              </Text>
+            </View>
+          </View>
         </View>
+
+        {/* Product Specifications */}
+        {specs.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>PRODUCT SPECIFICATIONS</Text>
+            <View style={styles.specsCard}>
+              {specs.map((spec, i) => (
+                <View key={i} style={[styles.specRow, i < specs.length - 1 && styles.specRowBorder]}>
+                  <Text style={styles.specLabel}>{spec.label}</Text>
+                  <Text style={styles.specValue}>{spec.value || '—'}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -168,8 +185,7 @@ const ProductDetailScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
-
-
+  centerState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { paddingBottom: 16 },
 
   // Hero Banner
@@ -179,6 +195,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+    paddingHorizontal: 24,
   },
   heroCard: {
     flexDirection: 'row',
@@ -190,6 +207,7 @@ const styles = StyleSheet.create({
     gap: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+    width: '100%',
   },
   heroCardIconBox: {
     width: 44, height: 44,
@@ -197,10 +215,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.buttonBlue,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   heroCardIcon: { color: COLORS.white, fontSize: 22, lineHeight: 26 },
-  heroCardTime: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.white, marginBottom: 2 },
-  heroCardWeight: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: 'rgba(255,255,255,0.75)' },
+  heroCardMeta: { flex: 1 },
+  heroCardName: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.white, marginBottom: 2 },
+  heroCardSub: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: 'rgba(255,255,255,0.75)' },
 
   // Title row
   titleRow: {
@@ -210,15 +230,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  productTime: { fontSize: FONTS.size.xxl, fontFamily: FONTS.family.bold, color: COLORS.textDark },
-  prescriptionBadge: {
+  productCategory: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textDark, flex: 1, marginRight: 8 },
+  skuBadge: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    flexShrink: 0,
   },
-  prescriptionText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, letterSpacing: 0.4 },
+  skuBadgeText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
 
   // Product title
   productTitle: {
@@ -230,55 +251,52 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Description card
-  descCard: {
+  // Pricing card
+  pricingCard: {
     marginHorizontal: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-  },
-  descBody: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    lineHeight: 22,
-    marginBottom: 12,
-  },
-  descQuote: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.italic,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
     marginBottom: 14,
+    overflow: 'hidden',
   },
-  featureRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  featureCheck: { fontSize: FONTS.size.md, color: COLORS.buttonBlue, marginRight: 8, fontFamily: FONTS.family.bold },
-  featureText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.regular, color: COLORS.textDark },
-  amountRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+  pricingRow: { flexDirection: 'row', alignItems: 'stretch' },
+  pricingBlock: { flex: 1, padding: 14, alignItems: 'center' },
+  pricingDivider: { width: 1, backgroundColor: COLORS.border },
+  pricingLabel: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textSecondary,
+    letterSpacing: 0.4,
+    marginBottom: 6,
+    textAlign: 'center',
   },
-  amountLabel: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.bold, color: COLORS.textSecondary },
-  amountValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
+  pricingValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center' },
+  pricingValueBlue: { color: COLORS.buttonBlue },
 
-  // Quick Order
-  quickOrderBtn: {
+  // Stock card
+  stockCard: {
     marginHorizontal: 16,
-    backgroundColor: COLORS.buttonBlue,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    marginBottom: 20,
+    overflow: 'hidden',
   },
-  quickOrderText: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.semibold, color: COLORS.white },
+  stockRow: { flexDirection: 'row', alignItems: 'stretch' },
+  stockBlock: { flex: 1, padding: 14, alignItems: 'center' },
+  stockDivider: { width: 1, backgroundColor: COLORS.border },
+  stockLabel: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textSecondary,
+    letterSpacing: 0.4,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  stockValue: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.bold, color: COLORS.textDark, textAlign: 'center' },
+  stockValueLow: { color: '#DC2626' },
+  stockWarning: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: '#DC2626', marginTop: 4 },
 
   // Section label
   sectionLabel: {
@@ -290,56 +308,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 
-  // Highlights
-  highlightsCard: {
-    marginHorizontal: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-  },
-  phText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textSecondary, marginBottom: 12 },
-  phValue: { color: COLORS.buttonBlue },
-  highlightRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  highlightIcon: {
-    width: 20, height: 20, borderRadius: 10,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 10,
-  },
-  highlightIconIncluded: { backgroundColor: 'rgba(46,80,178,0.1)' },
-  highlightIconExcluded: { backgroundColor: 'rgba(211,47,47,0.1)' },
-  highlightIconText: { fontSize: 11, fontFamily: FONTS.family.bold, lineHeight: 14 },
-  highlightIconTextIncluded: { color: COLORS.buttonBlue },
-  highlightIconTextExcluded: { color: COLORS.error },
-  highlightLabel: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
-  highlightLabelExcluded: { color: COLORS.textSecondary },
-
-  // Ingredients
-  ingredientsCard: {
+  // Specs card
+  specsCard: {
     marginHorizontal: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 14,
     overflow: 'hidden',
   },
-  ingredientSeparator: { height: 1, backgroundColor: COLORS.border },
-  ingredientHeader: {
+  specRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 13,
   },
-  ingredientName: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textSecondary },
-  ingredientDesc: {
-    fontSize: FONTS.size.md,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    lineHeight: 22,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-  },
+  specRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  specLabel: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary },
+  specValue: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark, maxWidth: '55%', textAlign: 'right' },
 });
 
 export default ProductDetailScreen;

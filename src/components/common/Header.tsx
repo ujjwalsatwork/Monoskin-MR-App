@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { BackArrowIconBlack, NotificationIcon, ProfileIcon } from '@/assets/images';
 import { COLORS } from '@/constants/colors';
@@ -21,9 +22,10 @@ const Header: React.FC<HeaderProps> = ({
   onBack,
 }) => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
       {showBack && (
         <TouchableOpacity style={styles.iconButton} onPress={onBack ?? (() => navigation.goBack())}>
           <BackArrowIconBlack />
@@ -55,7 +57,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',

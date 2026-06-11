@@ -13,6 +13,7 @@ type Props = {
   visible: boolean;
   selectedDate: Date | null;
   minDate?: Date;
+  maxDate?: Date;
   onSelect: (date: Date) => void;
   onClose: () => void;
 };
@@ -23,7 +24,7 @@ const MONTHS_FULL = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-const DatePickerModal = ({ visible, selectedDate, minDate, onSelect, onClose }: Props) => {
+const DatePickerModal = ({ visible, selectedDate, minDate, maxDate, onSelect, onClose }: Props) => {
   const today = new Date();
   const [viewYear, setViewYear] = useState((selectedDate ?? today).getFullYear());
   const [viewMonth, setViewMonth] = useState((selectedDate ?? today).getMonth());
@@ -51,7 +52,16 @@ const DatePickerModal = ({ visible, selectedDate, minDate, onSelect, onClose }: 
     else setViewMonth(m => m - 1);
   };
 
+  const canGoNext = () => {
+    if (!maxDate) return true;
+    const max = new Date(maxDate);
+    if (viewYear > max.getFullYear()) return false;
+    if (viewYear === max.getFullYear() && viewMonth >= max.getMonth()) return false;
+    return true;
+  };
+
   const nextMonth = () => {
+    if (!canGoNext()) return;
     if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
     else setViewMonth(m => m + 1);
   };
@@ -68,12 +78,19 @@ const DatePickerModal = ({ visible, selectedDate, minDate, onSelect, onClose }: 
     today.getFullYear() === viewYear;
 
   const isDisabled = (d: number) => {
-    if (!minDate) return false;
     const cell = new Date(viewYear, viewMonth, d);
     cell.setHours(0, 0, 0, 0);
-    const min = new Date(minDate);
-    min.setHours(0, 0, 0, 0);
-    return cell < min;
+    if (minDate) {
+      const min = new Date(minDate);
+      min.setHours(0, 0, 0, 0);
+      if (cell < min) return true;
+    }
+    if (maxDate) {
+      const max = new Date(maxDate);
+      max.setHours(0, 0, 0, 0);
+      if (cell > max) return true;
+    }
+    return false;
   };
 
   const rows: (number | null)[][] = [];
@@ -92,8 +109,8 @@ const DatePickerModal = ({ visible, selectedDate, minDate, onSelect, onClose }: 
               <Text style={s.navText}>‹</Text>
             </TouchableOpacity>
             <Text style={s.monthYear}>{MONTHS_FULL[viewMonth]} {viewYear}</Text>
-            <TouchableOpacity onPress={nextMonth} style={s.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={s.navText}>›</Text>
+            <TouchableOpacity onPress={nextMonth} style={[s.navBtn, !canGoNext() && s.navBtnDisabled]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} disabled={!canGoNext()}>
+              <Text style={[s.navText, !canGoNext() && s.navTextDisabled]}>›</Text>
             </TouchableOpacity>
           </View>
 
@@ -153,7 +170,7 @@ const CELL_SIZE = 36;
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
@@ -190,6 +207,12 @@ const s = StyleSheet.create({
     color: COLORS.buttonBlue,
     lineHeight: 26,
     fontFamily: FONTS.family.bold,
+  },
+  navBtnDisabled: {
+    opacity: 0.3,
+  },
+  navTextDisabled: {
+    color: COLORS.textMuted,
   },
   monthYear: {
     fontSize: FONTS.size.lg,

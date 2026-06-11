@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '@/constants/colors';
@@ -15,6 +17,7 @@ import Header from '@/components/common/Header';
 import {
   DoctorBagIcon,
   PillIcon,
+  LeadsTabIcon,
   MapPinOutlineIcon,
   PlayIcon,
   MapIcon,
@@ -61,12 +64,31 @@ const isSameDay = (a: Date, b: Date) =>
 
 type RouteScreenNavigationProp = NativeStackNavigationProp<AppStackParamList>;
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const getCalendarGrid = (year: number, month: number): (Date | null)[] => {
+  const firstDay = new Date(year, month, 1).getDay();
+  const offset = firstDay === 0 ? 6 : firstDay - 1;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const grid: (Date | null)[] = Array(offset).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    grid.push(new Date(year, month, d));
+  }
+  while (grid.length % 7 !== 0) grid.push(null);
+  return grid;
+};
+
 const RouteScreen = () => {
   const navigation = useNavigation<RouteScreenNavigationProp>();
   const dispatch = useDispatch<AppDispatch>();
 
   const [selectedDate, setLocalSelectedDate] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
 
   const { data: routeData, loading, error, needsRefresh } = useSelector(
     (state: RootState) => state.route,
@@ -99,16 +121,33 @@ const RouteScreen = () => {
     });
   }, [navigation, needsRefresh, selectedDate, loadRoute, dispatch]);
 
+  const isInCurrentWeek = (date: Date) => weekDays.some(wd => isSameDay(wd.date, date));
+
   const handleDateSelect = (date: Date) => {
     setLocalSelectedDate(date);
     dispatch(setSelectedDate(formatDateForApi(date)));
     dispatch(clearRouteError());
   };
 
+  const handleCalendarSelect = (date: Date) => {
+    setShowCalendar(false);
+    handleDateSelect(date);
+  };
+
+  const shiftCalendarMonth = (delta: number) => {
+    setCalendarViewDate(prev => {
+      const d = new Date(prev);
+      d.setDate(1);
+      d.setMonth(d.getMonth() + delta);
+      return d;
+    });
+  };
+
   const handleStartVisit = (stop: RouteStop) => {
     navigation.navigate('VisitDetail', {
       doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
       pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+      leadId: stop.leadId ? String(stop.leadId) : undefined,
       routeStopId: stop.id,
     });
   };
@@ -149,9 +188,72 @@ const RouteScreen = () => {
     return routeData.date < today ? 'Past date — view only' : 'Future date — view only';
   };
 
+  const calendarGrid = getCalendarGrid(calendarViewDate.getFullYear(), calendarViewDate.getMonth());
+
   return (
     <View style={styles.mainContainer}>
       <Header title="Today's Route Plan" showBack showNotification showProfile />
+
+      {/* Calendar Modal */}
+      <Modal
+        visible={showCalendar}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <Pressable style={styles.calendarOverlay} onPress={() => setShowCalendar(false)}>
+          <Pressable style={styles.calendarModal} onPress={e => e.stopPropagation()}>
+            {/* Month navigation */}
+            <View style={styles.calendarHeader}>
+              <TouchableOpacity onPress={() => shiftCalendarMonth(-1)} style={styles.calendarNavBtn}>
+                <Text style={styles.calendarNavText}>{'<'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.calendarMonthLabel}>
+                {MONTH_NAMES[calendarViewDate.getMonth()]} {calendarViewDate.getFullYear()}
+              </Text>
+              <TouchableOpacity onPress={() => shiftCalendarMonth(1)} style={styles.calendarNavBtn}>
+                <Text style={styles.calendarNavText}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Day-of-week headers */}
+            <View style={styles.calendarDayRow}>
+              {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => (
+                <Text key={d} style={styles.calendarDayHeader}>{d}</Text>
+              ))}
+            </View>
+            {/* Date grid */}
+            <View style={styles.calendarGrid}>
+              {calendarGrid.map((date, idx) => {
+                if (!date) return <View key={`empty-${idx}`} style={styles.calendarCell} />;
+                const isSelected = isSameDay(date, selectedDate);
+                const isToday = isSameDay(date, new Date());
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.calendarCell,
+                      isSelected && styles.calendarCellSelected,
+                      !isSelected && isToday && styles.calendarCellToday,
+                    ]}
+                    onPress={() => handleCalendarSelect(date)}
+                  >
+                    <Text style={[
+                      styles.calendarCellText,
+                      isSelected && styles.calendarCellTextSelected,
+                      !isSelected && isToday && styles.calendarCellTextToday,
+                    ]}>
+                      {date.getDate()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={styles.calendarCloseBtn} onPress={() => setShowCalendar(false)}>
+              <Text style={styles.calendarCloseBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={COLORS.buttonBlue} />
@@ -189,11 +291,26 @@ const RouteScreen = () => {
           })}
         </ScrollView>
 
-        {loading && !routeData && (
-          <View style={styles.centeredContainer}>
-            <ActivityIndicator size="large" color={COLORS.buttonBlue} />
-          </View>
-        )}
+        {/* Custom date picker button */}
+        <TouchableOpacity
+          style={[
+            styles.calendarButton,
+            !isInCurrentWeek(selectedDate) && styles.calendarButtonActive,
+          ]}
+          onPress={() => {
+            setCalendarViewDate(new Date(selectedDate));
+            setShowCalendar(true);
+          }}
+        >
+          <Text style={[
+            styles.calendarButtonText,
+            !isInCurrentWeek(selectedDate) && styles.calendarButtonTextActive,
+          ]}>
+            {isInCurrentWeek(selectedDate)
+              ? 'Pick Custom Date'
+              : `Custom: ${selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+          </Text>
+        </TouchableOpacity>
 
         {!loading && error && (
           <View style={styles.centeredContainer}>
@@ -228,17 +345,24 @@ const RouteScreen = () => {
             <View style={styles.summaryRow}>
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
-                  <DoctorBagIcon />
+                  <DoctorBagIcon width={16} height={16} />
                   <Text style={styles.metricLabel}>Doctors</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalDoctors}</Text>
               </View>
               <View style={styles.metricCard}>
                 <View style={styles.metricCardHeader}>
-                  <PillIcon />
+                  <PillIcon width={16} height={16} />
                   <Text style={styles.metricLabel}>Chemists</Text>
                 </View>
                 <Text style={styles.metricValue}>{routeData.summary.totalChemists}</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <View style={styles.metricCardHeader}>
+                  <LeadsTabIcon width={16} height={16} />
+                  <Text style={styles.metricLabel}>Leads</Text>
+                </View>
+                <Text style={styles.metricValue}>{routeData.summary.totalLeads}</Text>
               </View>
             </View>
 
@@ -482,32 +606,32 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     justifyContent: 'space-between',
     marginBottom: 20,
-    gap: 16,
+    gap: 8,
   },
   metricCard: {
     flex: 1,
     borderWidth: 1,
     borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 16,
+    padding: 10,
     backgroundColor: '#FFFFFF',
   },
   metricCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   metricLabel: {
-    fontSize: FONTS.size.sm,
+    fontSize: FONTS.size.xs,
     fontFamily: FONTS.family.medium,
     color: COLORS.textSecondary,
-    marginLeft: 8,
+    marginLeft: 5,
   },
   metricValue: {
-    fontSize: 28,
+    fontSize: 22,
     fontFamily: FONTS.family.bold,
     color: '#000',
   },
@@ -757,6 +881,120 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.md,
     fontFamily: FONTS.family.bold,
     marginLeft: 8,
+  },
+  calendarButton: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+  },
+  calendarButtonActive: {
+    borderColor: COLORS.buttonBlue,
+    backgroundColor: '#EFF6FF',
+  },
+  calendarButtonText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+  },
+  calendarButtonTextActive: {
+    color: COLORS.buttonBlue,
+    fontFamily: FONTS.family.bold,
+  },
+  calendarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  calendarModal: {
+    width: '88%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarNavBtn: {
+    padding: 8,
+  },
+  calendarNavText: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+  },
+  calendarMonthLabel: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: '#000',
+  },
+  calendarDayRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calendarDayHeader: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: '#9CA3AF',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calendarCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  calendarCellSelected: {
+    backgroundColor: COLORS.buttonBlue,
+    borderRadius: 20,
+  },
+  calendarCellToday: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.buttonBlue,
+  },
+  calendarCellText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: '#000',
+  },
+  calendarCellTextSelected: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.family.bold,
+  },
+  calendarCellTextToday: {
+    color: COLORS.buttonBlue,
+    fontFamily: FONTS.family.bold,
+  },
+  calendarCloseBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  calendarCloseBtnText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
   },
 });
 
