@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import DeviceInfo from 'react-native-device-info';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import Config from 'react-native-config';
 import { useDispatch, useSelector } from 'react-redux';
@@ -80,12 +81,32 @@ const ProfileScreen = () => {
     (state: RootState) => state.profile,
   );
 
+  const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchMonthlyExpense = useCallback(async (mrId: number) => {
+    const now = new Date();
+    try {
+      const { data } = await apiClient.get<
+        { expenseDate: string; totalAmount: string; status: string }[]
+      >(`/mrs/${mrId}/expenses`);
+      const total = data
+        .filter(e => {
+          if (e.status !== 'Approved') return false;
+          const d = new Date(e.expenseDate);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        })
+        .reduce((sum, e) => sum + parseFloat(e.totalAmount), 0);
+      setApprovedMonthlyTotal(total);
+    } catch {
+      setApprovedMonthlyTotal(null);
+    }
+  }, []);
+
   useEffect(() => {
     dispatch(fetchMyProfile());
   }, [dispatch]);
-
-  const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('');
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
@@ -93,23 +114,20 @@ const ProfileScreen = () => {
 
   useEffect(() => {
     if (!profile?.id) return;
-    const now = new Date();
-    apiClient
-      .get<{ expenseDate: string; totalAmount: string; status: string }[]>(
-        `/mrs/${profile.id}/expenses`,
-      )
-      .then(({ data }) => {
-        const total = data
-          .filter(e => {
-            if (e.status !== 'Approved') return false;
-            const d = new Date(e.expenseDate);
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-          })
-          .reduce((sum, e) => sum + parseFloat(e.totalAmount), 0);
-        setApprovedMonthlyTotal(total);
-      })
-      .catch(() => setApprovedMonthlyTotal(null));
-  }, [profile?.id]);
+    fetchMonthlyExpense(profile.id);
+  }, [profile?.id, fetchMonthlyExpense]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const result = await dispatch(fetchMyProfile()).unwrap();
+      if (result?.id) await fetchMonthlyExpense(result.id);
+    } catch {
+      // errors are reflected in the profile slice / expense state
+    } finally {
+      setRefreshing(false);
+    }
+  }, [dispatch, fetchMonthlyExpense]);
 
   const conversionRate =
     profile && profile.leadsAssigned > 0
@@ -125,11 +143,11 @@ const ProfileScreen = () => {
     <View style={styles.container}>
       <Header title="My Profile" showBack showNotification />
 
-      {isLoading ? (
+      {isLoading && !profile ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      ) : error ? (
+      ) : error && !profile ? (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
@@ -137,6 +155,14 @@ const ProfileScreen = () => {
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
         >
           {/* Avatar Section */}
           <View style={styles.avatarSection}>

@@ -13,6 +13,7 @@ import {
   FlatList,
   ActivityIndicator,
   Linking,
+  PermissionsAndroid,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '@/constants/colors';
@@ -139,6 +140,50 @@ const formatDateTime = (raw: string): string => {
 };
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
+
+// ── Permission helpers ────────────────────────────────────────────────────────
+
+const requestAndroidPermission = async (
+  permission: (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS],
+  rationale: PermissionsAndroid.Rationale,
+): Promise<'granted' | 'denied' | 'never_ask_again'> => {
+  const current = await PermissionsAndroid.check(permission);
+  if (current) return 'granted';
+  const result = await PermissionsAndroid.request(permission, rationale);
+  if (result === PermissionsAndroid.RESULTS.GRANTED) return 'granted';
+  if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) return 'never_ask_again';
+  return 'denied';
+};
+
+const ensureCameraPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
+  if (Platform.OS !== 'android') return 'granted';
+  const result = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA, {
+    title: 'Camera Permission',
+    message: 'Monoskin MR needs camera access to capture a photo for this visit.',
+    buttonPositive: 'Allow',
+    buttonNegative: 'Deny',
+  });
+  if (result === 'granted') return 'granted';
+  if (result === 'never_ask_again') return 'settings';
+  return 'denied';
+};
+
+const ensureGalleryPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
+  if (Platform.OS !== 'android') return 'granted';
+  const permission =
+    Number(Platform.Version) >= 33
+      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+  const result = await requestAndroidPermission(permission, {
+    title: 'Gallery Permission',
+    message: 'Monoskin MR needs access to your photo library to attach photos to this visit.',
+    buttonPositive: 'Allow',
+    buttonNegative: 'Deny',
+  });
+  if (result === 'granted') return 'granted';
+  if (result === 'never_ask_again') return 'settings';
+  return 'denied';
+};
 
 const VisitDetailScreen = () => {
   const navigation = useNavigation<NavProp>();
@@ -405,36 +450,62 @@ const VisitDetailScreen = () => {
     );
   };
 
+  const openCamera = async () => {
+    const status = await ensureCameraPermission();
+    if (status === 'settings') {
+      Alert.alert(
+        'Camera Permission Required',
+        'Camera access has been denied. Please enable it in your device Settings to take a photo.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    if (status === 'denied') return;
+    launchCamera({ mediaType: 'photo', quality: 0.8, saveToPhotos: false }, res => {
+      if (!res.didCancel && !res.errorCode && res.assets?.[0]) {
+        const a = res.assets[0];
+        setAttachments(prev => [...prev, {
+          uri: a.uri!,
+          type: a.type || 'image/jpeg',
+          name: a.fileName || `photo_${Date.now()}.jpg`,
+        }]);
+      }
+    });
+  };
+
+  const openGallery = async () => {
+    const status = await ensureGalleryPermission();
+    if (status === 'settings') {
+      Alert.alert(
+        'Gallery Permission Required',
+        'Photo library access has been denied. Please enable it in your device Settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    if (status === 'denied') return;
+    launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 5 }, res => {
+      if (!res.didCancel && !res.errorCode && res.assets) {
+        const newAtts: Attachment[] = res.assets.map(a => ({
+          uri: a.uri!,
+          type: a.type || 'image/jpeg',
+          name: a.fileName || `photo_${Date.now()}.jpg`,
+        }));
+        setAttachments(prev => [...prev, ...newAtts]);
+      }
+    });
+  };
+
   const handleImageUpload = () => {
     Alert.alert('Upload Photo', 'Choose source', [
-      {
-        text: 'Camera',
-        onPress: () =>
-          launchCamera({ mediaType: 'photo', quality: 0.8, saveToPhotos: false }, res => {
-            if (!res.didCancel && res.assets?.[0]) {
-              const a = res.assets[0];
-              setAttachments(prev => [...prev, {
-                uri: a.uri!,
-                type: a.type || 'image/jpeg',
-                name: a.fileName || `photo_${Date.now()}.jpg`,
-              }]);
-            }
-          }),
-      },
-      {
-        text: 'Gallery',
-        onPress: () =>
-          launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 5 }, res => {
-            if (!res.didCancel && res.assets) {
-              const newAtts: Attachment[] = res.assets.map(a => ({
-                uri: a.uri!,
-                type: a.type || 'image/jpeg',
-                name: a.fileName || `photo_${Date.now()}.jpg`,
-              }));
-              setAttachments(prev => [...prev, ...newAtts]);
-            }
-          }),
-      },
+      { text: 'Camera', onPress: openCamera },
+      { text: 'Gallery', onPress: openGallery },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
