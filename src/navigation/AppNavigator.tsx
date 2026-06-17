@@ -1,8 +1,11 @@
 import React from 'react';
+import { View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/redux/store';
+import { MonoskinLogo } from '@/assets/images';
+import { COLORS } from '@/constants/colors';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import VisitDetailScreen from '@/screens/Visits/VisitDetailScreen';
@@ -35,8 +38,13 @@ const AppNavigator = () => {
   const { isAuthenticated, isLoading } = useSelector((state: RootState) => state.auth);
 
   if (isLoading) {
-    // We could return a SplashScreen here
-    return null;
+    return (
+      <View style={styles.splashContainer}>
+        <View style={styles.logoWrapper}>
+          <MonoskinLogo height={300} width={100} />
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -158,5 +166,18 @@ const AppNavigator = () => {
     </NavigationContainer>
   );
 };
+
+const styles = StyleSheet.create({
+  splashContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  logoWrapper: {
+    marginBottom: 20,
+    transform: [{ scale: 1.5 }], // Scale up the logo slightly for the splash screen
+  },
+});
 
 export default AppNavigator;

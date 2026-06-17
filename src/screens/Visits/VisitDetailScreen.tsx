@@ -201,6 +201,11 @@ const VisitDetailScreen = () => {
     ? 'Pharmacy Visit'
     : 'Doctor Visit';
 
+  // When the screen is opened from a route stop, portfolio card or lead card,
+  // the visit type is implied by the entity (doctor / pharmacy / lead) and must
+  // not be changed by the user.
+  const visitTypeLocked = !!(doctorId || pharmacyId || leadId);
+
   const [doctorData, setDoctorData] = useState<DoctorDetails | null>(null);
   const [pharmacyData, setPharmacyData] = useState<PharmacyDetails | null>(null);
   const [leadData, setLeadData] = useState<LeadDetails | null>(null);
@@ -744,16 +749,25 @@ const VisitDetailScreen = () => {
         {/* Visit Type */}
         <SectionLabel title="VISIT TYPE" />
         <View style={styles.chipsRow}>
-          {VISIT_TYPES.map(type => (
-            <TouchableOpacity
-              key={type}
-              style={[styles.chip, visitType === type && styles.chipActive]}
-              onPress={() => setVisitType(type)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.chipText, visitType === type && styles.chipTextActive]}>{type}</Text>
-            </TouchableOpacity>
-          ))}
+          {VISIT_TYPES.map(type => {
+            const isSelected = visitType === type;
+            const isDisabled = visitTypeLocked && !isSelected;
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.chip,
+                  isSelected && styles.chipActive,
+                  isDisabled && styles.chipDisabled,
+                ]}
+                onPress={() => { if (!visitTypeLocked) setVisitType(type); }}
+                disabled={isDisabled}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>{type}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Outcome */}
@@ -775,8 +789,8 @@ const VisitDetailScreen = () => {
           <Text style={styles.gpsIndicator}>Location captured</Text>
         )} */}
 
-        {/* Sample Products — hidden for lead visits */}
-        {!leadId && <CollapsibleSection
+        {/* Sample Products */}
+        <CollapsibleSection
           title="Sample Products"
           expanded={sampleExpanded}
           onToggle={() => setSampleExpanded(p => !p)}
@@ -809,7 +823,7 @@ const VisitDetailScreen = () => {
               </TouchableOpacity>
             ))
           )}
-        </CollapsibleSection>}
+        </CollapsibleSection>
 
         {/* Pharmacy Network – only when API provides it */}
         {doctorData?.pharmacyNetwork && doctorData.pharmacyNetwork.length > 0 && (
@@ -1386,6 +1400,7 @@ const styles = StyleSheet.create({
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
   chipActive: { backgroundColor: COLORS.buttonBlue, borderColor: COLORS.buttonBlue },
+  chipDisabled: { opacity: 0.4 },
   chipText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textDark },
   chipTextActive: { color: COLORS.white },
 

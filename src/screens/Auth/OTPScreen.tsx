@@ -73,7 +73,12 @@ const OTPInputs = React.memo(({ otp, onOtpChange, onKeyPress, inputRefs }: OTPIn
         onChangeText={text => onOtpChange(text, index)}
         onKeyPress={e => onKeyPress(e, index)}
         keyboardType="numeric"
-        maxLength={1}
+        // Allow a pasted / autofilled 6-digit code to reach onChangeText
+        // instead of being truncated to a single character on Android.
+        maxLength={6}
+        selectTextOnFocus
+        textContentType="oneTimeCode"
+        autoComplete={index === 0 ? (Platform.OS === 'android' ? 'sms-otp' : 'one-time-code') : 'off'}
         ref={ref => {
           if (ref) {
             inputRefs.current[index] = ref;
@@ -140,13 +145,34 @@ const OTPScreen = ({ route, navigation }: Props) => {
   }, [isScreenFocused, timerKey]);
 
   const handleOtpChange = useCallback((text: string, index: number) => {
-    const newOtp = [...otp];
-    newOtp[index] = text;
-    setOtp(newOtp);
-    if (text !== '' && index < 5) {
+    // Keep digits only; trims spaces and ignores any non-numeric characters.
+    const digits = text.replace(/\D/g, '');
+
+    // Paste / SMS autofill: multiple digits land in a single box. Distribute
+    // them across the boxes starting at the current index, truncating to 6.
+    if (digits.length > 1) {
+      setOtp(prev => {
+        const next = [...prev];
+        for (let i = 0; i < digits.length && index + i < 6; i++) {
+          next[index + i] = digits[i];
+        }
+        return next;
+      });
+      const lastFilled = Math.min(index + digits.length, 6) - 1;
+      inputRefs.current[Math.min(lastFilled + 1, 5)]?.focus();
+      return;
+    }
+
+    // Normal single-digit entry.
+    setOtp(prev => {
+      const next = [...prev];
+      next[index] = digits;
+      return next;
+    });
+    if (digits !== '' && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
-  }, [otp]);
+  }, []);
 
   const handleKeyPress = useCallback((e: any, index: number) => {
     if (e.nativeEvent.key === 'Backspace' && index > 0 && otp[index] === '') {

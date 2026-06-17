@@ -22,6 +22,20 @@ const ErrorCircleIcon = () => (
   </Svg>
 );
 
+const CheckboxIcon = ({ checked, faded }: { checked: boolean; faded?: boolean }) => (
+  <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" opacity={faded ? 0.4 : 1}>
+    <Path
+      d="M3 7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7z"
+      fill={checked ? '#2D3B8A' : 'transparent'}
+      stroke={checked ? '#2D3B8A' : '#B0B6C3'}
+      strokeWidth="1.6"
+    />
+    {checked && (
+      <Path d="M8 12l3 3 5-6" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    )}
+  </Svg>
+);
+
 type AlertType = 'success' | 'error' | 'info';
 
 interface AlertState {
@@ -82,7 +96,7 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
 const STAGE_OPTIONS = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted', 'Lost'];
 const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'];
-const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Other'];
+const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Walk-in Visit', 'Phone Call', 'Email', 'WhatsApp', 'Other'];
 
 /* ─── Generic options bottom-sheet ───────────────────────────────── */
 type OptionsSheetProps = {
@@ -273,6 +287,7 @@ const AddPharmacyLeadScreen = () => {
     state: leadData?.state || '',
     address: leadData?.address || '',
     phone: leadData?.phone || '',
+    whatsappNumber: leadData?.whatsappNumber || '',
     email: leadData?.email || '',
     stage: leadData?.stage || 'New',
     priority: leadData?.priority || 'Medium',
@@ -322,8 +337,30 @@ const AddPharmacyLeadScreen = () => {
   }, [editMode, leadData]);
 
 
+  const [sameAsPhone, setSameAsPhone] = useState(false);
+
   const set = (key: keyof typeof form) => (val: string) =>
     setForm(prev => ({ ...prev, [key]: val }));
+
+  // Numeric-only, max 10 digits — keeps WhatsApp in sync with phone while the
+  // "same as phone" option is enabled.
+  const setPhoneNumber = (key: 'phone' | 'whatsappNumber') => (val: string) => {
+    const numericVal = val.replace(/[^0-9]/g, '').slice(0, 10);
+    setForm(prev => ({
+      ...prev,
+      [key]: numericVal,
+      ...(key === 'phone' && sameAsPhone ? { whatsappNumber: numericVal } : {}),
+    }));
+  };
+
+  const toggleSameAsPhone = () => {
+    if (!form.phone) return;
+    setSameAsPhone(prev => {
+      const next = !prev;
+      if (next) setForm(f => ({ ...f, whatsappNumber: f.phone }));
+      return next;
+    });
+  };
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -436,20 +473,49 @@ const AddPharmacyLeadScreen = () => {
           />
         </Field>
 
-        {/* Phone */}
-        <Field label="Phone">
-          <View style={styles.phoneRow}>
-            <PhoneSmallIcon width={16} height={16} />
+        {/* Phone + WhatsApp row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Phone</Text>
+            <View style={styles.phoneRow}>
+              <PhoneSmallIcon width={16} height={16} />
+              <TextInput
+                style={[styles.input, styles.phoneInput]}
+                placeholder="+91 9876543210"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="phone-pad"
+                maxLength={10}
+                value={form.phone}
+                onChangeText={setPhoneNumber('phone')}
+              />
+            </View>
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>WhatsApp Number</Text>
             <TextInput
-              style={[styles.input, styles.phoneInput]}
-              placeholder="+91 9876543210"
+              style={styles.input}
+              placeholder="WhatsApp number"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="phone-pad"
-              value={form.phone}
-              onChangeText={set('phone')}
+              maxLength={10}
+              value={form.whatsappNumber}
+              onChangeText={(val) => { setSameAsPhone(false); setPhoneNumber('whatsappNumber')(val); }}
             />
           </View>
-        </Field>
+        </View>
+
+        {/* WhatsApp same as phone toggle */}
+        <TouchableOpacity
+          style={styles.sameAsPhoneRow}
+          activeOpacity={form.phone ? 0.7 : 1}
+          onPress={toggleSameAsPhone}
+          disabled={!form.phone}
+        >
+          <CheckboxIcon checked={sameAsPhone} faded={!form.phone} />
+          <Text style={[styles.sameAsPhoneText, !form.phone && styles.sameAsPhoneTextDisabled]}>
+            WhatsApp number same as phone
+          </Text>
+        </TouchableOpacity>
 
         {/* Email */}
         <Field label="Email Address">
@@ -746,6 +812,22 @@ const styles = StyleSheet.create({
   },
   dropdownSelected: {
     color: COLORS.textDark,
+  },
+
+  sameAsPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -6,
+    marginBottom: 16,
+  },
+  sameAsPhoneText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+  },
+  sameAsPhoneTextDisabled: {
+    color: COLORS.textMuted,
   },
 
   spacer: { height: 24 },

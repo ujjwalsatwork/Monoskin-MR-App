@@ -10,7 +10,7 @@ import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
-import { SearchIcon, PhoneIconOutline, EmailIcon } from '@/assets/images';
+import { SearchIcon, PhoneIconOutline, EmailIcon, PlayIcon } from '@/assets/images';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -173,6 +173,14 @@ const LeadCard = ({ item }: { item: Lead }) => {
             <EmailIcon width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>
         </View>
+        <TouchableOpacity
+          style={styles.startVisitBtn}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('VisitDetail', { leadId: String(item.id) })}
+        >
+          <PlayIcon width={16} height={16} />
+          <Text style={styles.startVisitBtnText}>Start Visit</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => navigation.navigate('LeadDetails', { leadId: String(item.id) })}
@@ -545,6 +553,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.buttonBlue,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  startVisitBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 42,
+    borderRadius: 21,
+    paddingHorizontal: 10,
+    // marginHorizontal: 30,
+    marginRight: 30,
+    marginLeft: 10,
+    gap: 6,
+    backgroundColor: COLORS.buttonBlue,
+  },
+  startVisitBtnText: {
+    color: COLORS.white,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.semibold,
   },
   detailsLink: {
     fontSize: FONTS.size.md,
