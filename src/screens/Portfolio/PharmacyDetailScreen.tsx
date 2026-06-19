@@ -211,7 +211,7 @@ const PharmacyDetailScreen = () => {
         category: p.category,
         packSize: p.packSize,
         price: parseFloat(p.mrp) || 0,
-        qty: 1,
+        qty: 0,
         selected: false,
       }));
       setCatalogue(items);
@@ -229,19 +229,23 @@ const PharmacyDetailScreen = () => {
   };
 
   const toggleCatalogueItem = (id: string) => {
-    setCatalogue(prev => prev.map(item =>
-      item.id === id ? { ...item, selected: !item.selected } : item,
-    ));
+    setCatalogue(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const selected = !item.selected;
+      return { ...item, selected, qty: selected ? Math.max(1, item.qty) : 0 };
+    }));
   };
 
   const updateCatalogueQty = (id: string, delta: number) => {
-    setCatalogue(prev => prev.map(item =>
-      item.id === id ? { ...item, qty: Math.max(1, item.qty + delta) } : item,
-    ));
+    setCatalogue(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const qty = Math.max(0, item.qty + delta);
+      return { ...item, qty, selected: qty > 0 };
+    }));
   };
 
   const handleSaveSamples = () => {
-    const selected = catalogue.filter(c => c.selected);
+    const selected = catalogue.filter(c => c.selected && c.qty > 0);
     const newSamples: SampleProduct[] = selected.map(c => ({
       productId: c.id,
       name: c.name,
@@ -253,7 +257,7 @@ const PharmacyDetailScreen = () => {
       const existingIds = new Set(prev.map(p => p.productId));
       return [...prev, ...newSamples.filter(s => !existingIds.has(s.productId))];
     });
-    setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 1 })));
+    setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 0 })));
     setAddSampleVisible(false);
   };
 
@@ -869,9 +873,19 @@ const PharmacyDetailScreen = () => {
             ItemSeparatorComponent={ModalSeparator}
           />
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSamples} activeOpacity={0.85}>
-              <Text style={styles.saveBtnText}>Save Samples</Text>
-            </TouchableOpacity>
+            {(() => {
+              const canSave = catalogue.some(c => c.selected && c.qty > 0);
+              return (
+                <TouchableOpacity
+                  style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+                  onPress={handleSaveSamples}
+                  disabled={!canSave}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.saveBtnText}>Save Samples</Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -1064,6 +1078,7 @@ const styles = StyleSheet.create({
   stepperValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, minWidth: 28, textAlign: 'center' },
   modalFooter: { paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
   saveBtn: { backgroundColor: COLORS.buttonBlue, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
+  saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.white },
 });
 

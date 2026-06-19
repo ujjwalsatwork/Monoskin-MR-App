@@ -256,8 +256,8 @@ const PaymentScreen = () => {
 
   // ── Canonical pricing formula (§3) ─────────────────────────────────────────
   const slabPct   = safeFloat(pricingSlab?.discount);
-  // BXGY schemes also apply their discount% on top of free goods (matches web behaviour)
-  const schemePct = selectedScheme && ['percentage', 'buyXgetY', 'bundle'].includes(selectedScheme.type)
+  // BXGY schemes only grant free goods — their `discount` value is ignored (no % off).
+  const schemePct = selectedScheme && ['percentage', 'bundle'].includes(selectedScheme.type)
     ? safeFloat(selectedScheme.discount) : 0;
   const schemeFlat = selectedScheme?.type === 'fixed' ? safeFloat(selectedScheme.discount) : 0;
   const clinicPct  = safeFloat(appliedClinicCode?.discount);
@@ -379,7 +379,7 @@ const PaymentScreen = () => {
   };
 
   const schemeLabel = (s: ApiScheme) => {
-    if (s.type === 'buyXgetY') return `Buy ${s.buyQty} Get ${s.getQty} Free — Buy ${s.buyQty} Get ${s.getQty} + ${s.discount}% off`;
+    if (s.type === 'buyXgetY') return `${s.name} — Buy ${s.buyQty} Get ${s.getQty}`;
     if (s.type === 'percentage') return `${s.name} — ${s.discount}% off`;
     if (s.type === 'fixed') return `${s.name} — ₹${s.discount} off`;
     return s.name;

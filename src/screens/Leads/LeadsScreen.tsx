@@ -291,6 +291,7 @@ const LeadsScreen = () => {
             data={filteredDoctors}
             keyExtractor={i => String(i.id)}
             renderItem={({ item }) => <LeadCard item={item} />}
+            style={styles.list}
             contentContainerStyle={[
               styles.listContent,
               filteredDoctors.length === 0 && styles.listEmpty,
@@ -323,6 +324,7 @@ const LeadsScreen = () => {
             data={filteredDoctors}
             keyExtractor={i => String(i.id)}
             renderItem={({ item }) => <LeadCard item={item} />}
+            style={styles.list}
             contentContainerStyle={[
               styles.listContent,
               filteredDoctors.length === 0 && styles.listEmpty,
@@ -390,8 +392,9 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
+  list: { flex: 1 },
   listContent: { paddingHorizontal: 16, gap: 14, paddingBottom: 24 },
-  listEmpty: { flex: 1 },
+  listEmpty: { flexGrow: 1 },
 
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },

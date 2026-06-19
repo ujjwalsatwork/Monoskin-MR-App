@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
+  // Switch, // FOC field hidden for now
   Platform,
   Modal,
   FlatList,
@@ -221,12 +221,12 @@ const CollapsibleSection = ({
 /* ── ProductCard ── */
 const ProductCard = ({
   item,
-  onToggleFoc,
+  // onToggleFoc, // FOC field hidden for now
   onUpdateQty,
   onLongPress,
 }: {
   item: Product;
-  onToggleFoc: (id: string) => void;
+  // onToggleFoc: (id: string) => void; // FOC field hidden for now
   onUpdateQty: (id: string, delta: number) => void;
   onLongPress: () => void;
 }) => (
@@ -262,6 +262,7 @@ const ProductCard = ({
       </View>
     </View>
     <View style={styles.productBottomRow}>
+      {/* FOC field hidden for now
       <View style={styles.focRow}>
         <Text style={styles.focLabel}>FOC</Text>
         <Switch
@@ -272,6 +273,7 @@ const ProductCard = ({
           style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
         />
       </View>
+      */}
       <View style={styles.stepper}>
         <TouchableOpacity style={styles.stepperBtn} onPress={() => onUpdateQty(item.id, -1)}>
           <Text style={styles.stepperBtnText}>−</Text>
@@ -321,7 +323,7 @@ const CreateOrderScreen = () => {
         packSize: p.packSize,
         price: parseFloat(p.mrp),
         gst: p.gst,
-        qty: 1,
+        qty: 0,
         selected: false,
       }));
       setCatalogue(items);
@@ -342,7 +344,7 @@ const CreateOrderScreen = () => {
       const existing = products.find(p => p.id === item.id);
       return existing
         ? { ...item, selected: true, qty: existing.qty }
-        : { ...item, selected: false, qty: 1 };
+        : { ...item, selected: false, qty: 0 };
     }));
     setAddItemsVisible(true);
   };
@@ -369,14 +371,15 @@ const CreateOrderScreen = () => {
     );
   };
 
-  const toggleFoc = (id: string) => {
-    setProducts(prev =>
-      prev.map(p => p.id === id ? { ...p, foc: !p.foc } : p)
-    );
-  };
+  // FOC field hidden for now
+  // const toggleFoc = (id: string) => {
+  //   setProducts(prev =>
+  //     prev.map(p => p.id === id ? { ...p, foc: !p.foc } : p)
+  //   );
+  // };
 
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
-  const focCount   = products.filter(p => p.foc).length;
+  // const focCount   = products.filter(p => p.foc).length; // FOC field hidden for now
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
   // Base tax (no discounts — discounts are applied in PaymentScreen)
@@ -392,10 +395,18 @@ const CreateOrderScreen = () => {
   const remainingCredit = creditLimit - outstanding - baseTotal;
 
   const toggleCatalogueItem = useCallback((id: string) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c)), []);
+    setCatalogue(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const selected = !c.selected;
+      return { ...c, selected, qty: selected ? Math.max(1, c.qty) : 0 };
+    })), []);
 
   const updateCatalogueQty = useCallback((id: string, delta: number) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c)), []);
+    setCatalogue(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const qty = Math.max(0, c.qty + delta);
+      return { ...c, qty, selected: qty > 0 };
+    })), []);
 
   const handleSaveItems = () => {
     const selectedItems: Product[] = catalogue
@@ -581,7 +592,7 @@ const CreateOrderScreen = () => {
               <ProductCard
                 key={item.id}
                 item={item}
-                onToggleFoc={toggleFoc}
+                // onToggleFoc={toggleFoc} // FOC field hidden for now
                 onUpdateQty={updateQty}
                 onLongPress={() => navigation.navigate('ProductDetail', {
                   productId: item.id,
@@ -720,9 +731,19 @@ const CreateOrderScreen = () => {
           />
 
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveItems} activeOpacity={0.85}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
+            {(() => {
+              const canSave = catalogue.some(c => c.selected && c.qty > 0);
+              return (
+                <TouchableOpacity
+                  style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+                  onPress={handleSaveItems}
+                  disabled={!canSave}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.saveBtnText}>Save</Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -733,7 +754,7 @@ const CreateOrderScreen = () => {
       <View style={styles.bottomBar}>
         <View style={styles.bottomBarTop}>
           <Text style={styles.bottomBarItems}>
-            {totalItems} ITEMS ({focCount} FOC)
+            {totalItems} ITEMS{/* ({focCount} FOC) — FOC hidden for now */}
           </Text>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>SUBTOTAL</Text>
@@ -1146,6 +1167,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: {
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.semibold,
