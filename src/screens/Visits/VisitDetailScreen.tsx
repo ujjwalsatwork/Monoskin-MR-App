@@ -241,6 +241,9 @@ const VisitDetailScreen = () => {
   const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [activeTimeField, setActiveTimeField] = useState<'clinic' | 'mr' | 'arrival' | null>(null);
   const [pickerDate, setPickerDate] = useState(new Date());
+  // Each time field is captured as a range (start → end), e.g. "10:30 AM - 10:50 AM".
+  const [pickerStep, setPickerStep] = useState<'start' | 'end'>('start');
+  const [pickerStartTime, setPickerStartTime] = useState('');
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [visitType, setVisitType] = useState(defaultVisitType);
@@ -419,11 +422,30 @@ const VisitDetailScreen = () => {
     return `${hours}:${minutes} ${ampm}`;
   };
 
-  const applyTime = (field: typeof activeTimeField, date: Date) => {
-    const formatted = formatTime(date);
-    if (field === 'clinic') { setClinicConsultationTime(formatted); }
-    else if (field === 'mr') { setMrInteractionTime(formatted); }
-    else if (field === 'arrival') { setDoctorArrivalTime(formatted); }
+  const applyTime = (field: typeof activeTimeField, value: string) => {
+    if (field === 'clinic') { setClinicConsultationTime(value); }
+    else if (field === 'mr') { setMrInteractionTime(value); }
+    else if (field === 'arrival') { setDoctorArrivalTime(value); }
+  };
+
+  // Parses a "10:30 AM" fragment into a Date (today) for seeding the spinner.
+  const parseTimeToDate = (timeStr: string): Date | null => {
+    const match = timeStr?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) { return null; }
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    if (match[3].toUpperCase() === 'PM' && h !== 12) { h += 12; }
+    if (match[3].toUpperCase() === 'AM' && h === 12) { h = 0; }
+    const date = new Date();
+    date.setHours(h, m, 0, 0);
+    return date;
+  };
+
+  const resetTimePicker = () => {
+    setTimePickerVisible(false);
+    setActiveTimeField(null);
+    setPickerStep('start');
+    setPickerStartTime('');
   };
 
   const openTimePicker = (field: 'clinic' | 'mr' | 'arrival') => {
@@ -431,26 +453,40 @@ const VisitDetailScreen = () => {
       field === 'clinic' ? clinicConsultationTime
       : field === 'mr' ? mrInteractionTime
       : doctorArrivalTime;
-    const date = new Date();
-    if (currentValue) {
-      const match = currentValue.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        if (match[3].toUpperCase() === 'PM' && h !== 12) { h += 12; }
-        if (match[3].toUpperCase() === 'AM' && h === 12) { h = 0; }
-        date.setHours(h, m, 0, 0);
-      }
-    }
-    setPickerDate(date);
+    // Seed the spinner with the existing start time if a range was set before.
+    const startPart = currentValue ? currentValue.split(' - ')[0] : '';
+    setPickerDate(parseTimeToDate(startPart) ?? new Date());
     setActiveTimeField(field);
+    setPickerStep('start');
+    setPickerStartTime('');
     setTimePickerVisible(true);
   };
 
+  const timeToMinutes = (date: Date) => date.getHours() * 60 + date.getMinutes();
+
+  // Ensures the end time is strictly after the start time. Returns false (and
+  // alerts) when it isn't, so the caller can abort the commit.
+  const isEndAfterStart = (endDate: Date): boolean => {
+    const startDate = parseTimeToDate(pickerStartTime);
+    if (startDate && timeToMinutes(endDate) <= timeToMinutes(startDate)) {
+      Alert.alert('Invalid Time', 'End time must be after the start time.');
+      return false;
+    }
+    return true;
+  };
+
+  // iOS "Done": confirm the start time, then advance to picking the end time;
+  // on the second confirm, commit the full "start - end" range.
   const confirmTimePicker = () => {
-    applyTime(activeTimeField, pickerDate);
-    setTimePickerVisible(false);
-    setActiveTimeField(null);
+    const formatted = formatTime(pickerDate);
+    if (pickerStep === 'start') {
+      setPickerStartTime(formatted);
+      setPickerStep('end');
+      return;
+    }
+    if (!isEndAfterStart(pickerDate)) { return; }
+    applyTime(activeTimeField, `${pickerStartTime} - ${formatted}`);
+    resetTimePicker();
   };
 
   const toggleObjection = (chip: string) => {
@@ -905,14 +941,14 @@ const VisitDetailScreen = () => {
           </TouchableOpacity> */}
         </View>
 
-        <Text style={styles.timeFieldLabel}>Clinic Consultation Time</Text>
+        <Text style={styles.timeFieldLabel}>Patient Time</Text>
         <TouchableOpacity
           style={styles.timeFieldInput}
           activeOpacity={0.7}
           onPress={() => openTimePicker('clinic')}
         >
           <Text style={clinicConsultationTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
-            {clinicConsultationTime || 'Select time (e.g. 10:30 AM)'}
+            {clinicConsultationTime || 'Select time range (e.g. 10:30 AM - 10:50 AM)'}
           </Text>
         </TouchableOpacity>
 
@@ -923,7 +959,7 @@ const VisitDetailScreen = () => {
           onPress={() => openTimePicker('mr')}
         >
           <Text style={mrInteractionTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
-            {mrInteractionTime || 'Select time (e.g. 10:45 AM)'}
+            {mrInteractionTime || 'Select time range (e.g. 10:45 AM - 11:00 AM)'}
           </Text>
         </TouchableOpacity>
 
@@ -934,7 +970,7 @@ const VisitDetailScreen = () => {
           onPress={() => openTimePicker('arrival')}
         >
           <Text style={doctorArrivalTime ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
-            {doctorArrivalTime || 'Select time (e.g. 11:00 AM)'}
+            {doctorArrivalTime || 'Select time range (e.g. 11:00 AM - 11:15 AM)'}
           </Text>
         </TouchableOpacity>
 
@@ -1224,18 +1260,22 @@ const VisitDetailScreen = () => {
           <TouchableOpacity
             style={styles.timePickerOverlay}
             activeOpacity={1}
-            onPress={() => setTimePickerVisible(false)}
+            onPress={resetTimePicker}
           >
             <TouchableOpacity activeOpacity={1}>
               <View style={styles.timePickerSheet}>
                 <View style={styles.timePickerHandle} />
                 <View style={styles.timePickerIOSHeader}>
-                  <TouchableOpacity onPress={() => setTimePickerVisible(false)}>
+                  <TouchableOpacity onPress={resetTimePicker}>
                     <Text style={styles.timePickerCancelText}>Cancel</Text>
                   </TouchableOpacity>
-                  <Text style={styles.timePickerTitle}>Select Time</Text>
+                  <Text style={styles.timePickerTitle}>
+                    {pickerStep === 'start' ? 'Select Start Time' : 'Select End Time'}
+                  </Text>
                   <TouchableOpacity onPress={confirmTimePicker}>
-                    <Text style={styles.timePickerDoneText}>Done</Text>
+                    <Text style={styles.timePickerDoneText}>
+                      {pickerStep === 'start' ? 'Next' : 'Done'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
                 <DateTimePicker
@@ -1258,14 +1298,27 @@ const VisitDetailScreen = () => {
           mode="time"
           display="default"
           onValueChange={(_e, date) => {
-            setTimePickerVisible(false);
-            setActiveTimeField(null);
-            applyTime(activeTimeField, date);
+            if (!date) { return; }
+            const formatted = formatTime(date);
+            if (pickerStep === 'start') {
+              // Capture start, then reopen the dialog to pick the end time.
+              setPickerStartTime(formatted);
+              setPickerStep('end');
+              setPickerDate(date);
+              setTimePickerVisible(false);
+              setTimeout(() => setTimePickerVisible(true), 0);
+              return;
+            }
+            if (!isEndAfterStart(date)) {
+              // Keep the start; reopen the dialog so the user re-picks the end.
+              setTimePickerVisible(false);
+              setTimeout(() => setTimePickerVisible(true), 0);
+              return;
+            }
+            applyTime(activeTimeField, `${pickerStartTime} - ${formatted}`);
+            resetTimePicker();
           }}
-          onDismiss={() => {
-            setTimePickerVisible(false);
-            setActiveTimeField(null);
-          }}
+          onDismiss={resetTimePicker}
         />
       )}
 

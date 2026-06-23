@@ -15,7 +15,7 @@ import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker } from 'react-native-maps';
 import dayjs from 'dayjs';
 import Header from '@/components/common/Header';
-import { InfoIcon, CheckInIcon, CheckOutIcon, CoffeeIcon, PauseIcon, VisitsIcon, PlayBlue, CheckCircleIcon, CalendarNoteIcon, QuickStatsCalendar, QuickStatsCompleted } from '@/assets/images';
+import { InfoIcon, CheckInIcon, CheckOutIcon, VisitsIcon, CheckCircleIcon, QuickStatsCalendar, QuickStatsCompleted } from '@/assets/images';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
@@ -25,13 +25,10 @@ import {
     logAttendance,
     fetchTodayStatus,
     clearAttendanceError,
-    startBreak,
-    endBreak,
     AttendanceError,
 } from '@/redux/slices/attendanceSlice';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { fetchTodayRoute } from '@/redux/slices/routeSlice';
-import { formatBreakDuration, formatDurationSeconds, formatElapsedSeconds } from '@/utils/attendanceFormatter';
 
 // Use the Google Play Services fused provider on Android (falls back automatically
 // when unavailable). This is dramatically faster than the legacy LocationManager,
@@ -90,7 +87,6 @@ const AttendanceScreen = () => {
     const [locationError, setLocationError] = useState('');
     const [locationFetching, setLocationFetching] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [breakElapsed, setBreakElapsed] = useState(0);
 
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const dispatch = useDispatch<AppDispatch>();
@@ -99,12 +95,8 @@ const AttendanceScreen = () => {
         checkInLoading,
         checkOutLoading,
         todayLoading,
-        breakLoading,
         isCheckedIn,
         currentSession,
-        activeBreak,
-        breaks,
-        effectiveWorkMinutes,
     } = useSelector((state: RootState) => state.attendance);
 
     const profileLoaded = useSelector((state: RootState) => !!state.profile.data);
@@ -268,42 +260,6 @@ const AttendanceScreen = () => {
         }
     }, [dispatch, addressText, coordsString, currentDate, navigation]);
 
-    // ─── Break timer ──────────────────────────────────────────────────────────
-
-    useEffect(() => {
-        if (!activeBreak) {
-            setBreakElapsed(0);
-            return;
-        }
-        const start = dayjs(activeBreak.breakStart);
-        const tick = () => setBreakElapsed(dayjs().diff(start, 'second'));
-        tick();
-        const interval = setInterval(tick, 1000);
-        return () => clearInterval(interval);
-    }, [activeBreak]);
-
-    const handleStartBreak = useCallback(async () => {
-        if (!currentSession) return;
-        const result = await dispatch(startBreak({ attendanceId: currentSession.id }));
-        if (startBreak.rejected.match(result)) {
-            Alert.alert('Break Failed', result.payload?.message ?? 'Failed to start break');
-        }
-    }, [dispatch, currentSession]);
-
-    const handleEndBreak = useCallback(async () => {
-        if (!activeBreak) return;
-        const result = await dispatch(endBreak({ breakId: activeBreak.id }));
-        if (endBreak.rejected.match(result)) {
-            Alert.alert('Break Failed', result.payload?.message ?? 'Failed to end break');
-        }
-    }, [dispatch, activeBreak]);
-
-    // Compute from timestamps for second-level precision (backend `duration` is rounded minutes)
-    const totalBreakSeconds = breaks.reduce((sum, b) => {
-        if (!b.breakEnd) return sum;
-        return sum + dayjs(b.breakEnd).diff(dayjs(b.breakStart), 'second');
-    }, 0);
-
     // ─── Status card ─────────────────────────────────────────────────────────
 
     const checkedInTime = parseSessionTime(currentSession?.checkIn);
@@ -450,98 +406,11 @@ const AttendanceScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.outlineButton, styles.viewHistoryButton]}
-                    onPress={() => navigation.navigate('AttendanceHistory')}
-                    activeOpacity={0.8}
-                >
-                    <Text style={styles.outlineButtonText}>View Attendance History</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.outlineButton, styles.viewHistoryButton, styles.leaveRequestButton]}
-                    onPress={() => navigation.navigate('SubmitLeave')}
-                    activeOpacity={0.8}
-                >
-                    <Text style={styles.leaveRequestButtonText}>Submit Leave Request</Text>
-                </TouchableOpacity>
-
-                <View style={{ height: 12 }} />
-
-                {/* Break Timer */}
-                <View style={styles.breakCard}>
-                    <View style={styles.breakLeft}>
-                        <View style={styles.breakIconContainer}>
-                            <CoffeeIcon />
-                        </View>
-                        <View>
-                            <Text style={styles.breakTitle}>Break Timer</Text>
-                            {activeBreak ? (
-                                <Text style={styles.breakTimer}>
-                                    {formatElapsedSeconds(breakElapsed)}
-                                </Text>
-                            ) : (
-                                <Text style={styles.breakSubtitle}>
-                                    Log lunch breaks or{'\n'}transport gaps
-                                </Text>
-                            )}
-                        </View>
-                    </View>
-                    <TouchableOpacity
-                        style={[
-                            styles.breakButton,
-                            (!isCheckedIn || breakLoading) && styles.buttonDisabled,
-                        ]}
-                        onPress={activeBreak ? handleEndBreak : handleStartBreak}
-                        disabled={!isCheckedIn || breakLoading}
-                        activeOpacity={0.8}
-                    >
-                        {breakLoading ? (
-                            <ActivityIndicator size="small" color={COLORS.buttonBlue} />
-                        ) : activeBreak ? (
-                            <PlayBlue />
-                        ) : (
-                            <PauseIcon />
-                        )}
-                        <Text style={styles.breakButtonText}>
-                            {activeBreak ? 'END\nBREAK' : 'START\nBREAK'}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Break Summary */}
-                {(breaks.length > 0 || activeBreak !== null || effectiveWorkMinutes > 0) && (
-                    <View style={styles.breakSummaryCard}>
-                        <View style={styles.breakSummaryRow}>
-                            <View style={styles.breakSummaryStat}>
-                                <Text style={styles.breakSummaryLabel}>BREAKS TODAY</Text>
-                                <Text style={styles.breakSummaryValue}>
-                                    {breaks.length + (activeBreak ? 1 : 0)}
-                                </Text>
-                            </View>
-                            <View style={styles.breakSummaryStat}>
-                                <Text style={styles.breakSummaryLabel}>TOTAL BREAK</Text>
-                                <Text style={styles.breakSummaryValue}>
-                                    {formatDurationSeconds(totalBreakSeconds)}
-                                </Text>
-                            </View>
-                            {/* <View style={styles.breakSummaryStat}>
-                                <Text style={styles.breakSummaryLabel}>EFFECTIVE WORK</Text>
-                                <Text style={styles.breakSummaryValue}>
-                                    {effectiveWorkMinutes > 0
-                                        ? formatBreakDuration(effectiveWorkMinutes)
-                                        : '--'}
-                                </Text>
-                            </View> */}
-                        </View>
-                    </View>
-                )}
-
                 {/* Show Today's Visits */}
                 <View style={styles.visitsSection}>
                     <TouchableOpacity
                         style={styles.visitsButton}
-                        onPress={() => navigation.navigate('TodayVisits')}
+                        onPress={() => (navigation as any).navigate('Main', { screen: 'Route' })}
                         activeOpacity={0.85}
                     >
                         <VisitsIcon />
@@ -711,9 +580,6 @@ const styles = StyleSheet.create({
         flex: 1,
         marginBottom: 0,
     },
-    viewHistoryButton: {
-        marginHorizontal: 20,
-    },
     primaryButton: {
         backgroundColor: COLORS.primary,
         flexDirection: 'row',
@@ -746,60 +612,6 @@ const styles = StyleSheet.create({
     },
     buttonDisabled: {
         opacity: 0.45,
-    },
-    breakCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginHorizontal: 20,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 14,
-        padding: 16,
-        marginBottom: 20,
-    },
-    breakLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    breakIconContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(46, 80, 178, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    breakTitle: {
-        fontSize: FONTS.size.md,
-        fontFamily: FONTS.family.bold,
-        color: COLORS.buttonBlue,
-        marginBottom: 2,
-    },
-    breakSubtitle: {
-        fontSize: FONTS.size.sm,
-        fontFamily: FONTS.family.regular,
-        color: COLORS.textSecondary,
-        lineHeight: 16,
-    },
-    breakButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        gap: 6,
-    },
-    breakButtonText: {
-        fontSize: FONTS.size.xs,
-        fontFamily: FONTS.family.bold,
-        color: COLORS.buttonBlue,
-        textAlign: 'center',
-        lineHeight: 14,
     },
     visitsSection: {
         paddingHorizontal: 20,
@@ -887,58 +699,6 @@ const styles = StyleSheet.create({
         fontSize: FONTS.size.sm,
         fontFamily: FONTS.family.bold,
         color: COLORS.primary,
-    },
-
-    // ── Leave Request Button ───────────────────────────────────────────────
-    leaveRequestButton: {
-        marginTop: 12,
-        borderColor: COLORS.buttonBlue,
-    },
-    leaveRequestButtonText: {
-        color: COLORS.buttonBlue,
-        fontSize: FONTS.size.lg,
-        fontFamily: FONTS.family.bold,
-    },
-
-    // ── Break timer live display ───────────────────────────────────────────
-    breakTimer: {
-        fontSize: FONTS.size.md,
-        fontFamily: FONTS.family.bold,
-        color: COLORS.buttonBlue,
-        marginTop: 2,
-    },
-
-    // ── Break summary card ────────────────────────────────────────────────
-    breakSummaryCard: {
-        marginHorizontal: 20,
-        marginTop: -8,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 12,
-        padding: 14,
-        backgroundColor: '#F8F9FF',
-    },
-    breakSummaryRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    breakSummaryStat: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    breakSummaryLabel: {
-        fontSize: FONTS.size.xs,
-        fontFamily: FONTS.family.bold,
-        color: COLORS.textSecondary,
-        marginBottom: 4,
-        textAlign: 'center',
-    },
-    breakSummaryValue: {
-        fontSize: FONTS.size.md,
-        fontFamily: FONTS.family.bold,
-        color: '#000',
-        textAlign: 'center',
     },
 
 });

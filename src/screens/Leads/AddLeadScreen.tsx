@@ -292,6 +292,7 @@ const AddLeadScreen = () => {
     city: leadData?.city || '',
     state: leadData?.state || '',
     address: leadData?.address || '',
+    googleMapsUrl: leadData?.googleMapsUrl || '',
     phone: leadData?.phone || '',
     whatsappNumber: leadData?.whatsappNumber || '',
     email: leadData?.email || '',
@@ -534,6 +535,22 @@ const AddLeadScreen = () => {
             value={form.address}
             onChangeText={set('address')}
           />
+        </Field>
+
+        {/* Google Maps Link */}
+        <Field label="Google Maps Link">
+          <TextInput
+            style={styles.input}
+            placeholder="Paste the Google Maps URL"
+            placeholderTextColor={COLORS.textMuted}
+            autoCapitalize="none"
+            keyboardType="url"
+            value={form.googleMapsUrl}
+            onChangeText={set('googleMapsUrl')}
+          />
+          <Text style={styles.helperText}>
+            Carried to the Doctor/Pharmacy location map on conversion.
+          </Text>
         </Field>
 
         {/* Phone + WhatsApp row */}
@@ -914,6 +931,13 @@ const styles = StyleSheet.create({
   },
   dropdownSelected: {
     color: COLORS.textDark,
+  },
+
+  helperText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    marginTop: 6,
   },
 
   sameAsPhoneRow: {
