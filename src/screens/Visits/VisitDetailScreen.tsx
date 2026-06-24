@@ -3,8 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
+  KeyboardAvoidingView,
   TouchableOpacity,
   TextInput,
   Platform,
@@ -32,6 +34,7 @@ import {
   Up,
   Down,
   AddCircle,
+  MonoskinLogo,
 } from '@/assets/images';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -43,12 +46,18 @@ import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Geolocation from '@react-native-community/geolocation';
+import { captureRef } from 'react-native-view-shot';
+
+// Width (in points) of the off-screen stage used to bake the watermark into
+// each photo before upload. Kept modest to limit memory; the native capture
+// is rendered at device pixel density, so the output stays sharp.
+const WATERMARK_STAGE_WIDTH = 360;
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type RoutePropType = RouteProp<AppStackParamList, 'VisitDetail'>;
 
 const VISIT_TYPES = ['Lead Visit', 'Doctor Visit', 'Pharmacy Visit', 'Conference', 'Training'];
-const OUTCOMES = ['Positive', 'Neutral', 'Negative', 'Follow-up Required'];
+const OUTCOMES = ['Positive', 'Neutral', 'Negative', 'Follow-up Required', 'Not Met'];
 const OBJECTION_CHIPS = ['Too Expensive', 'Already Prescribes Brand X', 'Needs Study'];
 const TIME_SLOTS = ['Morning Slot', 'Afternoon Slot', 'Evening Slot'];
 
@@ -65,7 +74,8 @@ type DoctorDetails = {
   importance?: string;
   pharmacyNetwork?: Array<{ id: string; name: string; type: 'primary' | 'linked' }>;
   nearbyPharmacies?: Array<{ id: string; name: string; distance: string }>;
-  preferredProducts?: Array<{ id: string; name: string }>;
+  preferredProducts?: Array<{ productId?: number | string; id?: number | string; name: string; quantity?: number; orders?: number }>;
+  orderedItems?: Array<{ id: string; productId: number; name: string; quantity: number; orders: number }>;
   unpreferredProducts?: Array<{ id: string; name: string }>;
   interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
   lastVisitDate?: string;
@@ -84,7 +94,8 @@ type PharmacyDetails = {
   lastVisitDate?: string;
   lastVisit?: string;
   avgTime?: string;
-  preferredProducts?: Array<{ id: string; name: string }>;
+  preferredProducts?: Array<{ productId?: number | string; id?: number | string; name: string; quantity?: number; orders?: number }>;
+  orderedItems?: Array<{ id: string; productId: number; name: string; quantity: number; orders: number }>;
   unpreferredProducts?: Array<{ id: string; name: string }>;
   interactionHistory?: Array<{ date: string; type: string; outcome: string; notes: string; source: string }>;
   orderHistory?: { productName: string; quantity: string; lastDate: string; price: string };
@@ -124,7 +135,16 @@ type SampleProduct = {
   quantity: number;
 };
 
-type Attachment = { uri: string; type: string; name: string };
+// Preferred products the MR records for a contact. Unlike samples, no quantity
+// is captured — it's just the set of products this doctor/pharmacy/lead prefers.
+type PreferredProduct = {
+  productId: string;
+  name: string;
+  category?: string;
+  packSize?: string;
+};
+
+type Attachment = { uri: string; type: string; name: string; capturedAt: number };
 
 const formatDateTime = (raw: string): string => {
   const d = new Date(raw);
@@ -229,9 +249,11 @@ const VisitDetailScreen = () => {
   ) => setFeedbackModal({ visible: true, type, title, message, onOk });
 
   const [sampleProducts, setSampleProducts] = useState<SampleProduct[]>([]);
+  const [preferredProducts, setPreferredProducts] = useState<PreferredProduct[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [addSampleVisible, setAddSampleVisible] = useState(false);
+  const [addPreferredVisible, setAddPreferredVisible] = useState(false);
 
   const [visitNote, setVisitNote] = useState('');
   const [clinicConsultationTime, setClinicConsultationTime] = useState('');
@@ -246,11 +268,24 @@ const VisitDetailScreen = () => {
   const [pickerStartTime, setPickerStartTime] = useState('');
   const [objections, setObjections] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // Photos wait in this queue to have the watermark baked in (one at a time).
+  const [captureQueue, setCaptureQueue] = useState<Attachment[]>([]);
+  const [capturing, setCapturing] = useState<Attachment | null>(null);
+  const [captureDims, setCaptureDims] = useState<{ w: number; h: number } | null>(null);
+  const shotRef = useRef<View>(null);
   const [visitType, setVisitType] = useState(defaultVisitType);
   const [outcome, setOutcome] = useState('Follow-up Required');
-  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpDate, setFollowUpDate] = useState(''); // stored as ISO yyyy-mm-dd
   const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
   const [slotVisible, setSlotVisible] = useState(false);
+  const [followUpPickerVisible, setFollowUpPickerVisible] = useState(false);
+  const [followUpPickerDate, setFollowUpPickerDate] = useState(new Date());
+  // Revisit date for the "Not Met" outcome (stored as ISO yyyy-mm-dd). Must be
+  // a future date — the backend auto-schedules a Route Planner meeting on it.
+  const [revisitOn, setRevisitOn] = useState('');
+  const [revisitPickerVisible, setRevisitPickerVisible] = useState(false);
+  const [revisitPickerDate, setRevisitPickerDate] = useState(new Date());
   const screenEntryTime = useRef(Date.now());
   const [location, setLocation] = useState<{
     latitude: string;
@@ -263,7 +298,7 @@ const VisitDetailScreen = () => {
 
   const [sampleExpanded, setSampleExpanded] = useState(true);
   const [prefExpanded, setPrefExpanded] = useState(false);
-  const [unprefExpanded, setUnprefExpanded] = useState(false);
+  const [orderedProductsExpanded, setOrderedProductsExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(true);
 
   useEffect(() => {
@@ -311,6 +346,7 @@ const VisitDetailScreen = () => {
       setError(null);
       const res = await apiClient.get(ENDPOINTS.portfolio.doctorDetail(doctorId!));
       setDoctorData(res.data);
+      seedPreferredProducts(res.data?.preferredProducts);
     } catch(fetchErr) {
       console.log('🚀 ~ fetchDoctorDetails ~ error:', fetchErr);
       setError('Failed to load doctor details. Please try again.');
@@ -325,6 +361,7 @@ const VisitDetailScreen = () => {
       setError(null);
       const res = await apiClient.get(ENDPOINTS.portfolio.pharmacyDetail(pharmacyId!));
       setPharmacyData(res.data);
+      seedPreferredProducts(res.data?.preferredProducts);
     } catch(fetchErr) {
       console.log('🚀 ~ fetchPharmacyDetails ~ error:', fetchErr);
       setError('Failed to load pharmacy details. Please try again.');
@@ -370,6 +407,43 @@ const VisitDetailScreen = () => {
     } finally {
       setCatalogueLoading(false);
     }
+  };
+
+  // Pre-fill the editable preferred list from whatever is already on the
+  // contact's record so the MR edits an existing set rather than starting blank.
+  const seedPreferredProducts = (
+    list?: Array<{ productId?: number | string; id?: number | string; name: string }>,
+  ) => {
+    if (list && list.length > 0) {
+      setPreferredProducts(
+        list.map(p => ({ productId: String(p.productId ?? p.id ?? ''), name: p.name })),
+      );
+    }
+  };
+
+  const openAddPreferred = async () => {
+    const baseItems = await fetchCatalogue();
+    const source = baseItems.length > 0 ? baseItems : catalogue;
+    setCatalogue(source.map(item => ({
+      ...item,
+      selected: preferredProducts.some(p => p.productId === item.id),
+      qty: 0,
+    })));
+    setAddPreferredVisible(true);
+  };
+
+  const handleSavePreferred = () => {
+    const newPreferred: PreferredProduct[] = catalogue
+      .filter(c => c.selected)
+      .map(c => ({
+        productId: c.id,
+        name: c.name,
+        category: c.category,
+        packSize: c.packSize,
+      }));
+    setPreferredProducts(newPreferred);
+    setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 0 })));
+    setAddPreferredVisible(false);
   };
 
   const openAddSample = async () => {
@@ -489,6 +563,50 @@ const VisitDetailScreen = () => {
     resetTimePicker();
   };
 
+  // Follow-up date helpers ─ value is stored as ISO (yyyy-mm-dd) for the API,
+  // and shown to the user as DD/MM/YYYY.
+  const toISODate = (d: Date): string => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatDateDisplay = (iso: string): string => {
+    if (!iso) { return ''; }
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
+  const openFollowUpDatePicker = () => {
+    if (followUpDate) {
+      const [y, m, d] = followUpDate.split('-').map(Number);
+      setFollowUpPickerDate(new Date(y, m - 1, d));
+    } else {
+      setFollowUpPickerDate(new Date());
+    }
+    setFollowUpPickerVisible(true);
+  };
+
+  // "Not Met" revisit must be a strictly future date — earliest selectable day
+  // is tomorrow (today and all past dates are rejected).
+  const minRevisitDate = (): Date => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const openRevisitDatePicker = () => {
+    if (revisitOn) {
+      const [y, m, d] = revisitOn.split('-').map(Number);
+      setRevisitPickerDate(new Date(y, m - 1, d));
+    } else {
+      setRevisitPickerDate(minRevisitDate());
+    }
+    setRevisitPickerVisible(true);
+  };
+
   const toggleObjection = (chip: string) => {
     setObjections(prev =>
       prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip],
@@ -512,10 +630,11 @@ const VisitDetailScreen = () => {
     launchCamera({ mediaType: 'photo', quality: 0.8, saveToPhotos: false }, res => {
       if (!res.didCancel && !res.errorCode && res.assets?.[0]) {
         const a = res.assets[0];
-        setAttachments(prev => [...prev, {
+        setCaptureQueue(prev => [...prev, {
           uri: a.uri!,
           type: a.type || 'image/jpeg',
           name: a.fileName || `photo_${Date.now()}.jpg`,
+          capturedAt: Date.now(),
         }]);
       }
     });
@@ -541,8 +660,9 @@ const VisitDetailScreen = () => {
           uri: a.uri!,
           type: a.type || 'image/jpeg',
           name: a.fileName || `photo_${Date.now()}.jpg`,
+          capturedAt: Date.now(),
         }));
-        setAttachments(prev => [...prev, ...newAtts]);
+        setCaptureQueue(prev => [...prev, ...newAtts]);
       }
     });
   };
@@ -554,6 +674,42 @@ const VisitDetailScreen = () => {
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
+
+  // Pull the next queued photo onto the off-screen watermark stage.
+  useEffect(() => {
+    if (capturing || captureQueue.length === 0) { return; }
+    setCapturing(captureQueue[0]);
+    setCaptureDims(null);
+    setCaptureQueue(prev => prev.slice(1));
+  }, [capturing, captureQueue]);
+
+  // Once the staged photo has loaded (so we know its aspect ratio), bake the
+  // watermark in by capturing the stage, then add the result to attachments.
+  useEffect(() => {
+    if (!capturing || !captureDims) { return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const staged = capturing;
+      try {
+        const uri = await captureRef(shotRef, { format: 'jpg', quality: 0.9 });
+        if (cancelled) { return; }
+        const finalUri = Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri;
+        setAttachments(prev => [...prev, {
+          uri: finalUri,
+          type: 'image/jpeg',
+          name: staged.name.replace(/\.\w+$/, '') + '_wm.jpg',
+          capturedAt: staged.capturedAt,
+        }]);
+      } catch (err) {
+        console.log('🚀 ~ watermark capture failed:', err);
+        // Fall back to the original photo so the upload still works.
+        if (!cancelled) { setAttachments(prev => [...prev, staged]); }
+      } finally {
+        if (!cancelled) { setCapturing(null); setCaptureDims(null); }
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [capturing, captureDims]);
 
   const handleSubmit = async () => {
     if (!location) {
@@ -568,6 +724,18 @@ const VisitDetailScreen = () => {
     }
     if (!visitType) { showFeedback('error', 'Validation', 'Please select a visit type.'); return; }
     if (!outcome) { showFeedback('error', 'Validation', 'Please select an outcome.'); return; }
+    if (outcome === 'Not Met') {
+      if (!revisitOn) {
+        showFeedback('error', 'Validation', 'Please select a revisit date for the "Not Met" outcome.');
+        return;
+      }
+      // Guard against a stale/past selection — only future dates are valid.
+      const [y, m, d] = revisitOn.split('-').map(Number);
+      if (new Date(y, m - 1, d).getTime() < minRevisitDate().getTime()) {
+        showFeedback('error', 'Validation', 'The revisit date must be a future date.');
+        return;
+      }
+    }
     if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
 
     const formData = new FormData();
@@ -594,8 +762,17 @@ const VisitDetailScreen = () => {
     if (location?.longitude) formData.append('longitude', String(location.longitude));
 
     if (outcome === 'Follow-up Required' && followUpDate) {
-      formData.append('followUpDate', followUpDate);
+      // followUpDate is stored as the local calendar day (yyyy-mm-dd). The API
+      // expects a full ISO 8601 datetime string, so anchor it at UTC midnight —
+      // this preserves the picked day without any timezone shift.
+      formData.append('followUpDate', `${followUpDate}T00:00:00.000Z`);
       formData.append('followUpSlot', followUpSlot);
+    }
+
+    // "Not Met" → send the future revisit date so the backend can auto-schedule
+    // a Route Planner meeting for this doctor on that day.
+    if (outcome === 'Not Met' && revisitOn) {
+      formData.append('revisitOn', `${revisitOn}T00:00:00.000Z`);
     }
 
     if (objections.length > 0) {
@@ -609,6 +786,17 @@ const VisitDetailScreen = () => {
         quantity: s.quantity,
       }));
       formData.append('sampleProducts', JSON.stringify(formattedSamples));
+    }
+
+    if (preferredProducts.length > 0) {
+      const formattedPreferred = preferredProducts.map(p => {
+        const id = Number(p.productId);
+        return {
+          productId: Number.isFinite(id) ? id : null,
+          name: p.name,
+        };
+      });
+      formData.append('preferredProducts', JSON.stringify(formattedPreferred));
     }
 
     attachments.forEach((att) => {
@@ -705,7 +893,18 @@ const VisitDetailScreen = () => {
     <View style={styles.safeArea}>
       <Header title="Visit Details" showBack showNotification showProfile />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} scrollEnabled={!submitting}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        scrollEnabled={!submitting}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+      >
 
         {/* Profile Card */}
         <View style={styles.doctorCard}>
@@ -824,6 +1023,25 @@ const VisitDetailScreen = () => {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Revisit date — required when outcome is "Not Met" */}
+        {outcome === 'Not Met' && (
+          <>
+            <Text style={styles.timeFieldLabel}>Revisit On *</Text>
+            <TouchableOpacity
+              style={styles.timeFieldInput}
+              activeOpacity={0.7}
+              onPress={openRevisitDatePicker}
+            >
+              <Text style={revisitOn ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+                {revisitOn ? formatDateDisplay(revisitOn) : 'Select a future revisit date'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.revisitHint}>
+              A Route Planner meeting will be auto-scheduled for this date.
+            </Text>
+          </>
+        )}
 
         {/* {location && (
           <Text style={styles.gpsIndicator}>Location captured</Text>
@@ -997,10 +1215,29 @@ const VisitDetailScreen = () => {
         {attachments.length > 0 && (
           <View style={styles.attachmentsRow}>
             {attachments.map((att, i) => (
-              <View key={i} style={styles.attachmentThumb}>
-                <Text style={styles.attachmentThumbText} numberOfLines={2}>{att.name}</Text>
-              </View>
+              <TouchableOpacity
+                key={i}
+                style={styles.attachmentThumb}
+                activeOpacity={0.85}
+                onPress={() => setViewerIndex(i)}
+              >
+                <Image source={{ uri: att.uri }} style={styles.attachmentThumbImage} resizeMode="cover" />
+                <TouchableOpacity
+                  style={styles.attachmentRemoveBtn}
+                  activeOpacity={0.8}
+                  onPress={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={styles.attachmentRemoveText}>×</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
             ))}
+          </View>
+        )}
+        {(capturing || captureQueue.length > 0) && (
+          <View style={styles.watermarkingRow}>
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+            <Text style={styles.watermarkingText}>Adding watermark…</Text>
           </View>
         )}
         <TouchableOpacity style={styles.uploadCard} activeOpacity={0.8} onPress={handleImageUpload}>
@@ -1011,57 +1248,65 @@ const VisitDetailScreen = () => {
           <Text style={styles.uploadSubtitle}>JPEG or PNG, Max 5MB</Text>
         </TouchableOpacity>
 
-        {/* Preferred Products */}
+        {/* Preferred Products – editable: MR selects products (no quantity) */}
         <CollapsibleSection
           title="Preferred Products"
           expanded={prefExpanded}
           onToggle={() => setPrefExpanded(p => !p)}
+          rightNode={
+            <TouchableOpacity onPress={openAddPreferred} style={styles.addSampleBtn} activeOpacity={0.8}>
+              <AddCircle width={16} height={16} />
+              <Text style={styles.addSampleText}>  Add</Text>
+            </TouchableOpacity>
+          }
         >
-          {(() => {
-            const prods = doctorData?.preferredProducts ?? pharmacyData?.preferredProducts;
-            return prods && prods.length > 0 ? (
-              prods.map((prod, i) => (
-                <View
-                  key={prod.id}
-                  style={[styles.productRow, i < prods.length - 1 && styles.productRowBorder]}
-                >
-                  <View style={styles.productIconRow}>
-                    <PillIcon width={16} height={16} />
-                    <Text style={styles.productName}>  {prod.name}</Text>
-                  </View>
+          {preferredProducts.length === 0 ? (
+            <View style={styles.emptyRow}>
+              <Text style={styles.emptyText}>No preferred products added yet. Tap "+ Add" to select products.</Text>
+            </View>
+          ) : (
+            preferredProducts.map((product, i) => (
+              <TouchableOpacity
+                key={product.productId}
+                style={[styles.productRow, i < preferredProducts.length - 1 && styles.productRowBorder]}
+                onPress={openAddPreferred}
+                activeOpacity={0.7}
+              >
+                <View style={styles.productIconRow}>
+                  <PillIcon width={16} height={16} />
+                  <Text style={styles.productName}>  {product.name}</Text>
                 </View>
-              ))
-            ) : (
-              <View style={styles.emptyRow}>
-                <Text style={styles.emptyText}>No preferred products on record.</Text>
-              </View>
-            );
-          })()}
+              </TouchableOpacity>
+            ))
+          )}
         </CollapsibleSection>
 
-        {/* Unpreferred Products */}
+        {/* Ordered Products – read-only list of the contact's products on record */}
         <CollapsibleSection
-          title="Unpreferred Products"
-          expanded={unprefExpanded}
-          onToggle={() => setUnprefExpanded(p => !p)}
+          title="Ordered Products"
+          expanded={orderedProductsExpanded}
+          onToggle={() => setOrderedProductsExpanded(p => !p)}
         >
           {(() => {
-            const prods = doctorData?.unpreferredProducts ?? pharmacyData?.unpreferredProducts;
+            const prods = doctorData?.orderedItems ?? pharmacyData?.orderedItems;
             return prods && prods.length > 0 ? (
               prods.map((prod, i) => (
                 <View
-                  key={prod.id}
+                  key={String(prod.id ?? prod.productId ?? i)}
                   style={[styles.productRow, i < prods.length - 1 && styles.productRowBorder]}
                 >
                   <View style={styles.productIconRow}>
                     <PillIcon width={16} height={16} />
                     <Text style={styles.productName}>  {prod.name}</Text>
                   </View>
+                  <Text style={styles.productMeta}>
+                    {prod.quantity} units · {prod.orders} {prod.orders === 1 ? 'order' : 'orders'}
+                  </Text>
                 </View>
               ))
             ) : (
               <View style={styles.emptyRow}>
-                <Text style={styles.emptyText}>No unpreferred products on record.</Text>
+                <Text style={styles.emptyText}>No ordered products on record.</Text>
               </View>
             );
           })()}
@@ -1103,15 +1348,15 @@ const VisitDetailScreen = () => {
           <View style={styles.followUpCard}>
             <Text style={styles.followUpTitle}>Follow-up Plan</Text>
             <View style={styles.followUpRow}>
-              <View style={styles.followUpDateBox}>
-                <TextInput
-                  style={styles.followUpDateInput}
-                  value={followUpDate}
-                  onChangeText={setFollowUpDate}
-                  placeholder="MM/DD/YYYY"
-                  placeholderTextColor={COLORS.textMuted}
-                />
-              </View>
+              <TouchableOpacity
+                style={styles.followUpDateBox}
+                activeOpacity={0.8}
+                onPress={openFollowUpDatePicker}
+              >
+                <Text style={followUpDate ? styles.followUpDateInput : styles.followUpDatePlaceholder}>
+                  {followUpDate ? formatDateDisplay(followUpDate) : 'DD/MM/YYYY'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.followUpSlotBox}
                 activeOpacity={0.8}
@@ -1187,6 +1432,7 @@ const VisitDetailScreen = () => {
             : <Text style={styles.submitButtonText}>Submit Report</Text>}
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
 
       {/* Feedback Modal (Success / Error) */}
       <Modal
@@ -1322,6 +1568,197 @@ const VisitDetailScreen = () => {
         />
       )}
 
+      {/* Follow-up date picker — iOS bottom sheet */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={followUpPickerVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setFollowUpPickerVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.timePickerOverlay}
+            activeOpacity={1}
+            onPress={() => setFollowUpPickerVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1}>
+              <View style={styles.timePickerSheet}>
+                <View style={styles.timePickerHandle} />
+                <View style={styles.timePickerIOSHeader}>
+                  <TouchableOpacity onPress={() => setFollowUpPickerVisible(false)}>
+                    <Text style={styles.timePickerCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timePickerTitle}>Select Follow-up Date</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setFollowUpDate(toISODate(followUpPickerDate));
+                      setFollowUpPickerVisible(false);
+                    }}
+                  >
+                    <Text style={styles.timePickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={followUpPickerDate}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onValueChange={(_e, date) => { if (date) { setFollowUpPickerDate(date); } }}
+                  style={styles.timePickerSpinner}
+                />
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Follow-up date picker — Android native dialog */}
+      {Platform.OS === 'android' && followUpPickerVisible && (
+        <DateTimePicker
+          value={followUpPickerDate}
+          mode="date"
+          display="default"
+          minimumDate={new Date()}
+          onValueChange={(_e, date) => {
+            setFollowUpPickerVisible(false);
+            if (date) {
+              setFollowUpDate(toISODate(date));
+            }
+          }}
+          onDismiss={() => setFollowUpPickerVisible(false)}
+        />
+      )}
+
+      {/* Revisit date picker — iOS bottom sheet (future dates only) */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={revisitPickerVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setRevisitPickerVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.timePickerOverlay}
+            activeOpacity={1}
+            onPress={() => setRevisitPickerVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1}>
+              <View style={styles.timePickerSheet}>
+                <View style={styles.timePickerHandle} />
+                <View style={styles.timePickerIOSHeader}>
+                  <TouchableOpacity onPress={() => setRevisitPickerVisible(false)}>
+                    <Text style={styles.timePickerCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timePickerTitle}>Select Revisit Date</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setRevisitOn(toISODate(revisitPickerDate));
+                      setRevisitPickerVisible(false);
+                    }}
+                  >
+                    <Text style={styles.timePickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={revisitPickerDate}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={minRevisitDate()}
+                  onValueChange={(_e, date) => { if (date) { setRevisitPickerDate(date); } }}
+                  style={styles.timePickerSpinner}
+                />
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Revisit date picker — Android native dialog (future dates only) */}
+      {Platform.OS === 'android' && revisitPickerVisible && (
+        <DateTimePicker
+          value={revisitPickerDate}
+          mode="date"
+          display="default"
+          minimumDate={minRevisitDate()}
+          onValueChange={(_e, date) => {
+            setRevisitPickerVisible(false);
+            if (date) {
+              setRevisitOn(toISODate(date));
+            }
+          }}
+          onDismiss={() => setRevisitPickerVisible(false)}
+        />
+      )}
+
+      {/* Off-screen stage that bakes the watermark into the photo before upload */}
+      {capturing && (
+        <View
+          ref={shotRef}
+          collapsable={false}
+          style={[
+            styles.captureStage,
+            captureDims
+              ? { height: WATERMARK_STAGE_WIDTH * captureDims.h / captureDims.w }
+              : null,
+          ]}
+        >
+          <Image
+            source={{ uri: capturing.uri }}
+            style={styles.captureImage}
+            resizeMode="cover"
+            onLoad={e => {
+              const { width, height } = e.nativeEvent.source;
+              if (width && height) { setCaptureDims({ w: width, h: height }); }
+            }}
+          />
+          <View style={styles.watermarkBar}>
+            <View style={styles.watermarkLogo}>
+              <MonoskinLogo width={100} height={21} />
+            </View>
+            <Text style={styles.watermarkTimestamp}>
+              {formatDateTime(new Date(capturing.capturedAt).toISOString())}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Image Viewer Modal — photo already carries the baked-in watermark */}
+      <Modal
+        visible={viewerIndex !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerIndex(null)}
+      >
+        <View style={styles.viewerOverlay}>
+          <TouchableOpacity
+            style={styles.viewerBackdrop}
+            activeOpacity={1}
+            onPress={() => setViewerIndex(null)}
+          />
+          {viewerIndex !== null && attachments[viewerIndex] && (
+            <View style={styles.viewerContent}>
+              <View style={styles.viewerImageWrapper}>
+                <Image
+                  source={{ uri: attachments[viewerIndex].uri }}
+                  style={styles.viewerImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.viewerCounter}>
+                {viewerIndex + 1} / {attachments.length}
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.viewerCloseBtn}
+            activeOpacity={0.8}
+            onPress={() => setViewerIndex(null)}
+          >
+            <Text style={styles.viewerCloseText}>×</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       {/* Fullscreen Submitting Loader */}
       {submitting && (
         <View style={styles.fullscreenLoader} pointerEvents="box-only">
@@ -1404,12 +1841,64 @@ const VisitDetailScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Preferred Product Selection Modal – selection only, no quantity */}
+      <Modal
+        visible={addPreferredVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddPreferredVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setAddPreferredVisible(false)}
+        />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Select Preferred Products</Text>
+          {catalogueLoading && (
+            <ActivityIndicator size="small" color={COLORS.buttonBlue} style={styles.catalogueLoader} />
+          )}
+          <FlatList
+            data={catalogue}
+            keyExtractor={item => item.id}
+            style={styles.modalList}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => toggleCatalogueItem(item.id)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkbox, item.selected && styles.checkboxSelected]}>
+                  {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
+                </View>
+                <View style={styles.modalItemInfo}>
+                  <Text style={styles.modalItemTime}>{item.name}</Text>
+                  <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            ItemSeparatorComponent={ModalSeparator}
+          />
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={handleSavePreferred}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.saveBtnText}>Save Preferred</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
+  flex: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
 
   centerState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
@@ -1493,6 +1982,7 @@ const styles = StyleSheet.create({
   productRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   productIconRow: { flexDirection: 'row', alignItems: 'center' },
   productName: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
+  productMeta: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textMuted },
   productSubText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textMuted, marginTop: 2 },
   qtyBadge: { backgroundColor: 'rgba(46,80,178,0.1)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   qtyBadgeText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue },
@@ -1559,6 +2049,7 @@ const styles = StyleSheet.create({
   },
   timeFieldValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
   timeFieldPlaceholder: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textMuted },
+  revisitHint: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, marginTop: -8, marginBottom: 14 },
 
   // Time Picker Modal (iOS sheet)
   timePickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
@@ -1573,10 +2064,52 @@ const styles = StyleSheet.create({
   // Documentation
   attachmentsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   attachmentThumb: {
-    width: 80, height: 80, borderRadius: 10, backgroundColor: '#F0F2F8',
-    justifyContent: 'center', alignItems: 'center', padding: 6,
+    width: 80, height: 80, borderRadius: 10, backgroundColor: '#F0F2F8', overflow: 'hidden',
   },
-  attachmentThumbText: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, textAlign: 'center' },
+  attachmentThumbImage: { width: '100%', height: '100%' },
+  attachmentRemoveBtn: {
+    position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center',
+  },
+  attachmentRemoveText: { color: COLORS.white, fontSize: 14, lineHeight: 16, fontFamily: FONTS.family.bold },
+  watermarkingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  watermarkingText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.textSecondary },
+
+  // Off-screen watermark capture stage
+  captureStage: {
+    position: 'absolute', left: -10000, top: 0,
+    width: WATERMARK_STAGE_WIDTH, height: WATERMARK_STAGE_WIDTH,
+    backgroundColor: '#000', overflow: 'hidden',
+  },
+  captureImage: { width: '100%', height: '100%' },
+
+  // Image Viewer Modal
+  viewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  viewerBackdrop: { ...StyleSheet.absoluteFillObject },
+  viewerContent: { width: '90%', alignItems: 'center' },
+  viewerImageWrapper: {
+    width: '100%', aspectRatio: 3 / 4, borderRadius: 12, overflow: 'hidden',
+    backgroundColor: '#000', justifyContent: 'center',
+  },
+  viewerImage: { width: '100%', height: '100%' },
+  watermarkBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: '#000',
+  },
+  watermarkLogo: {},
+  watermarkTimestamp: {
+    fontSize: FONTS.size.xs, fontFamily: FONTS.family.bold, color: COLORS.white,
+    textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2,
+  },
+  viewerCounter: { marginTop: 14, fontSize: FONTS.size.sm, fontFamily: FONTS.family.medium, color: COLORS.white },
+  viewerCloseBtn: {
+    position: 'absolute', top: Platform.OS === 'ios' ? 56 : 24, right: 20,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  viewerCloseText: { color: COLORS.white, fontSize: 26, lineHeight: 28, fontFamily: FONTS.family.regular },
   uploadCard: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: '#F8F9FB',
     alignItems: 'center', paddingVertical: 24, paddingHorizontal: 20, marginBottom: 8,
@@ -1604,6 +2137,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
   },
   followUpDateInput: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark, padding: 0 },
+  followUpDatePlaceholder: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textMuted, padding: 0 },
   followUpSlotBox: {
     flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
