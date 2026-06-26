@@ -122,9 +122,13 @@ type CatalogueItem = {
   name: string;
   category: string;
   packSize: string;
-  price: number;
+  price?: number;
   qty: number;
   selected: boolean;
+  // Present only for sample-allocation items (not the flat /products catalogue).
+  allocationId?: number;
+  allocatedQty?: number;
+  remainingQty?: number;
 };
 
 type SampleProduct = {
@@ -133,7 +137,12 @@ type SampleProduct = {
   category: string;
   packSize: string;
   quantity: number;
+  // Remaining allocated stock at the time the sample was added (for display).
+  remainingQty?: number;
 };
+
+// An MR may give at most one unit of any given sample product per visit.
+const MAX_SAMPLE_PER_VISIT = 1;
 
 // Preferred products the MR records for a contact. Unlike samples, no quantity
 // is captured — it's just the set of products this doctor/pharmacy/lead prefers.
@@ -251,6 +260,9 @@ const VisitDetailScreen = () => {
   const [sampleProducts, setSampleProducts] = useState<SampleProduct[]>([]);
   const [preferredProducts, setPreferredProducts] = useState<PreferredProduct[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  // Sample picker is driven by the MR's per-product allocations, kept separate
+  // from `catalogue` (the flat /products list used by the preferred picker).
+  const [sampleCatalogue, setSampleCatalogue] = useState<CatalogueItem[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [addSampleVisible, setAddSampleVisible] = useState(false);
   const [addPreferredVisible, setAddPreferredVisible] = useState(false);
@@ -409,6 +421,35 @@ const VisitDetailScreen = () => {
     }
   };
 
+  // Sample picker source: the products the admin has allocated to this MR, with
+  // remaining stock. `force` bypasses the cache to re-sync after a submit/422.
+  const fetchSampleAllocations = async (force = false): Promise<CatalogueItem[]> => {
+    if (!force && sampleCatalogue.length > 0) { return sampleCatalogue; }
+    try {
+      setCatalogueLoading(true);
+      const res = await apiClient.get(ENDPOINTS.sampleAllocations.list);
+      const items: CatalogueItem[] = (res.data?.data || []).map((a: any) => ({
+        id: String(a.productId),
+        allocationId: a.allocationId,
+        name: a.name,
+        category: a.category,
+        packSize: a.packSize,
+        allocatedQty: a.allocatedQty,
+        remainingQty: a.remainingQty ?? 0,
+        qty: 0,
+        selected: false,
+      }));
+      setSampleCatalogue(items);
+      return items;
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load allocated samples.';
+      showFeedback('error', 'Error', message);
+      return [];
+    } finally {
+      setCatalogueLoading(false);
+    }
+  };
+
   // Pre-fill the editable preferred list from whatever is already on the
   // contact's record so the MR edits an existing set rather than starting blank.
   const seedPreferredProducts = (
@@ -446,18 +487,7 @@ const VisitDetailScreen = () => {
     setAddPreferredVisible(false);
   };
 
-  const openAddSample = async () => {
-    const baseItems = await fetchCatalogue();
-    const source = baseItems.length > 0 ? baseItems : catalogue;
-    setCatalogue(source.map(item => {
-      const existing = sampleProducts.find(p => p.productId === item.id);
-      return existing
-        ? { ...item, selected: true, qty: existing.quantity }
-        : { ...item, selected: false, qty: 0 };
-    }));
-    setAddSampleVisible(true);
-  };
-
+  // Selection toggle for the preferred-products picker (no quantity).
   const toggleCatalogueItem = (id: string) => {
     setCatalogue(prev => prev.map(item => {
       if (item.id !== id) return item;
@@ -466,25 +496,51 @@ const VisitDetailScreen = () => {
     }));
   };
 
-  const updateCatalogueQty = (id: string, delta: number) => {
-    setCatalogue(prev => prev.map(item => {
+  // Cap a sample line at one unit per visit and never above remaining stock.
+  const sampleQtyCap = (item: CatalogueItem) =>
+    Math.min(MAX_SAMPLE_PER_VISIT, item.remainingQty ?? 0);
+
+  const openAddSample = async () => {
+    // Always re-sync on open so the remaining quantities are current.
+    const baseItems = await fetchSampleAllocations(true);
+    const source = baseItems.length > 0 ? baseItems : sampleCatalogue;
+    setSampleCatalogue(source.map(item => {
+      const existing = sampleProducts.find(p => p.productId === item.id);
+      const qty = existing ? Math.min(existing.quantity, sampleQtyCap(item)) : 0;
+      return { ...item, selected: qty > 0, qty };
+    }));
+    setAddSampleVisible(true);
+  };
+
+  const toggleSampleItem = (id: string) => {
+    setSampleCatalogue(prev => prev.map(item => {
       if (item.id !== id) return item;
-      const qty = Math.max(0, item.qty + delta);
+      if ((item.remainingQty ?? 0) <= 0) return item; // out of stock — locked
+      const selected = !item.selected;
+      return { ...item, selected, qty: selected ? sampleQtyCap(item) : 0 };
+    }));
+  };
+
+  const updateSampleQty = (id: string, delta: number) => {
+    setSampleCatalogue(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const qty = Math.max(0, Math.min(sampleQtyCap(item), item.qty + delta));
       return { ...item, qty, selected: qty > 0 };
     }));
   };
 
   const handleSaveSamples = () => {
-    const selected = catalogue.filter(c => c.selected && c.qty > 0);
+    const selected = sampleCatalogue.filter(c => c.selected && c.qty > 0);
     const newSamples: SampleProduct[] = selected.map(c => ({
       productId: c.id,
       name: c.name,
       category: c.category,
       packSize: c.packSize,
       quantity: c.qty,
+      remainingQty: c.remainingQty,
     }));
     setSampleProducts(newSamples);
-    setCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 0 })));
+    setSampleCatalogue(prev => prev.map(c => ({ ...c, selected: false, qty: 0 })));
     setAddSampleVisible(false);
   };
 
@@ -817,8 +873,26 @@ const VisitDetailScreen = () => {
       });
       dispatch(setRouteNeedsRefresh(true));
       showFeedback('success', 'Success', 'Visit report submitted successfully.', () => navigation.goBack());
-    } catch {
-      showFeedback('error', 'Error', 'Failed to submit visit report. Please try again.');
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      // Backend rejects (422) when a sample line exceeds the MR's remaining stock.
+      if (status === 422 && Array.isArray(data?.errors)) {
+        const lines = data.errors.map((e: any) => {
+          const prod = sampleProducts.find(p => String(p.productId) === String(e.productId));
+          const label = prod?.name ?? `Product ${e.productId}`;
+          return `• ${label}: requested ${e.requested}, only ${e.remaining} left`;
+        });
+        // Re-sync allocations so the picker shows the corrected remaining stock.
+        fetchSampleAllocations(true);
+        showFeedback(
+          'error',
+          data?.message ?? 'Insufficient sample stock',
+          `${lines.join('\n')}\n\nPlease adjust the samples and submit again.`,
+        );
+      } else {
+        showFeedback('error', 'Error', 'Failed to submit visit report. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1074,6 +1148,9 @@ const VisitDetailScreen = () => {
                 <View>
                   <Text style={styles.productName}>{product.name}</Text>
                   <Text style={styles.productSubText}>{product.category} • {product.packSize}</Text>
+                  {product.remainingQty != null && (
+                    <Text style={styles.productSubText}>Available: {product.remainingQty}</Text>
+                  )}
                 </View>
                 <View style={styles.qtyBadge}>
                   <Text style={styles.qtyBadgeText}>x{product.quantity}</Text>
@@ -1788,45 +1865,64 @@ const VisitDetailScreen = () => {
             <ActivityIndicator size="small" color={COLORS.buttonBlue} style={styles.catalogueLoader} />
           )}
           <FlatList
-            data={catalogue}
+            data={sampleCatalogue}
             keyExtractor={item => item.id}
             style={styles.modalList}
-            renderItem={({ item }) => (
-              <View style={styles.modalItem}>
-                <TouchableOpacity
-                  style={[styles.checkbox, item.selected && styles.checkboxSelected]}
-                  onPress={() => toggleCatalogueItem(item.id)}
-                  activeOpacity={0.8}
-                >
-                  {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
-                </TouchableOpacity>
-                <View style={styles.modalItemInfo}>
-                  <Text style={styles.modalItemTime}>{item.name}</Text>
-                  <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
-                  <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
+            ListEmptyComponent={
+              catalogueLoading ? null : (
+                <View style={styles.emptyRow}>
+                  <Text style={styles.emptyText}>
+                    No sample stock allocated to you yet.
+                  </Text>
                 </View>
-                <View style={styles.stepper}>
+              )
+            }
+            renderItem={({ item }) => {
+              const remaining = item.remainingQty ?? 0;
+              const outOfStock = remaining <= 0;
+              const atMax = item.qty >= Math.min(MAX_SAMPLE_PER_VISIT, remaining);
+              return (
+                <View style={[styles.modalItem, outOfStock && styles.modalItemDisabled]}>
                   <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => updateCatalogueQty(item.id, -1)}
+                    style={[styles.checkbox, item.selected && styles.checkboxSelected]}
+                    onPress={() => toggleSampleItem(item.id)}
+                    disabled={outOfStock}
+                    activeOpacity={0.8}
                   >
-                    <Text style={styles.stepperBtnText}>−</Text>
+                    {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
                   </TouchableOpacity>
-                  <Text style={styles.stepperValue}>{item.qty}</Text>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => updateCatalogueQty(item.id, 1)}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
+                  <View style={styles.modalItemInfo}>
+                    <Text style={styles.modalItemTime}>{item.name}</Text>
+                    <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+                    <Text style={[styles.modalItemAvail, outOfStock && styles.modalItemAvailEmpty]}>
+                      {outOfStock ? 'Out of stock' : `Available: ${remaining}`}
+                    </Text>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => updateSampleQty(item.id, -1)}
+                      disabled={outOfStock || item.qty <= 0}
+                    >
+                      <Text style={[styles.stepperBtnText, (outOfStock || item.qty <= 0) && styles.stepperBtnTextDisabled]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.stepperValue}>{item.qty}</Text>
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => updateSampleQty(item.id, 1)}
+                      disabled={outOfStock || atMax}
+                    >
+                      <Text style={[styles.stepperBtnText, (outOfStock || atMax) && styles.stepperBtnTextDisabled]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
             ItemSeparatorComponent={ModalSeparator}
           />
           <View style={styles.modalFooter}>
             {(() => {
-              const canSave = catalogue.some(c => c.selected && c.qty > 0);
+              const canSave = sampleCatalogue.some(c => c.selected && c.qty > 0);
               return (
                 <TouchableOpacity
                   style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
@@ -2207,12 +2303,16 @@ const styles = StyleSheet.create({
   modalItemTime: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 3 },
   modalItemDesc: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, lineHeight: 18 },
   modalItemPrice: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.buttonBlue, marginTop: 2 },
+  modalItemAvail: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.success, marginTop: 2 },
+  modalItemAvailEmpty: { color: COLORS.error },
+  modalItemDisabled: { opacity: 0.45 },
   stepper: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 28, overflow: 'hidden',
   },
   stepperBtn: { paddingHorizontal: 14, paddingVertical: 8 },
   stepperBtnText: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.regular, color: COLORS.textDark, lineHeight: 22 },
+  stepperBtnTextDisabled: { color: COLORS.border },
   stepperValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, minWidth: 28, textAlign: 'center' },
   modalFooter: { paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
   saveBtn: { backgroundColor: COLORS.buttonBlue, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },

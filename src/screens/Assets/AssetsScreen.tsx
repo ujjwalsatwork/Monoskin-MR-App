@@ -10,9 +10,17 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  RefreshControl,
+  Modal,
+  Image,
+  StatusBar,
+  Platform,
 } from 'react-native';
+import { useSelector } from 'react-redux';
 import Video from 'react-native-video';
-import RNFS from '@dr.pogodin/react-native-fs';
+import Pdf from 'react-native-pdf';
+import Svg, { Path } from 'react-native-svg';
+import * as RNFS from '@dr.pogodin/react-native-fs';
 import Share from 'react-native-share';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -48,15 +56,97 @@ const FEATURED_HEIGHT = 220;
 const PAGE_LIMIT = 20;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-const getMimeType = (fileType: string): string => {
-  switch (fileType.toUpperCase()) {
-    case 'PDF': return 'application/pdf';
-    case 'MP4': case 'MOV': return 'video/mp4';
-    case 'JPG': case 'JPEG': return 'image/jpeg';
-    case 'PNG': return 'image/png';
-    default: return 'application/octet-stream';
-  }
+const isImageType = (t: string) => ['JPG', 'JPEG', 'PNG', 'GIF', 'WEBP'].includes(t.toUpperCase());
+const isVideoType = (t: string) => ['MP4', 'MOV', 'M4V', 'WEBM'].includes(t.toUpperCase());
+const isPdfType = (t: string) => t.toUpperCase() === 'PDF';
+
+// The asset object endpoint does not support HTTP range requests, which iOS
+// AVPlayer requires for progressive streaming (otherwise: error -11850
+// "server is not correctly configured"). So we download videos to local cache
+// and play from the file path. Results are cached and reused across selections.
+interface LocalVideoState {
+  uri: string | null;
+  loading: boolean;
+  error: boolean;
+}
+
+// Videos (no range support) and PDFs (react-native-pdf is unreliable streaming
+// remote URLs on Android) are downloaded to local cache and rendered from disk.
+const needsLocalCopy = (t: string) => isVideoType(t) || isPdfType(t);
+
+const useLocalFile = (
+  item: AssetItem | null,
+  authHeaders: Record<string, string>,
+): LocalVideoState => {
+  const [state, setState] = useState<LocalVideoState>({ uri: null, loading: false, error: false });
+
+  useEffect(() => {
+    if (!item || !item.fileUrl || !needsLocalCopy(item.fileType)) {
+      setState({ uri: null, loading: false, error: false });
+      return;
+    }
+
+    let cancelled = false;
+    setState({ uri: null, loading: true, error: false });
+
+    (async () => {
+      try {
+        const ext = (item.fileType || 'bin').toLowerCase();
+        const path = `${RNFS.CachesDirectoryPath}/asset_${item.id}.${ext}`;
+
+        // Reuse the cached file only if it's fully downloaded. A partial file
+        // from an interrupted download makes ExoPlayer read past EOF
+        // (ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE), so re-fetch on mismatch.
+        const isComplete = async () => {
+          if (!(await RNFS.exists(path))) return false;
+          if (!item.fileSize) return true; // no expected size to verify against
+          const stat = await RNFS.stat(path);
+          return Number(stat.size) === item.fileSize;
+        };
+
+        if (!(await isComplete())) {
+          await RNFS.unlink(path).catch(() => {}); // clear any partial file
+          const res = await RNFS.downloadFile({
+            fromUrl: resolveAssetUrl(item.fileUrl),
+            toFile: path,
+            headers: authHeaders,
+          }).promise;
+          if (res.statusCode !== 200) throw new Error(`status ${res.statusCode}`);
+          // Guard against a truncated/short write
+          if (item.fileSize) {
+            const stat = await RNFS.stat(path);
+            if (Number(stat.size) !== item.fileSize) {
+              throw new Error(`size mismatch: got ${stat.size}, expected ${item.fileSize}`);
+            }
+          }
+        }
+        if (!cancelled) setState({ uri: `file://${path}`, loading: false, error: false });
+      } catch (e) {
+        console.warn('File prepare error:', e);
+        if (!cancelled) setState({ uri: null, loading: false, error: true });
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // authHeaders intentionally omitted: token is stable for the session and a
+    // new object identity each render would otherwise re-trigger the download.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id]);
+
+  return state;
 };
+
+const FullscreenIcon: React.FC<{ size?: number; color?: string }> = ({ size = 18, color = '#fff' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
 
 const isUserCancelError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
@@ -75,17 +165,24 @@ const formatSeconds = (secs: number): string => {
 // ─── Featured Video Player ─────────────────────────────────────────────────────
 interface FeaturedVideoPlayerProps {
   video: AssetItem;
+  authHeaders: Record<string, string>;
+  autoPlay?: boolean;
 }
 
-const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
+const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video, authHeaders, autoPlay = false }) => {
   const videoRef = useRef<any>(null);
-  const [paused, setPaused] = useState(true);
+  const [paused, setPaused] = useState(!autoPlay);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isEnded, setIsEnded] = useState(false);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The video is downloaded to local cache first (server lacks range support)
+  const { uri: localUri, loading: preparing, error: prepError } = useLocalFile(video, authHeaders);
+
+  const [fullscreen, setFullscreen] = useState(false);
 
   const progress = duration > 0 ? currentTime / duration : 0;
 
@@ -150,32 +247,49 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
     resetHideTimer();
   };
 
-  const videoUrl = resolveAssetUrl(video.fileUrl);
   const posterUrl = video.thumbnailUrl ? resolveAssetUrl(video.thumbnailUrl) : undefined;
+  const busy = preparing || loading;
 
   return (
     <View style={styles.featuredContainer}>
-      {video.fileUrl ? (
+      {localUri ? (
         <Video
           ref={videoRef}
-          source={{ uri: videoUrl }}
+          source={{ uri: localUri }}
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          resizeMode={fullscreen ? 'contain' : 'cover'}
           paused={paused}
           poster={posterUrl}
           posterResizeMode="cover"
+          fullscreen={fullscreen}
+          fullscreenAutorotate
+          fullscreenOrientation="all"
+          // iOS native fullscreen brings its own controls; toggling `controls`
+          // alongside fullscreen presentation crashes there, so Android-only.
+          controls={Platform.OS === 'android' && fullscreen}
           onProgress={onProgress}
           onLoad={onLoad}
           onBuffer={onBuffer}
           onEnd={onEnd}
+          onFullscreenPlayerWillPresent={() => setPaused(false)}
+          onFullscreenPlayerDidDismiss={() => { setFullscreen(false); setPaused(false); }}
+          onError={(e: any) => { setLoading(false); console.warn('Video error:', e); }}
           repeat={false}
         />
+      ) : posterUrl ? (
+        <ImageBackground source={{ uri: posterUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : (
         <ImageBackground
           source={require('@/assets/images/background/Brochure.png')}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
+      )}
+
+      {prepError && (
+        <View style={[StyleSheet.absoluteFill, styles.featuredErrorOverlay]}>
+          <Text style={styles.featuredErrorText}>Couldn't load this video.</Text>
+        </View>
       )}
 
       <TouchableOpacity
@@ -187,7 +301,7 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
           <>
             <View style={styles.featuredOverlay} />
 
-            {!loading && (
+            {!busy && (
               <TouchableOpacity
                 style={styles.featuredPlayBtn}
                 onPress={handlePlayPause}
@@ -227,11 +341,22 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
                 <Text style={styles.featuredTime}>{formatSeconds(duration)}</Text>
               </View>
             </View>
+
+            {localUri && (
+              <TouchableOpacity
+                style={styles.featuredFullscreenBtn}
+                onPress={() => setFullscreen(true)}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <FullscreenIcon size={18} color={COLORS.white} />
+              </TouchableOpacity>
+            )}
           </>
         )}
       </TouchableOpacity>
 
-      {loading && (
+      {busy && !prepError && (
         <ActivityIndicator size="large" color={COLORS.white} style={styles.featuredLoader} />
       )}
     </View>
@@ -241,20 +366,26 @@ const FeaturedVideoPlayer: React.FC<FeaturedVideoPlayerProps> = ({ video }) => {
 // ─── Video List Item ───────────────────────────────────────────────────────────
 interface VideoListItemProps {
   item: AssetItem;
+  isActive: boolean;
   isDownloaded: boolean;
   isDownloading: boolean;
   isSharing: boolean;
+  onPlay: (item: AssetItem) => void;
   onDownload: (item: AssetItem) => void;
   onShare: (item: AssetItem) => void;
 }
 
 const VideoListItem: React.FC<VideoListItemProps> = ({
-  item, isDownloaded, isDownloading, isSharing, onDownload, onShare,
+  item, isActive, isDownloaded, isDownloading, isSharing, onPlay, onDownload, onShare,
 }) => {
   const thumbUrl = item.thumbnailUrl ? resolveAssetUrl(item.thumbnailUrl) : undefined;
 
   return (
-    <View style={styles.videoListItem}>
+    <TouchableOpacity
+      style={[styles.videoListItem, isActive && styles.videoListItemActive]}
+      onPress={() => onPlay(item)}
+      activeOpacity={0.85}
+    >
       <View style={styles.videoThumbContainer}>
         {thumbUrl ? (
           <ImageBackground
@@ -282,7 +413,7 @@ const VideoListItem: React.FC<VideoListItemProps> = ({
       </View>
 
       <View style={styles.videoListInfo}>
-        <Text style={styles.videoListTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={[styles.videoListTitle, isActive && styles.videoListTitleActive]} numberOfLines={1}>{item.title}</Text>
         <View style={styles.videoListMeta}>
           <ClockIcon width={12} height={12} stroke={COLORS.textSecondary} />
           <Text style={styles.videoListMetaText}>{item.duration ?? '--:--'}</Text>
@@ -295,7 +426,7 @@ const VideoListItem: React.FC<VideoListItemProps> = ({
         <TouchableOpacity
           style={styles.videoActionBtn}
           onPress={() => onDownload(item)}
-          disabled={isDownloading || isDownloaded}
+          disabled={isDownloading}
           activeOpacity={0.75}
         >
           {isDownloading ? (
@@ -320,7 +451,7 @@ const VideoListItem: React.FC<VideoListItemProps> = ({
             : <ShareIcon width={22} height={22} />}
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -328,10 +459,11 @@ const VideoListItem: React.FC<VideoListItemProps> = ({
 interface AssetCardProps {
   item: AssetItem;
   onShare: (item: AssetItem) => void;
+  onView: (item: AssetItem) => void;
   isSharing: boolean;
 }
 
-const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, isSharing }) => {
+const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, onView, isSharing }) => {
   const thumbUrl = item.imageUrl ? resolveAssetUrl(item.imageUrl) : undefined;
 
   return (
@@ -366,7 +498,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ item, onShare, isSharing }) => {
         <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
         <Text style={styles.cardSubtitle}>{item.fileType} • {formatFileSize(item.fileSize)}</Text>
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.viewButton} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.viewButton} activeOpacity={0.8} onPress={() => onView(item)}>
             <EyeIcon stroke={COLORS.white} width={14} height={14} />
             <Text style={styles.viewButtonText}>View</Text>
           </TouchableOpacity>
@@ -393,6 +525,117 @@ const EmptyState: React.FC<{ message: string }> = ({ message }) => (
   </View>
 );
 
+// ─── Asset Preview Modal ─────────────────────────────────────────────────────────
+interface AssetPreviewModalProps {
+  item: AssetItem | null;
+  authHeaders: Record<string, string>;
+  onClose: () => void;
+}
+
+const AssetPreviewModal: React.FC<AssetPreviewModalProps> = ({ item, authHeaders, onClose }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  // Videos and PDFs are rendered from a local cached file (see useLocalFile)
+  const localFile = useLocalFile(item, authHeaders);
+
+  // Reset state whenever a new item opens
+  useEffect(() => {
+    if (item) {
+      setLoading(true);
+      setError(false);
+    }
+  }, [item]);
+
+  // Surface the local-file download outcome to the modal's loading/error UI
+  useEffect(() => {
+    if (item && needsLocalCopy(item.fileType) && localFile.error) {
+      setError(true);
+      setLoading(false);
+    }
+  }, [item, localFile.error]);
+
+  if (!item) return null;
+
+  const uri = resolveAssetUrl(item.fileUrl);
+  const type = item.fileType;
+
+  const renderBody = () => {
+    if (!item.fileUrl) {
+      return <Text style={styles.previewMessage}>No file available to preview.</Text>;
+    }
+    if (isImageType(type)) {
+      return (
+        <Image
+          source={{ uri, headers: authHeaders }}
+          style={styles.previewImage}
+          resizeMode="contain"
+          onLoadStart={() => setLoading(true)}
+          onLoadEnd={() => setLoading(false)}
+          onError={() => { setLoading(false); setError(true); }}
+        />
+      );
+    }
+    if (isVideoType(type)) {
+      // While downloading to cache, render nothing — the modal spinner shows
+      if (!localFile.uri) return null;
+      return (
+        <Video
+          source={{ uri: localFile.uri }}
+          style={styles.previewVideo}
+          resizeMode="contain"
+          controls
+          paused={false}
+          onLoad={() => setLoading(false)}
+          onError={() => { setLoading(false); setError(true); }}
+        />
+      );
+    }
+    if (isPdfType(type)) {
+      // Render from the local cached file (remote streaming is flaky on Android)
+      if (!localFile.uri) return null;
+      return (
+        <Pdf
+          source={{ uri: localFile.uri }}
+          style={styles.previewPdf}
+          trustAllCerts={false}
+          onLoadComplete={() => setLoading(false)}
+          onError={() => { setLoading(false); setError(true); }}
+        />
+      );
+    }
+    return <Text style={styles.previewMessage}>This file type can't be previewed.</Text>;
+  };
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.previewContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.previewHeader}>
+          <Text style={styles.previewTitle} numberOfLines={1}>{item.title}</Text>
+          <TouchableOpacity style={styles.previewCloseBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={styles.previewCloseText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.previewBody}>
+          {renderBody()}
+          {loading && !error && (
+            <ActivityIndicator
+              size="large"
+              color={COLORS.white}
+              style={styles.previewLoader}
+            />
+          )}
+          {error && (
+            <Text style={styles.previewMessage}>Couldn't load this file. Please try again.</Text>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 const AssetsScreen = () => {
   const [activeTab, setActiveTab] = useState<AssetTab>('brochures');
@@ -413,10 +656,21 @@ const AssetsScreen = () => {
   const [videosLoading, setVideosLoading] = useState(false);
   const [videosLoadingMore, setVideosLoadingMore] = useState(false);
   const [videosError, setVideosError] = useState<string | null>(null);
-  const videosFetched = useRef(false);
 
   // Per-item download tracking (supplements server's isDownloaded flag)
   const [localDownloadedIds, setLocalDownloadedIds] = useState<Set<number>>(new Set());
+
+  // Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+
+  // In-app preview
+  const [previewItem, setPreviewItem] = useState<AssetItem | null>(null);
+  const token = useSelector((state: any) => state.auth.token);
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+  // Selected video to play in the featured player (null → default to first video)
+  const [selectedVideoId, setSelectedVideoId] = useState<number | null>(null);
+  const videosScrollRef = useRef<ScrollView>(null);
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const loadBrochures = useCallback(async (page = 1) => {
@@ -449,6 +703,20 @@ const AssetsScreen = () => {
     }
   }, []);
 
+  // ── Pull to refresh ──────────────────────────────────────────────────────────
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (activeTab === 'brochures') {
+        await loadBrochures(1);
+      } else {
+        await loadVideos(1);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeTab, loadBrochures, loadVideos]);
+
   // Fetch brochures on mount (default tab)
   useEffect(() => {
     if (!brochuresFetched.current) {
@@ -457,11 +725,13 @@ const AssetsScreen = () => {
     }
   }, [loadBrochures]);
 
-  // Fetch videos lazily when that tab is first opened
+  // Refetch the selected tab's first page every time the tab changes
   const handleTabSwitch = (tab: AssetTab) => {
+    if (tab === activeTab) return;
     setActiveTab(tab);
-    if (tab === 'videos' && !videosFetched.current) {
-      videosFetched.current = true;
+    if (tab === 'brochures') {
+      loadBrochures(1);
+    } else {
       loadVideos(1);
     }
   };
@@ -480,32 +750,26 @@ const AssetsScreen = () => {
   };
 
   // ── Share ────────────────────────────────────────────────────────────────────
+  // Shares the document link (URL) as text rather than attaching the file.
   const handleShare = async (item: AssetItem) => {
     const idStr = String(item.id);
     if (sharingId) return;
+
+    const rawUrl = item.fileUrl || item.imageUrl;
+    if (!rawUrl) {
+      Alert.alert('Not available', 'No link is available to share for this item yet.');
+      return;
+    }
+
+    const link = resolveAssetUrl(rawUrl);
     setSharingId(idStr);
     try {
-      const shareOptions: {
-        title: string;
-        message: string;
-        url?: string;
-        type?: string;
-        failOnCancel?: boolean;
-      } = {
+      await Share.open({
         title: item.title,
-        message: item.title,
+        message: `${item.title}\n${link}`,
+        url: link,
         failOnCancel: false,
-      };
-
-      if (item.fileUrl) {
-        shareOptions.url = resolveAssetUrl(item.fileUrl);
-        shareOptions.type = getMimeType(item.fileType);
-      } else if (item.imageUrl) {
-        shareOptions.url = resolveAssetUrl(item.imageUrl);
-        shareOptions.type = 'image/jpeg';
-      }
-
-      await Share.open(shareOptions);
+      });
     } catch (error) {
       if (!isUserCancelError(error)) {
         console.warn('Share error:', error);
@@ -516,26 +780,23 @@ const AssetsScreen = () => {
   };
 
   // ── Download ─────────────────────────────────────────────────────────────────
-  const handleDownload = async (item: AssetItem) => {
-    if (!item.fileUrl) {
-      Alert.alert('Not available', 'No download URL is set for this item yet.');
-      return;
-    }
-    if (downloadingId !== null || item.isDownloaded || localDownloadedIds.has(item.id)) return;
-
+  const performDownload = async (item: AssetItem) => {
     setDownloadingId(item.id);
 
-    const ext = item.fileType.toLowerCase();
-    const fileName = `${item.title.replace(/\s+/g, '_')}_${item.id}.${ext}`;
-    const destPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-
     try {
-      const success = await downloadAssetFile(item, destPath);
+      const { success, path } = await downloadAssetFile(item);
       if (success) {
         setLocalDownloadedIds(prev => new Set([...prev, item.id]));
         // Notify server
         markAssetDownloaded(item.id).catch(() => {});
-        Alert.alert('Downloaded', `"${item.title}" saved to your device.`);
+        // On Android, show the user-facing folder path (Internal storage › Download › …)
+        const friendly = path
+          .replace('/storage/emulated/0/', 'Internal storage/')
+          .replace('/Download/', '/Downloads/');
+        const location = Platform.OS === 'ios'
+          ? 'Open the Files app › On My iPhone › Monoskin SalesForce to find it.'
+          : `Saved to:\n${friendly}`;
+        Alert.alert('Downloaded', `"${item.title}" was saved.\n\n${location}`);
       } else {
         Alert.alert('Error', 'Download failed. Please try again.');
       }
@@ -546,10 +807,40 @@ const AssetsScreen = () => {
     }
   };
 
+  const handleDownload = (item: AssetItem) => {
+    if (!item.fileUrl) {
+      Alert.alert('Not available', 'No download URL is set for this item yet.');
+      return;
+    }
+    if (downloadingId !== null) return;
+
+    // Already downloaded: confirm before downloading again
+    if (isDownloaded(item)) {
+      Alert.alert(
+        'Already downloaded',
+        `"${item.title}" is already saved on your device. Download it again?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Download again', onPress: () => performDownload(item) },
+        ],
+      );
+      return;
+    }
+
+    performDownload(item);
+  };
+
   const isDownloaded = (item: AssetItem) =>
     item.isDownloaded || localDownloadedIds.has(item.id);
 
-  const featuredVideo = videos[0] ?? null;
+  const featuredVideo =
+    videos.find(v => v.id === selectedVideoId) ?? videos[0] ?? null;
+
+  // Tapping a list item plays it in the featured player and scrolls it into view
+  const handlePlayVideo = (item: AssetItem) => {
+    setSelectedVideoId(item.id);
+    videosScrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
 
   // ── Brochures footer (load more / loading) ───────────────────────────────────
   const renderBrochureFooter = () => {
@@ -611,6 +902,7 @@ const AssetsScreen = () => {
               <AssetCard
                 item={item}
                 onShare={handleShare}
+                onView={setPreviewItem}
                 isSharing={sharingId === String(item.id)}
               />
             )}
@@ -623,6 +915,14 @@ const AssetsScreen = () => {
             onEndReachedThreshold={0.3}
             ListFooterComponent={renderBrochureFooter}
             ListEmptyComponent={<EmptyState message="No brochures available." />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
+              />
+            }
           />
         )
       )}
@@ -639,11 +939,27 @@ const AssetsScreen = () => {
           </TouchableOpacity>
         ) : (
           <ScrollView
+            ref={videosScrollRef}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.videosContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
+              />
+            }
           >
             {/* Featured Player */}
-            {featuredVideo && <FeaturedVideoPlayer video={featuredVideo} />}
+            {featuredVideo && (
+              <FeaturedVideoPlayer
+                key={featuredVideo.id}
+                video={featuredVideo}
+                authHeaders={authHeaders}
+                autoPlay={selectedVideoId !== null}
+              />
+            )}
 
             {/* Library header */}
             {videos.length > 0 && (
@@ -660,9 +976,11 @@ const AssetsScreen = () => {
               <VideoListItem
                 key={video.id}
                 item={video}
+                isActive={featuredVideo?.id === video.id}
                 isDownloaded={isDownloaded(video)}
                 isDownloading={downloadingId === video.id}
                 isSharing={sharingId === String(video.id)}
+                onPlay={handlePlayVideo}
                 onDownload={handleDownload}
                 onShare={handleShare}
               />
@@ -680,6 +998,13 @@ const AssetsScreen = () => {
           </ScrollView>
         )
       )}
+
+      {/* In-app file preview */}
+      <AssetPreviewModal
+        item={previewItem}
+        authHeaders={authHeaders}
+        onClose={() => setPreviewItem(null)}
+      />
     </View>
   );
 };
@@ -878,6 +1203,29 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignSelf: 'center',
   },
+  featuredErrorOverlay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  featuredFullscreenBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featuredErrorText: {
+    fontFamily: FONTS.family.medium,
+    fontSize: FONTS.size.sm,
+    color: COLORS.white,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
   featuredPlayBtn: {
     position: 'absolute',
     top: '50%',
@@ -990,6 +1338,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  videoListItemActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#FBF5FF',
+  },
+  videoListTitleActive: {
+    color: COLORS.primary,
+  },
   videoThumbContainer: {
     width: 70,
     height: 70,
@@ -1070,6 +1425,70 @@ const styles = StyleSheet.create({
   },
   loaderMarginV16: {
     marginVertical: 16,
+  },
+
+  // ── Preview modal ───────────────────────────────────────────────────────
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingVertical: 14,
+    paddingTop: 50,
+    backgroundColor: '#000',
+  },
+  previewTitle: {
+    flex: 1,
+    fontFamily: FONTS.family.bold,
+    fontSize: FONTS.size.md,
+    color: COLORS.white,
+    marginRight: 12,
+  },
+  previewCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewCloseText: {
+    color: COLORS.white,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  previewBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  previewPdf: {
+    flex: 1,
+    width: SCREEN_WIDTH,
+    backgroundColor: '#000',
+  },
+  previewLoader: {
+    position: 'absolute',
+  },
+  previewMessage: {
+    fontFamily: FONTS.family.medium,
+    fontSize: FONTS.size.md,
+    color: COLORS.white,
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
   loaderMarginV12: {
     marginVertical: 12,

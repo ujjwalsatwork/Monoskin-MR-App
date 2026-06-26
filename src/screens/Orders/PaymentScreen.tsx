@@ -96,6 +96,10 @@ type ApiScheme = {
   buyQty: number;
   getQty: number;
   discount: string;
+  // BXGY schemes may carry an additional "+ X% off" / "+ ₹X off" on top of free goods.
+  secondaryDiscountType: 'percentage' | 'fixed' | null;
+  secondaryDiscountValue: string | null;
+  maxDiscount: string | null;
   validFrom: string | null;
   validTo: string | null;
   minOrderValue: string | null;
@@ -143,6 +147,11 @@ const safeFloat = (val: string | number | null | undefined, fallback = 0): numbe
   const n = parseFloat(String(val ?? ''));
   return isNaN(n) ? fallback : n;
 };
+
+// Indian-grouped currency for display, e.g. 20000 → "20,000.00". Display only —
+// never use for API payloads, which expect plain comma-free decimals.
+const formatINR = (val: number, decimals = 2): string =>
+  val.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
@@ -264,8 +273,21 @@ const PaymentScreen = () => {
   const promoPct   = appliedPromo?.type === 'Percentage' ? safeFloat(appliedPromo.discount) : 0;
   const promoFlat  = appliedPromo?.type === 'Fixed'      ? safeFloat(appliedPromo.discount) : 0;
 
+  // BXGY secondary discount ("+ X% off" / "+ ₹X off"), applied on top of free goods
+  // and capped at the scheme's maxDiscount when set.
+  const schemeSecondaryType  = selectedScheme?.type === 'buyXgetY' ? selectedScheme.secondaryDiscountType : null;
+  const schemeSecondaryValue = safeFloat(selectedScheme?.secondaryDiscountValue);
+  const schemeMaxDiscount    = selectedScheme?.maxDiscount != null ? safeFloat(selectedScheme.maxDiscount) : null;
+  const schemeSecondaryAmt   = (() => {
+    if (!schemeSecondaryType || schemeSecondaryValue <= 0) return 0;
+    const raw = schemeSecondaryType === 'percentage'
+      ? subtotal * schemeSecondaryValue / 100
+      : schemeSecondaryValue;
+    return schemeMaxDiscount != null ? Math.min(raw, schemeMaxDiscount) : raw;
+  })();
+
   const totalPct  = slabPct + schemePct + clinicPct + promoPct;
-  const flatDisc  = schemeFlat + promoFlat;
+  const flatDisc  = schemeFlat + promoFlat + schemeSecondaryAmt;
 
   const discountAmt    = subtotal > 0 ? Math.min(subtotal, subtotal * (totalPct / 100) + flatDisc) : 0;
   const discountFactor = subtotal > 0 ? 1 - discountAmt / subtotal : 1;
@@ -334,7 +356,7 @@ const PaymentScreen = () => {
       if (promo.validTo   && new Date(promo.validTo)   < now) { setCodeError('Code has expired'); return; }
       if (promo.usageLimit != null && promo.usedCount >= promo.usageLimit) { setCodeError('Usage limit reached'); return; }
       if (promo.minOrderValue && subtotal < safeFloat(promo.minOrderValue)) {
-        setCodeError(`Min. order ₹${safeFloat(promo.minOrderValue).toFixed(2)} required`); return;
+        setCodeError(`Min. order ₹${formatINR(safeFloat(promo.minOrderValue))} required`); return;
       }
       if (promo.eligibleProducts?.length) {
         const cartIds = orderCreateData.items.map(i => i.productId);
@@ -379,7 +401,13 @@ const PaymentScreen = () => {
   };
 
   const schemeLabel = (s: ApiScheme) => {
-    if (s.type === 'buyXgetY') return `${s.name} — Buy ${s.buyQty} Get ${s.getQty}`;
+    if (s.type === 'buyXgetY') {
+      let label = `${s.name} — Buy ${s.buyQty} Get ${s.getQty}`;
+      const secVal = safeFloat(s.secondaryDiscountValue);
+      if (s.secondaryDiscountType === 'percentage' && secVal > 0) label += ` + ${secVal}% off`;
+      else if (s.secondaryDiscountType === 'fixed' && secVal > 0) label += ` + ₹${secVal} off`;
+      return label;
+    }
     if (s.type === 'percentage') return `${s.name} — ${s.discount}% off`;
     if (s.type === 'fixed') return `${s.name} — ₹${s.discount} off`;
     return s.name;
@@ -468,7 +496,7 @@ const PaymentScreen = () => {
       showAlert({
         type: 'success',
         title: 'Order Placed!',
-        message: `Order ${apiOrderNumber} has been placed successfully.${total > 0 ? `\n\nTotal: ₹${total.toFixed(2)}` : ''}`,
+        message: `Order ${apiOrderNumber} has been placed successfully.${total > 0 ? `\n\nTotal: ₹${formatINR(total)}` : ''}`,
         confirmText: 'View Order',
         onConfirm: () => navigation.navigate('OrderDetail', { orderId: createdOrderId, orderNumber: apiOrderNumber }),
       });
@@ -530,7 +558,13 @@ const PaymentScreen = () => {
                 <View style={styles.appliedSchemeCard}>
                   <Text style={styles.appliedSchemeTitle}>
                     Scheme applied: {selectedScheme.name}
-                    {schemePct > 0 ? ` (+ ${selectedScheme.discount}% off)` : ''}
+                    {schemeSecondaryAmt > 0
+                      ? (schemeSecondaryType === 'percentage'
+                          ? ` (+ ${schemeSecondaryValue}% off)`
+                          : ` (+ ₹${schemeSecondaryValue} off)`)
+                      : schemePct > 0
+                        ? ` (+ ${selectedScheme.discount}% off)`
+                        : ''}
                   </Text>
                   {freeGoods.map((fg, i) => (
                     <Text key={i} style={styles.appliedSchemeDetail}>
@@ -552,7 +586,7 @@ const PaymentScreen = () => {
                       {appliedPromo
                         ? (appliedPromo.type === 'Percentage'
                             ? `${appliedPromo.discount}% off applied`
-                            : `₹${safeFloat(appliedPromo.discount).toFixed(2)} off applied`)
+                            : `₹${formatINR(safeFloat(appliedPromo.discount))} off applied`)
                         : `${appliedClinicCode?.discount}% clinic discount applied`}
                     </Text>
                   </View>
@@ -604,14 +638,14 @@ const PaymentScreen = () => {
               <View style={{ flex: 1 }}>
                 <Text style={styles.lineItemName}>{item.productName ?? `Product #${item.productId}`}</Text>
                 <Text style={styles.lineItemSub}>
-                  ₹{safeFloat(item.unitPrice).toFixed(2)} × {item.quantity}
+                  ₹{formatINR(safeFloat(item.unitPrice))} × {item.quantity}
                   {freeGoods.find(fg => fg.productId === item.productId)
                     ? ` +${freeGoods.find(fg => fg.productId === item.productId)!.quantity} free`
                     : ''}
                 </Text>
               </View>
               <Text style={styles.lineItemTotal}>
-                ₹{(safeFloat(item.unitPrice) * item.quantity).toFixed(2)}
+                ₹{formatINR(safeFloat(item.unitPrice) * item.quantity)}
               </Text>
             </View>
           ))}
@@ -621,64 +655,72 @@ const PaymentScreen = () => {
           {/* Subtotal */}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryKey}>Subtotal</Text>
-            <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>₹{formatINR(subtotal)}</Text>
           </View>
 
           {/* Discount breakdown */}
           {slabPct > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>{pricingSlab?.name} ({slabPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * slabPct / 100).toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(subtotal * slabPct / 100)}</Text>
             </View>
           )}
           {schemePct > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>{selectedScheme?.name} ({schemePct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * schemePct / 100).toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(subtotal * schemePct / 100)}</Text>
             </View>
           )}
           {schemeFlat > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>{selectedScheme?.name} (Fixed)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{schemeFlat.toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(schemeFlat)}</Text>
+            </View>
+          )}
+          {schemeSecondaryAmt > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryDiscountKey}>
+                {selectedScheme?.name} ({schemeSecondaryType === 'percentage' ? `${schemeSecondaryValue}%` : 'Fixed'})
+              </Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(schemeSecondaryAmt)}</Text>
             </View>
           )}
           {clinicPct > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>Clinic Code {appliedClinicCode?.code} ({clinicPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * clinicPct / 100).toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(subtotal * clinicPct / 100)}</Text>
             </View>
           )}
           {promoPct > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>{appliedPromo?.code} ({promoPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * promoPct / 100).toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(subtotal * promoPct / 100)}</Text>
             </View>
           )}
           {promoFlat > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountKey}>{appliedPromo?.code} (Fixed)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{promoFlat.toFixed(2)}</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(promoFlat)}</Text>
             </View>
           )}
           {discountAmt > 0 && (
             <View style={[styles.summaryRow, styles.totalDiscountRow]}>
               <Text style={styles.totalDiscountKey}>Total Discount</Text>
-              <Text style={styles.totalDiscountVal}>-₹{discountAmt.toFixed(2)}</Text>
+              <Text style={styles.totalDiscountVal}>-₹{formatINR(discountAmt)}</Text>
             </View>
           )}
 
           {/* Tax */}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryKey}>Tax (GST)</Text>
-            <Text style={styles.summaryValue}>₹{computedTax.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>₹{formatINR(computedTax)}</Text>
           </View>
           <View style={styles.summaryDivider} />
 
           {/* Total */}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryTotalKey}>Total Amount</Text>
-            <Text style={styles.summaryTotalValue}>₹{total.toFixed(2)}</Text>
+            <Text style={styles.summaryTotalValue}>₹{formatINR(total)}</Text>
           </View>
         </View>
 
@@ -713,7 +755,7 @@ const PaymentScreen = () => {
               const isInelig   = !isNull && !eligibleSchemes.find(e => e.id === scheme?.id);
               const ineligReason = !isNull && isInelig
                 ? (scheme!.minOrderValue && subtotal < safeFloat(scheme!.minOrderValue)
-                    ? `Add ₹${(safeFloat(scheme!.minOrderValue) - subtotal).toFixed(0)} more qualifying units to the cart`
+                    ? `Add ₹${formatINR(safeFloat(scheme!.minOrderValue) - subtotal, 0)} more qualifying units to the cart`
                     : 'Not applicable to current cart')
                 : '';
 
@@ -762,7 +804,7 @@ const PaymentScreen = () => {
           disabled={loading}
         >
           <Text style={styles.proceedBtnText}>
-            {loading ? 'Placing Order…' : `Place Order  ₹${total.toFixed(2)}  →`}
+            {loading ? 'Placing Order…' : `Place Order  ₹${formatINR(total)}  →`}
           </Text>
         </TouchableOpacity>
         <Text style={styles.termsText}>
