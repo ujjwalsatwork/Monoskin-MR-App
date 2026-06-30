@@ -19,6 +19,28 @@ const LIST_HEIGHT = Math.round(Dimensions.get('window').height * 0.38);
 const ALL_STATES: { isoCode: string; name: string }[] = INDIA_DATA.states;
 const CITIES_BY_STATE = INDIA_DATA.cities as Record<string, string[]>;
 
+// Lifts a bottom-pinned sheet above the keyboard.
+//
+// iOS uses KeyboardAvoidingView (behavior="padding") — the modal window does not
+// resize for the keyboard, so we lift the sheet ourselves.
+//
+// Android uses a plain View with no keyboard avoidance: the Modal window already
+// moves itself up when the keyboard opens, so the bottom-pinned sheet lands above
+// the keyboard on its own. Adding KeyboardAvoidingView (behavior="height") on top
+// of that double-lifted the sheet AND oscillated via onLayout — that fight with
+// the OS lift was the source of the flicker after the keyboard was dismissed.
+const SheetKeyboardAvoider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  if (Platform.OS === 'ios') {
+    return (
+      <KeyboardAvoidingView style={styles.modalRoot} behavior="padding">
+        {children}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return <View style={styles.modalRoot}>{children}</View>;
+};
+
 type Props = {
   stateValue: string;
   cityValue: string;
@@ -243,10 +265,7 @@ const StateCitySelector: React.FC<Props> = ({
         visible={showStateModal}
         onRequestClose={() => setShowStateModal(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalRoot}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <SheetKeyboardAvoider>
           <TouchableWithoutFeedback onPress={() => setShowStateModal(false)}>
             <View style={styles.backdrop} />
           </TouchableWithoutFeedback>
@@ -298,7 +317,7 @@ const StateCitySelector: React.FC<Props> = ({
             )}
             />
           </View>
-        </KeyboardAvoidingView>
+        </SheetKeyboardAvoider>
       </Modal>
 
       {/* ── City Search Modal ── */}
@@ -309,10 +328,7 @@ const StateCitySelector: React.FC<Props> = ({
         visible={showCityModal}
         onRequestClose={() => setShowCityModal(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalRoot}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <SheetKeyboardAvoider>
           <TouchableWithoutFeedback onPress={() => setShowCityModal(false)}>
             <View style={styles.backdrop} />
           </TouchableWithoutFeedback>
@@ -364,7 +380,7 @@ const StateCitySelector: React.FC<Props> = ({
               )}
             />
           </View>
-        </KeyboardAvoidingView>
+        </SheetKeyboardAvoider>
       </Modal>
     </View>
   );

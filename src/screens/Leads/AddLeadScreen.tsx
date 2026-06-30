@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
-  Modal, FlatList, TouchableWithoutFeedback,
+  Modal, FlatList, TouchableWithoutFeedback, KeyboardAvoidingView,
 } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 
@@ -96,7 +96,9 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
 const STAGE_OPTIONS = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted', 'Lost'];
 const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'];
-const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Walk-in Visit', 'Phone Call', 'Email', 'WhatsApp', 'Other'];
+const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Other'];
+// Doctor leads use the "Doctor" prefix set (see backend naming-convention update).
+const PREFIX_OPTIONS = ['Dr.', 'Prof.', 'Prof. Dr.'];
 
 /* ─── Generic options bottom-sheet ───────────────────────────────── */
 type OptionsSheetProps = {
@@ -183,13 +185,27 @@ export type AssignedPharmacy = {
   name: string;
 };
 
+// Linked pharmacy's pharmacist uses the "General" prefix set.
+const PHARMACY_PREFIX_OPTIONS = ['Mr.', 'Mrs.', 'Ms.'];
+
+// Capitalise the first letter only (mirrors the CRM, which stores "Wdadw").
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 export type CustomPharmacy = {
-  name: string;
+  prefix: string;     // pharmacist prefix
+  firstName: string;  // pharmacist first name
+  lastName: string;   // pharmacist last name
+  name: string;       // pharmacy (business) name
   gst: string;
-  postalAddress: string;
+  license: string;
   phone: string;
-  billingDetails: string;
-  deliveryDetails: string;
+  state: string;
+  city: string;
+};
+
+const EMPTY_CUSTOM_PHARMACY: CustomPharmacy = {
+  prefix: 'Mr.', firstName: '', lastName: '', name: '', gst: '',
+  license: '', phone: '', state: '', city: '',
 };
 
 type MultiSelectSheetProps = {
@@ -240,39 +256,81 @@ const MultiSelectSheet = ({ visible, title, options, selectedIds, onToggle, onAd
   </Modal>
 );
 
-const CustomPharmacyModal = ({ visible, onClose, onSave, onError }: { visible: boolean, onClose: () => void, onSave: (p: CustomPharmacy) => void, onError: (msg: string) => void }) => {
-  const [data, setData] = useState<CustomPharmacy>({ name: '', gst: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+const CustomPharmacyModal = ({ visible, initialData, onClose, onSave }: { visible: boolean, initialData?: CustomPharmacy | null, onClose: () => void, onSave: (p: CustomPharmacy) => void }) => {
+  const [data, setData] = useState<CustomPharmacy>(EMPTY_CUSTOM_PHARMACY);
+  const [showPrefix, setShowPrefix] = useState(false);
+  // Bumped on every open so StateCitySelector remounts and re-reads its value.
+  const [openSeq, setOpenSeq] = useState(0);
+  // Validation alert shown inside this modal so the form (and its values) stays.
+  const [localAlert, setLocalAlert] = useState<AlertState>(ALERT_HIDDEN);
+  const showError = (msg: string) => setLocalAlert({ visible: true, type: 'error', title: 'Validation Error', message: msg });
+  const isEditing = !!initialData;
+  // Sync the form whenever the modal opens (pre-fill for edit, reset for add).
+  useEffect(() => {
+    if (visible) {
+      setData({ ...EMPTY_CUSTOM_PHARMACY, ...(initialData || {}) });
+      setOpenSeq(s => s + 1);
+    }
+  }, [visible, initialData]);
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <View style={[sheet.overlay, { justifyContent: 'flex-end' }]}>
+      <KeyboardAvoidingView
+        style={[sheet.overlay, { justifyContent: 'flex-end' }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={[sheet.container, { paddingBottom: Platform.OS === 'ios' ? 40 : 20, maxHeight: '90%' }]}>
           <View style={sheet.handle} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-             <Text style={sheet.title}>Add Custom Pharmacy</Text>
+             <Text style={sheet.title}>{isEditing ? 'Edit Custom Pharmacy' : 'Add Custom Pharmacy'}</Text>
              <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.textMuted }}>Cancel</Text></TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+            <Field label="Prefix">
+              <TouchableOpacity style={styles.dropdown} activeOpacity={0.8} onPress={() => setShowPrefix(true)}>
+                <Text style={[styles.dropdownText, data.prefix && styles.dropdownSelected]}>{data.prefix || 'Select Prefix'}</Text>
+                <Down width={16} height={16} stroke={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </Field>
+            <Field label="Pharmacist First Name *"><TextInput style={styles.input} value={data.firstName} onChangeText={t => setData({...data, firstName: t})} placeholder="First name" /></Field>
+            <Field label="Pharmacist Last Name"><TextInput style={styles.input} value={data.lastName} onChangeText={t => setData({...data, lastName: t})} placeholder="Last name" /></Field>
             <Field label="Pharmacy Name *"><TextInput style={styles.input} value={data.name} onChangeText={t => setData({...data, name: t})} placeholder="Pharmacy Name" /></Field>
-            <Field label="GST *"><TextInput style={styles.input} value={data.gst} onChangeText={t => setData({...data, gst: t})} placeholder="GST Number" /></Field>
-            <Field label="Postal Address *"><TextInput style={styles.input} value={data.postalAddress} onChangeText={t => setData({...data, postalAddress: t})} placeholder="Address" /></Field>
             <Field label="Phone No. *"><TextInput style={styles.input} keyboardType="numeric" maxLength={10} value={data.phone} onChangeText={t => setData({...data, phone: t.replace(/[^0-9]/g, '').slice(0, 10)})} placeholder="10 digit Phone Number" /></Field>
-            <Field label="Billing Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.billingDetails} onChangeText={t => setData({...data, billingDetails: t})} placeholder="Billing details..." /></Field>
-            <Field label="Delivery Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.deliveryDetails} onChangeText={t => setData({...data, deliveryDetails: t})} placeholder="Delivery details..." /></Field>
+            <Field label="GST *"><TextInput style={styles.input} value={data.gst} onChangeText={t => setData({...data, gst: t})} placeholder="GST Number" /></Field>
+            <Field label="License *"><TextInput style={styles.input} value={data.license} onChangeText={t => setData({...data, license: t})} placeholder="License Number" /></Field>
+            <StateCitySelector
+              key={openSeq}
+              stateValue={data.state}
+              cityValue={data.city}
+              onStateChange={val => setData(d => ({ ...d, state: val }))}
+              onCityChange={val => setData(d => ({ ...d, city: val }))}
+              stateLabel="State *"
+              cityLabel="City *"
+            />
             <TouchableOpacity style={styles.saveBtn} onPress={() => {
-              if (!data.name.trim()) { onError('Pharmacy Name is required.'); return; }
-              if (!data.gst.trim()) { onError('GST Number is required.'); return; }
-              if (!data.postalAddress.trim()) { onError('Postal Address is required.'); return; }
-              if (data.phone.length !== 10) { onError('A valid 10-digit Phone Number is required.'); return; }
-              if (!data.billingDetails.trim()) { onError('Billing Details are required.'); return; }
-              if (!data.deliveryDetails.trim()) { onError('Delivery Details are required.'); return; }
+              if (!data.firstName.trim()) { showError('Pharmacist first name is required.'); return; }
+              if (!data.name.trim()) { showError('Pharmacy Name is required.'); return; }
+              if (data.phone.length !== 10) { showError('A valid 10-digit Phone Number is required.'); return; }
+              if (!data.gst.trim()) { showError('GST Number is required.'); return; }
+              if (!data.license.trim()) { showError('License Number is required.'); return; }
+              if (!data.state.trim()) { showError('State is required.'); return; }
+              if (!data.city.trim()) { showError('City is required.'); return; }
               onSave(data);
-              setData({ name: '', gst: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+              setData(EMPTY_CUSTOM_PHARMACY);
             }}>
-              <Text style={styles.saveBtnText}>Add</Text>
+              <Text style={styles.saveBtnText}>{isEditing ? 'Save' : 'Add'}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
+      <OptionsSheet
+        visible={showPrefix}
+        title="Select Prefix"
+        options={PHARMACY_PREFIX_OPTIONS}
+        selected={data.prefix}
+        onSelect={val => setData(d => ({ ...d, prefix: val }))}
+        onClose={() => setShowPrefix(false)}
+      />
+      <AlertModal state={localAlert} onDismiss={() => setLocalAlert(ALERT_HIDDEN)} />
     </Modal>
   );
 };
@@ -284,13 +342,19 @@ const AddLeadScreen = () => {
   const { editMode, leadData } = route.params || {};
 
   const [form, setForm] = useState({
-    name: leadData?.name || '',
+    // Name is now split into prefix + first + last (backend composes the full
+    // `name`). Fall back to the legacy single `name` for older records.
+    prefix: leadData?.prefix || 'Dr.',
+    firstName: leadData?.firstName || leadData?.name || '',
+    lastName: leadData?.lastName || '',
     designation: leadData?.designation || '',
     specialization: leadData?.specialization || '',
     clinic: leadData?.clinic || leadData?.company || '',
     licenseNumber: leadData?.licenseNumber || '',
     city: leadData?.city || '',
     state: leadData?.state || '',
+    area: leadData?.area || '',
+    pincode: leadData?.pincode || '',
     address: leadData?.address || '',
     googleMapsUrl: leadData?.googleMapsUrl || '',
     phone: leadData?.phone || '',
@@ -326,6 +390,8 @@ const AddLeadScreen = () => {
   
   const [showPharmaciesSheet, setShowPharmaciesSheet] = useState(false);
   const [showCustomPharmacyModal, setShowCustomPharmacyModal] = useState(false);
+  // Index of the custom pharmacy currently being edited (null = adding new).
+  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Fetch assigned pharmacies
@@ -343,7 +409,17 @@ const AddLeadScreen = () => {
        // initialize selected from edit
        const preSelectedIds = leadData.linkedPharmacy.filter((p: any) => p.pharmacyId).map((p: any) => p.pharmacyId);
        setSelectedPharmacyIds(preSelectedIds);
-       const preCustom = leadData.linkedPharmacy.filter((p: any) => !p.pharmacyId);
+       const preCustom: CustomPharmacy[] = leadData.linkedPharmacy.filter((p: any) => !p.pharmacyId).map((p: any) => ({
+         prefix: p.prefix || 'Mr.',
+         firstName: p.firstName || '',
+         lastName: p.lastName || '',
+         name: p.name || '',
+         gst: p.gst || p.gstin || '',
+         license: p.license || p.licenseNumber || '',
+         phone: p.phone || '',
+         state: p.state || '',
+         city: p.city || '',
+       }));
        setCustomPharmacies(preCustom);
     }
   }, [editMode, leadData]);
@@ -373,14 +449,23 @@ const AddLeadScreen = () => {
     });
   };
 
+  const setPincode = (val: string) =>
+    setForm(prev => ({ ...prev, pincode: val.replace(/[^0-9]/g, '').slice(0, 6) }));
+
+  const [showPrefix, setShowPrefix] = useState(false);
+
   const formatDate = (d: Date | null) => {
     if (!d) return '';
     return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) {
-      showAlert('Validation Error', 'Name is required.');
+    if (!form.prefix.trim()) {
+      showAlert('Validation Error', 'Prefix is required.');
+      return;
+    }
+    if (!form.firstName.trim()) {
+      showAlert('Validation Error', 'First name is required.');
       return;
     }
     if (!form.designation.trim()) {
@@ -389,6 +474,10 @@ const AddLeadScreen = () => {
     }
     if (!form.city.trim()) {
       showAlert('Validation Error', 'City is required.');
+      return;
+    }
+    if (!form.pincode.trim()) {
+      showAlert('Validation Error', 'Pincode is required.');
       return;
     }
     if (!form.source.trim()) {
@@ -416,7 +505,17 @@ const AddLeadScreen = () => {
         nextFollowUp: formatDateToISO(followUpDate),
         linkedPharmacy: [
           ...selectedPharmacyIds.map(id => ({ pharmacyId: id })),
-          ...customPharmacies
+          ...customPharmacies.map(p => ({
+            name: p.name,
+            prefix: p.prefix,
+            firstName: cap(p.firstName.trim()),
+            lastName: cap(p.lastName.trim()),
+            phone: p.phone,
+            gstin: p.gst,
+            licenseNumber: p.license,
+            city: p.city,
+            state: p.state,
+          })),
         ]
       };
       console.log('🚀 ~ handleSave ~ payload:', payload)
@@ -457,16 +556,43 @@ const AddLeadScreen = () => {
           <Text style={styles.sectionTitle}>NEW PROSPECT INFORMATION</Text>
         </View>
 
-        {/* Name * */}
-        <Field label="Full Name *">
-          <TextInput
-            style={styles.input}
-            placeholder="Dr. Name"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.name}
-            onChangeText={set('name')}
-          />
+        {/* Prefix dropdown */}
+        <Field label="Prefix">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowPrefix(true)}
+          >
+            <Text style={[styles.dropdownText, form.prefix && styles.dropdownSelected]}>
+              {form.prefix || 'Select Prefix'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
         </Field>
+
+        {/* First + Last name row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>First Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="First name"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.firstName}
+              onChangeText={set('firstName')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Last Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Last name"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.lastName}
+              onChangeText={set('lastName')}
+            />
+          </View>
+        </View>
 
         {/* Designation + Specialization row */}
         <View style={styles.row}>
@@ -524,6 +650,17 @@ const AddLeadScreen = () => {
           cityLabel="City *"
         />
 
+        {/* Area / Locality */}
+        <Field label="Area / Locality">
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Vijay Nagar, Palasia"
+            placeholderTextColor={COLORS.textMuted}
+            value={form.area}
+            onChangeText={set('area')}
+          />
+        </Field>
+
         {/* Address */}
         <Field label="Address">
           <TextInput
@@ -534,6 +671,19 @@ const AddLeadScreen = () => {
             textAlignVertical="top"
             value={form.address}
             onChangeText={set('address')}
+          />
+        </Field>
+
+        {/* Pincode */}
+        <Field label="Pincode *">
+          <TextInput
+            style={styles.input}
+            placeholder="6-digit pincode"
+            placeholderTextColor={COLORS.textMuted}
+            keyboardType="numeric"
+            maxLength={6}
+            value={form.pincode}
+            onChangeText={setPincode}
           />
         </Field>
 
@@ -671,7 +821,9 @@ const AddLeadScreen = () => {
                  const name = assignedPharmacies.find(p => p.id === id)?.name || `Pharmacy #${id}`;
                  return (
                    <View key={`ex-${id}`} style={styles.chip}>
-                     <Text style={styles.chipText}>{name}</Text>
+                     <TouchableOpacity activeOpacity={0.7} onPress={() => setShowPharmaciesSheet(true)}>
+                       <Text style={styles.chipText}>{name}</Text>
+                     </TouchableOpacity>
                      <TouchableOpacity onPress={() => setSelectedPharmacyIds(prev => prev.filter(pid => pid !== id))}>
                        <Text style={styles.chipClose}>✕</Text>
                      </TouchableOpacity>
@@ -680,7 +832,9 @@ const AddLeadScreen = () => {
               })}
               {customPharmacies.map((p, idx) => (
                  <View key={`c-${idx}`} style={styles.chip}>
-                   <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   <TouchableOpacity activeOpacity={0.7} onPress={() => { setEditingCustomIndex(idx); setShowCustomPharmacyModal(true); }}>
+                     <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   </TouchableOpacity>
                    <TouchableOpacity onPress={() => setCustomPharmacies(prev => prev.filter((_, i) => i !== idx))}>
                      <Text style={styles.chipClose}>✕</Text>
                    </TouchableOpacity>
@@ -790,21 +944,34 @@ const AddLeadScreen = () => {
         onToggle={(id) => {
           setSelectedPharmacyIds(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
         }}
-        onAddCustom={() => setShowCustomPharmacyModal(true)}
+        onAddCustom={() => { setEditingCustomIndex(null); setShowCustomPharmacyModal(true); }}
         onClose={() => setShowPharmaciesSheet(false)}
       />
       <CustomPharmacyModal
         visible={showCustomPharmacyModal}
-        onClose={() => setShowCustomPharmacyModal(false)}
+        initialData={editingCustomIndex !== null ? customPharmacies[editingCustomIndex] : null}
+        onClose={() => { setShowCustomPharmacyModal(false); setEditingCustomIndex(null); }}
         onSave={(p) => {
-          setCustomPharmacies(prev => [...prev, p]);
+          setCustomPharmacies(prev =>
+            editingCustomIndex !== null
+              ? prev.map((c, i) => (i === editingCustomIndex ? p : c))
+              : [...prev, p]
+          );
           setShowCustomPharmacyModal(false);
+          setEditingCustomIndex(null);
         }}
-        onError={(msg) => { setShowCustomPharmacyModal(false); showAlert('Validation Error', msg); }}
       />
 
       <AlertModal state={alertState} onDismiss={dismissAlert} />
 
+      <OptionsSheet
+        visible={showPrefix}
+        title="Select Prefix"
+        options={PREFIX_OPTIONS}
+        selected={form.prefix}
+        onSelect={val => set('prefix')(val)}
+        onClose={() => setShowPrefix(false)}
+      />
       <OptionsSheet
         visible={showStage}
         title="Select Stage"

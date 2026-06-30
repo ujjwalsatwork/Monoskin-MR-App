@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
-  Modal, FlatList, TouchableWithoutFeedback,
+  Modal, FlatList, TouchableWithoutFeedback, KeyboardAvoidingView,
 } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 
@@ -96,7 +96,9 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
 const STAGE_OPTIONS = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted', 'Lost'];
 const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'];
-const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Walk-in Visit', 'Phone Call', 'Email', 'WhatsApp', 'Other'];
+const SOURCE_OPTIONS = ['Referral', 'Conference', 'Website', 'Cold Call', 'Other'];
+// Pharmacist (person) prefixes — the "General" prefix set per backend update.
+const PREFIX_OPTIONS = ['Mr.', 'Mrs.', 'Ms.'];
 
 /* ─── Generic options bottom-sheet ───────────────────────────────── */
 type OptionsSheetProps = {
@@ -183,12 +185,27 @@ export type AssignedDoctor = {
   name: string;
 };
 
+// Linked doctors use the "Doctor" prefix set (the person's name is split into parts).
+const DOCTOR_PREFIX_OPTIONS = ['Dr.', 'Prof.', 'Prof. Dr.'];
+
+// Capitalise the first letter only (mirrors the CRM, which stores "Wdadw").
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 export type CustomDoctor = {
-  name: string;
-  postalAddress: string;
+  prefix: string;
+  firstName: string;
+  lastName: string;
+  name: string;   // composed "First Last" — kept for display & back-compat
   phone: string;
-  billingDetails: string;
-  deliveryDetails: string;
+  state: string;
+  city: string;
+  address: string;
+  clinic: string;
+};
+
+const EMPTY_CUSTOM_DOCTOR: CustomDoctor = {
+  prefix: 'Dr.', firstName: '', lastName: '', name: '',
+  phone: '', state: '', city: '', address: '', clinic: '',
 };
 
 type MultiSelectDoctorSheetProps = {
@@ -239,37 +256,80 @@ const MultiSelectDoctorSheet = ({ visible, title, options, selectedIds, onToggle
   </Modal>
 );
 
-const CustomDoctorModal = ({ visible, onClose, onSave, onError }: { visible: boolean, onClose: () => void, onSave: (p: CustomDoctor) => void, onError: (msg: string) => void }) => {
-  const [data, setData] = useState<CustomDoctor>({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+const CustomDoctorModal = ({ visible, initialData, onClose, onSave }: { visible: boolean, initialData?: CustomDoctor | null, onClose: () => void, onSave: (p: CustomDoctor) => void }) => {
+  const [data, setData] = useState<CustomDoctor>(EMPTY_CUSTOM_DOCTOR);
+  const [showPrefix, setShowPrefix] = useState(false);
+  // Bumped on every open so StateCitySelector remounts and re-reads its value.
+  const [openSeq, setOpenSeq] = useState(0);
+  // Validation alert shown inside this modal so the form (and its values) stays.
+  const [localAlert, setLocalAlert] = useState<AlertState>(ALERT_HIDDEN);
+  const showError = (msg: string) => setLocalAlert({ visible: true, type: 'error', title: 'Validation Error', message: msg });
+  const isEditing = !!initialData;
+  // Sync the form whenever the modal opens (pre-fill for edit, reset for add).
+  useEffect(() => {
+    if (visible) {
+      setData({ ...EMPTY_CUSTOM_DOCTOR, ...(initialData || {}) });
+      setOpenSeq(s => s + 1);
+    }
+  }, [visible, initialData]);
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <View style={[sheet.overlay, { justifyContent: 'flex-end' }]}>
+      <KeyboardAvoidingView
+        style={[sheet.overlay, { justifyContent: 'flex-end' }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={[sheet.container, { paddingBottom: Platform.OS === 'ios' ? 40 : 20, maxHeight: '90%' }]}>
           <View style={sheet.handle} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-             <Text style={sheet.title}>Add Custom Doctor</Text>
+             <Text style={sheet.title}>{isEditing ? 'Edit Custom Doctor' : 'Add Custom Doctor'}</Text>
              <TouchableOpacity onPress={onClose}><Text style={{ color: COLORS.textMuted }}>Cancel</Text></TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Field label="Doctor Name *"><TextInput style={styles.input} value={data.name} onChangeText={t => setData({...data, name: t})} placeholder="Dr. Name" /></Field>
-            <Field label="Postal Address *"><TextInput style={styles.input} value={data.postalAddress} onChangeText={t => setData({...data, postalAddress: t})} placeholder="Address" /></Field>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+            <Field label="Prefix">
+              <TouchableOpacity style={styles.dropdown} activeOpacity={0.8} onPress={() => setShowPrefix(true)}>
+                <Text style={[styles.dropdownText, data.prefix && styles.dropdownSelected]}>{data.prefix || 'Select Prefix'}</Text>
+                <Down width={16} height={16} stroke={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </Field>
+            <Field label="First Name *"><TextInput style={styles.input} value={data.firstName} onChangeText={t => setData({...data, firstName: t})} placeholder="First name" /></Field>
+            <Field label="Last Name"><TextInput style={styles.input} value={data.lastName} onChangeText={t => setData({...data, lastName: t})} placeholder="Last name" /></Field>
             <Field label="Phone No. *"><TextInput style={styles.input} keyboardType="numeric" maxLength={10} value={data.phone} onChangeText={t => setData({...data, phone: t.replace(/[^0-9]/g, '').slice(0, 10)})} placeholder="10 digit Phone Number" /></Field>
-            <Field label="Billing Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.billingDetails} onChangeText={t => setData({...data, billingDetails: t})} placeholder="Billing details..." /></Field>
-            <Field label="Delivery Details *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.deliveryDetails} onChangeText={t => setData({...data, deliveryDetails: t})} placeholder="Delivery details..." /></Field>
+            <StateCitySelector
+              key={openSeq}
+              stateValue={data.state}
+              cityValue={data.city}
+              onStateChange={val => setData(d => ({ ...d, state: val }))}
+              onCityChange={val => setData(d => ({ ...d, city: val }))}
+              stateLabel="State *"
+              cityLabel="City *"
+            />
+            <Field label="Address *"><TextInput style={[styles.input, styles.notesInput]} multiline value={data.address} onChangeText={t => setData({...data, address: t})} placeholder="full address" /></Field>
+            <Field label="Clinic *"><TextInput style={styles.input} value={data.clinic} onChangeText={t => setData({...data, clinic: t})} placeholder="Clinic name" /></Field>
             <TouchableOpacity style={styles.saveBtn} onPress={() => {
-              if (!data.name.trim()) { onError('Doctor Name is required.'); return; }
-              if (!data.postalAddress.trim()) { onError('Postal Address is required.'); return; }
-              if (data.phone.length !== 10) { onError('A valid 10-digit Phone Number is required.'); return; }
-              if (!data.billingDetails.trim()) { onError('Billing Details are required.'); return; }
-              if (!data.deliveryDetails.trim()) { onError('Delivery Details are required.'); return; }
-              onSave(data);
-              setData({ name: '', postalAddress: '', phone: '', billingDetails: '', deliveryDetails: '' });
+              if (!data.firstName.trim()) { showError('Doctor first name is required.'); return; }
+              if (data.phone.length !== 10) { showError('A valid 10-digit Phone Number is required.'); return; }
+              if (!data.state.trim()) { showError('State is required.'); return; }
+              if (!data.city.trim()) { showError('City is required.'); return; }
+              if (!data.address.trim()) { showError('Address is required.'); return; }
+              if (!data.clinic.trim()) { showError('Clinic is required.'); return; }
+              const composedName = [cap(data.firstName.trim()), cap(data.lastName.trim())].filter(Boolean).join(' ');
+              onSave({ ...data, name: composedName });
+              setData(EMPTY_CUSTOM_DOCTOR);
             }}>
-              <Text style={styles.saveBtnText}>Add</Text>
+              <Text style={styles.saveBtnText}>{isEditing ? 'Save' : 'Add'}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
+      <OptionsSheet
+        visible={showPrefix}
+        title="Select Prefix"
+        options={DOCTOR_PREFIX_OPTIONS}
+        selected={data.prefix}
+        onSelect={val => setData(d => ({ ...d, prefix: val }))}
+        onClose={() => setShowPrefix(false)}
+      />
+      <AlertModal state={localAlert} onDismiss={() => setLocalAlert(ALERT_HIDDEN)} />
     </Modal>
   );
 };
@@ -281,15 +341,24 @@ const AddPharmacyLeadScreen = () => {
   const { editMode, leadData } = route.params || {};
 
   const [form, setForm] = useState({
+    // `name` stays the pharmacy (business) name. Prefix + first + last capture
+    // the pharmacist (person) — the backend composes their full name.
+    prefix: leadData?.prefix || '',
+    firstName: leadData?.firstName || '',
+    lastName: leadData?.lastName || '',
     name: leadData?.name || '',
     licenseNumber: leadData?.licenseNumber || '',
+    gstin: leadData?.gstin || '',
     city: leadData?.city || '',
     state: leadData?.state || '',
+    area: leadData?.area || '',
+    pincode: leadData?.pincode || '',
     address: leadData?.address || '',
     googleMapsUrl: leadData?.googleMapsUrl || '',
     phone: leadData?.phone || '',
     whatsappNumber: leadData?.whatsappNumber || '',
     email: leadData?.email || '',
+    receptionistPhone: leadData?.receptionistPhone || '',
     stage: leadData?.stage || 'New',
     priority: leadData?.priority || 'Medium',
     source: leadData?.source || '',
@@ -317,6 +386,8 @@ const AddPharmacyLeadScreen = () => {
   
   const [showDoctorsSheet, setShowDoctorsSheet] = useState(false);
   const [showCustomDoctorModal, setShowCustomDoctorModal] = useState(false);
+  // Index of the custom doctor currently being edited (null = adding new).
+  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchDoctors = async () => {
@@ -332,7 +403,22 @@ const AddPharmacyLeadScreen = () => {
     if (editMode && leadData?.linkedDoctor) {
        const preSelectedIds = leadData.linkedDoctor.filter((p: any) => p.doctorId).map((p: any) => p.doctorId);
        setSelectedDoctorIds(preSelectedIds);
-       const preCustom = leadData.linkedDoctor.filter((p: any) => !p.doctorId);
+       const preCustom: CustomDoctor[] = leadData.linkedDoctor.filter((p: any) => !p.doctorId).map((p: any) => {
+         // Older records only store the composed `name`; split it back so the
+         // First/Last fields pre-fill when the chip is opened for editing.
+         const parts = (p.name || '').trim().split(/\s+/).filter(Boolean);
+         return {
+           prefix: p.prefix || 'Dr.',
+           firstName: p.firstName || parts[0] || '',
+           lastName: p.lastName || parts.slice(1).join(' '),
+           name: p.name || '',
+           phone: p.phone || '',
+           state: p.state || '',
+           city: p.city || '',
+           address: p.address || '',
+           clinic: p.clinic || '',
+         };
+       });
        setCustomDoctors(preCustom);
     }
   }, [editMode, leadData]);
@@ -345,7 +431,7 @@ const AddPharmacyLeadScreen = () => {
 
   // Numeric-only, max 10 digits — keeps WhatsApp in sync with phone while the
   // "same as phone" option is enabled.
-  const setPhoneNumber = (key: 'phone' | 'whatsappNumber') => (val: string) => {
+  const setPhoneNumber = (key: 'phone' | 'whatsappNumber' | 'receptionistPhone') => (val: string) => {
     const numericVal = val.replace(/[^0-9]/g, '').slice(0, 10);
     setForm(prev => ({
       ...prev,
@@ -353,6 +439,11 @@ const AddPharmacyLeadScreen = () => {
       ...(key === 'phone' && sameAsPhone ? { whatsappNumber: numericVal } : {}),
     }));
   };
+
+  const setPincode = (val: string) =>
+    setForm(prev => ({ ...prev, pincode: val.replace(/[^0-9]/g, '').slice(0, 6) }));
+
+  const [showPrefix, setShowPrefix] = useState(false);
 
   const toggleSameAsPhone = () => {
     if (!form.phone) return;
@@ -369,12 +460,24 @@ const AddPharmacyLeadScreen = () => {
   };
 
   const handleSave = async () => {
+    if (!form.prefix.trim()) {
+      showAlert('Validation Error', 'Prefix is required.');
+      return;
+    }
+    if (!form.firstName.trim()) {
+      showAlert('Validation Error', 'Pharmacist first name is required.');
+      return;
+    }
     if (!form.name.trim()) {
       showAlert('Validation Error', 'Pharmacy name is required.');
       return;
     }
     if (!form.city.trim()) {
       showAlert('Validation Error', 'City is required.');
+      return;
+    }
+    if (!form.pincode.trim()) {
+      showAlert('Validation Error', 'Pincode is required.');
       return;
     }
 
@@ -388,9 +491,20 @@ const AddPharmacyLeadScreen = () => {
         nextFollowUp: followUpDate ? followUpDate.toISOString().split('T')[0] : undefined,
         linkedDoctor: [
           ...selectedDoctorIds.map(id => ({ doctorId: id })),
-          ...customDoctors
+          ...customDoctors.map(d => ({
+            name: d.name || [cap(d.firstName.trim()), cap(d.lastName.trim())].filter(Boolean).join(' '),
+            prefix: d.prefix,
+            firstName: cap(d.firstName.trim()),
+            lastName: cap(d.lastName.trim()),
+            phone: d.phone,
+            city: d.city,
+            state: d.state,
+            address: d.address,
+            clinic: d.clinic,
+          })),
         ]
       };
+      console.log('🚀 ~ handleSave ~ payload:', payload)
 
 
       if (editMode && leadData?.id) {
@@ -429,6 +543,44 @@ const AddPharmacyLeadScreen = () => {
           <Text style={styles.sectionTitle}>PHARMACY INFORMATION</Text>
         </View>
 
+        {/* Prefix dropdown */}
+        <Field label="Prefix">
+          <TouchableOpacity
+            style={styles.dropdown}
+            activeOpacity={0.8}
+            onPress={() => setShowPrefix(true)}
+          >
+            <Text style={[styles.dropdownText, form.prefix && styles.dropdownSelected]}>
+              {form.prefix || 'Select Prefix'}
+            </Text>
+            <Down width={16} height={16} stroke={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </Field>
+
+        {/* Pharmacist First + Last name row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Pharmacist First Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="First name"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.firstName}
+              onChangeText={set('firstName')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Pharmacist Last Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Last name"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.lastName}
+              onChangeText={set('lastName')}
+            />
+          </View>
+        </View>
+
         {/* Pharmacy Name * */}
         <Field label="Pharmacy Name *">
           <TextInput
@@ -437,17 +589,6 @@ const AddPharmacyLeadScreen = () => {
             placeholderTextColor={COLORS.textMuted}
             value={form.name}
             onChangeText={set('name')}
-          />
-        </Field>
-
-        {/* License Number */}
-        <Field label="License Number">
-          <TextInput
-            style={styles.input}
-            placeholder="License number"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.licenseNumber}
-            onChangeText={set('licenseNumber')}
           />
         </Field>
 
@@ -461,6 +602,17 @@ const AddPharmacyLeadScreen = () => {
           cityLabel="City *"
         />
 
+        {/* Area / Locality */}
+        <Field label="Area / Locality">
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Vijay Nagar, Palasia"
+            placeholderTextColor={COLORS.textMuted}
+            value={form.area}
+            onChangeText={set('area')}
+          />
+        </Field>
+
         {/* Address */}
         <Field label="Address">
           <TextInput
@@ -471,6 +623,19 @@ const AddPharmacyLeadScreen = () => {
             textAlignVertical="top"
             value={form.address}
             onChangeText={set('address')}
+          />
+        </Field>
+
+        {/* Pincode */}
+        <Field label="Pincode *">
+          <TextInput
+            style={styles.input}
+            placeholder="6-digit pincode"
+            placeholderTextColor={COLORS.textMuted}
+            keyboardType="numeric"
+            maxLength={6}
+            value={form.pincode}
+            onChangeText={setPincode}
           />
         </Field>
 
@@ -547,7 +712,45 @@ const AddPharmacyLeadScreen = () => {
           />
         </Field>
 
-        
+        {/* Receptionist / Other Number */}
+        <Field label="Receptionist / Other Number">
+          <TextInput
+            style={styles.input}
+            placeholder="Receptionist phone number"
+            placeholderTextColor={COLORS.textMuted}
+            keyboardType="phone-pad"
+            maxLength={10}
+            value={form.receptionistPhone}
+            onChangeText={setPhoneNumber('receptionistPhone')}
+          />
+        </Field>
+
+        {/* GSTIN + License Number row */}
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>GSTIN</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="GST number"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="characters"
+              value={form.gstin}
+              onChangeText={set('gstin')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>License Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Drug license #"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.licenseNumber}
+              onChangeText={set('licenseNumber')}
+            />
+          </View>
+        </View>
+
+
         {/* Linked Doctors dropdown */}
         <Field label="Linked Doctors">
           <TouchableOpacity
@@ -569,7 +772,9 @@ const AddPharmacyLeadScreen = () => {
                  const name = assignedDoctors.find(p => p.id === id)?.name || `Doctor #${id}`;
                  return (
                    <View key={`ex-${id}`} style={styles.chip}>
-                     <Text style={styles.chipText}>{name}</Text>
+                     <TouchableOpacity activeOpacity={0.7} onPress={() => setShowDoctorsSheet(true)}>
+                       <Text style={styles.chipText}>{name}</Text>
+                     </TouchableOpacity>
                      <TouchableOpacity onPress={() => setSelectedDoctorIds(prev => prev.filter(pid => pid !== id))}>
                        <Text style={styles.chipClose}>✕</Text>
                      </TouchableOpacity>
@@ -578,7 +783,9 @@ const AddPharmacyLeadScreen = () => {
               })}
               {customDoctors.map((p, idx) => (
                  <View key={`c-${idx}`} style={styles.chip}>
-                   <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   <TouchableOpacity activeOpacity={0.7} onPress={() => { setEditingCustomIndex(idx); setShowCustomDoctorModal(true); }}>
+                     <Text style={styles.chipText}>{p.name} (Custom)</Text>
+                   </TouchableOpacity>
                    <TouchableOpacity onPress={() => setCustomDoctors(prev => prev.filter((_, i) => i !== idx))}>
                      <Text style={styles.chipClose}>✕</Text>
                    </TouchableOpacity>
@@ -688,21 +895,34 @@ const AddPharmacyLeadScreen = () => {
         onToggle={(id) => {
           setSelectedDoctorIds(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
         }}
-        onAddCustom={() => setShowCustomDoctorModal(true)}
+        onAddCustom={() => { setEditingCustomIndex(null); setShowCustomDoctorModal(true); }}
         onClose={() => setShowDoctorsSheet(false)}
       />
       <CustomDoctorModal
         visible={showCustomDoctorModal}
-        onClose={() => setShowCustomDoctorModal(false)}
+        initialData={editingCustomIndex !== null ? customDoctors[editingCustomIndex] : null}
+        onClose={() => { setShowCustomDoctorModal(false); setEditingCustomIndex(null); }}
         onSave={(p) => {
-          setCustomDoctors(prev => [...prev, p]);
+          setCustomDoctors(prev =>
+            editingCustomIndex !== null
+              ? prev.map((c, i) => (i === editingCustomIndex ? p : c))
+              : [...prev, p]
+          );
           setShowCustomDoctorModal(false);
+          setEditingCustomIndex(null);
         }}
-        onError={(msg) => { setShowCustomDoctorModal(false); showAlert('Validation Error', msg); }}
       />
 
       <AlertModal state={alertState} onDismiss={dismissAlert} />
 
+      <OptionsSheet
+        visible={showPrefix}
+        title="Select Prefix"
+        options={PREFIX_OPTIONS}
+        selected={form.prefix}
+        onSelect={val => set('prefix')(val)}
+        onClose={() => setShowPrefix(false)}
+      />
       <OptionsSheet
         visible={showStage}
         title="Select Stage"
