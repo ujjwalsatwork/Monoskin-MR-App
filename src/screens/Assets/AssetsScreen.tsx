@@ -156,6 +156,22 @@ const isUserCancelError = (error: unknown): boolean => {
   return msg.includes('User did not share') || msg.includes('cancelled') || msg.includes('canceled');
 };
 
+// Marketing copy attached to the shared link. iOS/Android share sheets that
+// support a separate `url` will append the link themselves; those that don't
+// fall back to the `message` text, so we include the link here too.
+const buildShareMessage = (item: AssetItem, link: string): string => {
+  const isVideo = isVideoType(item.fileType);
+  const intro = isVideo
+    ? `Hello, Here's the latest Monoskin product video — ${item.title}.`
+    : `Hello, Here's the latest Monoskin product brochure — ${item.title}.`;
+  return (
+    `${intro}\n\n${link}\n\n` +
+    `Explore our dermatology range and formulations. ` +
+    `For orders or queries, reach out to your Monoskin representative.\n` +
+    `— Team Monoskin`
+  );
+};
+
 const formatSeconds = (secs: number): string => {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
   const s = Math.floor(secs % 60).toString().padStart(2, '0');
@@ -764,10 +780,10 @@ const AssetsScreen = () => {
     const link = resolveAssetUrl(rawUrl);
     setSharingId(idStr);
     try {
+      const message = buildShareMessage(item, link);
       await Share.open({
         title: item.title,
-        message: `${item.title}\n${link}`,
-        url: link,
+        message,
         failOnCancel: false,
       });
     } catch (error) {
