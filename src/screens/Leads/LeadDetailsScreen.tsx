@@ -8,7 +8,10 @@ import {
   ActivityIndicator,
   Linking,
   RefreshControl,
+  Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +24,7 @@ import {
   EmailIcon,
   CalendarNoteIcon,
   ReplayIcon,
+  Down,
 } from '@/assets/images';
 import apiClient from '@/services/apiClient';
 
@@ -74,6 +78,9 @@ type Lead = {
   createdAt: string;
 };
 
+// Mirrors the Stage field in the Add/Edit lead form.
+const STAGE_OPTIONS = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Sent to MR', 'Converted', 'Lost'];
+
 const STAGE_COLORS: Record<string, { bg: string; color: string }> = {
   New:           { bg: '#E8EEF9', color: COLORS.buttonBlue },
   Contacted:     { bg: '#E8EEF9', color: COLORS.buttonBlue },
@@ -91,6 +98,144 @@ const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
   Low:    { bg: '#F0F0F0', color: '#666666' },
 };
 
+/* ─── Icons ───────────────────────────────────────────────────────── */
+const WarningIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEF3C7" />
+    <Path d="M12 8v4" stroke="#D97706" strokeWidth="2" strokeLinecap="round" />
+    <Circle cx="12" cy="16" r="1" fill="#D97706" />
+  </Svg>
+);
+
+const SuccessIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#DCFCE7" />
+    <Path d="M8 12l3 3 5-5" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ErrorIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#FEE2E2" />
+    <Path d="M15 9l-6 6M9 9l6 6" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const InfoBlueIcon = () => (
+  <Svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill="#E0EDFF" />
+    <Path d="M12 11v5" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
+    <Circle cx="12" cy="8" r="1" fill="#2563EB" />
+  </Svg>
+);
+
+/* ─── Stage-selection bottom sheet (mirrors the edit form) ────────── */
+const StageSheet = ({ visible, current, onSelect, onClose }: {
+  visible: boolean;
+  current: string;
+  onSelect: (stage: string) => void;
+  onClose: () => void;
+}) => (
+  <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={sheet.overlay} />
+    </TouchableWithoutFeedback>
+    <View style={sheet.container}>
+      <View style={sheet.handle} />
+      <Text style={sheet.title}>Update Stage</Text>
+      {STAGE_OPTIONS.map(item => {
+        const active = item === current;
+        return (
+          <TouchableOpacity key={item} style={sheet.option} activeOpacity={0.7} onPress={() => onSelect(item)}>
+            <Text style={[sheet.optionText, active && sheet.optionActive]}>{item}</Text>
+            {active && <Text style={sheet.check}>✓</Text>}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  </Modal>
+);
+
+/* ─── Stage-change confirmation / result dialog (dynamic per stage) ─ */
+type StageDialog =
+  | { type: 'confirm'; stage: string }
+  | { type: 'success'; stage: string }
+  | { type: 'error'; message: string }
+  | null;
+
+const StageDialogModal = ({
+  dialog, typeLabel, converting, onCancel, onConfirm,
+}: {
+  dialog: StageDialog;
+  typeLabel: string;
+  converting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) => {
+  if (!dialog) return null;
+  const isConfirm = dialog.type === 'confirm';
+  const stage = dialog.type === 'error' ? '' : dialog.stage;
+  const isConvert = stage === 'Converted';
+  const isLost = stage === 'Lost';
+
+  const Icon =
+    dialog.type === 'success' ? SuccessIcon :
+    dialog.type === 'error' ? ErrorIcon :
+    isConvert || isLost ? WarningIcon : InfoBlueIcon;
+
+  let title = '';
+  let message = '';
+  let confirmLabel = 'Update';
+  if (dialog.type === 'success') {
+    title = isConvert ? 'Converted' : 'Stage Updated';
+    message = isConvert
+      ? `This lead has been converted to a ${typeLabel} record.`
+      : `Lead stage updated to ${stage}.`;
+  } else if (dialog.type === 'error') {
+    title = 'Update Failed';
+    message = dialog.message;
+  } else if (isConvert) {
+    title = `Convert to ${typeLabel}?`;
+    message = `This will create a ${typeLabel} record and move the lead to Converted. This action cannot be undone.`;
+    confirmLabel = 'Convert';
+  } else if (isLost) {
+    title = 'Mark as Lost?';
+    message = 'This will mark the lead as Lost.';
+    confirmLabel = 'Mark Lost';
+  } else {
+    title = `Move to ${stage}?`;
+    message = `This will update the lead's stage to ${stage}.`;
+    confirmLabel = 'Update';
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={dlg.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={converting ? undefined : onCancel} />
+        <View style={dlg.card}>
+          <Icon />
+          <Text style={dlg.title}>{title}</Text>
+          <Text style={dlg.message}>{message}</Text>
+          {isConfirm ? (
+            <View style={dlg.actionsRow}>
+              <TouchableOpacity style={[dlg.btn, dlg.cancelBtn]} activeOpacity={0.8} onPress={onCancel} disabled={converting}>
+                <Text style={dlg.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[dlg.btn, dlg.confirmBtn]} activeOpacity={0.8} onPress={onConfirm} disabled={converting}>
+                {converting ? <ActivityIndicator color={COLORS.white} /> : <Text style={dlg.confirmText}>{confirmLabel}</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={[dlg.btn, dlg.confirmBtn, { width: 140 }]} activeOpacity={0.8} onPress={onCancel}>
+              <Text style={dlg.confirmText}>OK</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 const LeadDetailsScreen = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
@@ -100,6 +245,9 @@ const LeadDetailsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const [dialog, setDialog] = useState<StageDialog>(null);
+  const [converting, setConverting] = useState(false);
+  const [showStageSheet, setShowStageSheet] = useState(false);
 
   const fetchLead = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -119,6 +267,23 @@ const LeadDetailsScreen = () => {
   useFocusEffect(useCallback(() => {
     fetchLead();
   }, [fetchLead]));
+
+  // Stage changes invoke the SAME backend flow as the web CRM. In particular,
+  // moving the lead to the "Converted" stage auto-creates the Doctor/Pharmacy
+  // master record — identical to the edit form's Stage field.
+  const handleStageChange = async (stage: string) => {
+    setConverting(true);
+    try {
+      await apiClient.patch(`/leads/${leadId}`, { stage });
+      await fetchLead(true);
+      setDialog({ type: 'success', stage });
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Something went wrong. Please try again.';
+      setDialog({ type: 'error', message });
+    } finally {
+      setConverting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -148,6 +313,9 @@ const LeadDetailsScreen = () => {
   const stageStyle = STAGE_COLORS[lead.stage] ?? { bg: '#E8EEF9', color: COLORS.buttonBlue };
   const priorityStyle = PRIORITY_COLORS[lead.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const designation = lead.designation || lead.specialization || '';
+
+  const typeLabel = lead.leadType === 'doctor' ? 'Doctor' : 'Pharmacy';
+  const isConverted = lead.stage === 'Converted';
 
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '—';
@@ -234,9 +402,38 @@ const LeadDetailsScreen = () => {
           ))}
         </View> */}
 
-        {/* Contact Info */}
+        {/* Convert CTA + full stage control, surfaced above Contact Info */}
         <View style={styles.spacing}/>
-          {/* Empty view for spacing between header and first card */}
+        {isConverted ? (
+          <View style={styles.convertedBanner}>
+            <SuccessIcon />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.convertedBannerTitle}>Converted to {typeLabel}</Text>
+              <Text style={styles.convertedBannerSub}>A {typeLabel} record has been created for this lead.</Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.updateStageLabel}>Update Stage</Text>
+            <TouchableOpacity
+              style={[styles.stageDropdown, converting && { opacity: 0.6 }]}
+              activeOpacity={0.8}
+              onPress={() => setShowStageSheet(true)}
+              disabled={converting}
+            >
+              <View style={[styles.smallBadge, { backgroundColor: stageStyle.bg }]}>
+                <Text style={[styles.smallBadgeText, { color: stageStyle.color }]}>{lead.stage}</Text>
+              </View>
+              {converting ? (
+                <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+              ) : (
+                <Down width={16} height={16} stroke={COLORS.textSecondary} />
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Contact Info */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>CONTACT INFO</Text>
           {lead.phone ? (
@@ -394,6 +591,25 @@ const LeadDetailsScreen = () => {
           ) : null}
         </View>
       </ScrollView>
+
+      <StageSheet
+        visible={showStageSheet}
+        current={lead.stage}
+        onSelect={(stage) => {
+          setShowStageSheet(false);
+          if (stage === lead.stage) return;
+          setDialog({ type: 'confirm', stage });
+        }}
+        onClose={() => setShowStageSheet(false)}
+      />
+
+      <StageDialogModal
+        dialog={dialog}
+        typeLabel={typeLabel}
+        converting={converting}
+        onCancel={() => { if (!converting) setDialog(null); }}
+        onConfirm={() => { if (dialog?.type === 'confirm') handleStageChange(dialog.stage); }}
+      />
     </SafeAreaView>
   );
 };
@@ -580,6 +796,148 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textMuted,
   },
+  updateStageLabel: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  stageDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 28,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  convertedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  convertedBannerTitle: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: '#166534',
+  },
+  convertedBannerSub: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#15803D',
+    marginTop: 2,
+  },
+});
+
+const dlg = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  btn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelBtn: {
+    backgroundColor: '#F3F4F6',
+  },
+  cancelText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: '#374151',
+  },
+  confirmBtn: {
+    backgroundColor: COLORS.buttonBlue,
+  },
+  confirmText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
+});
+
+const sheet = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
+  container: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 12,
+  },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  title: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+    marginBottom: 12,
+  },
+  option: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  optionText: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textDark,
+  },
+  optionActive: {
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+  },
+  check: { fontSize: FONTS.size.lg, color: COLORS.buttonBlue },
 });
 
 export default LeadDetailsScreen;

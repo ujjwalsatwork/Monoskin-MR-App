@@ -59,7 +59,6 @@ type RoutePropType = RouteProp<AppStackParamList, 'VisitDetail'>;
 const VISIT_TYPES = ['Lead Visit', 'Doctor Visit', 'Pharmacy Visit', 'Conference', 'Training'];
 const OUTCOMES = ['Positive', 'Neutral', 'Negative', 'Follow-up Required', 'Not Met'];
 const OBJECTION_CHIPS = ['Too Expensive', 'Already Prescribes Brand X', 'Needs Study'];
-const TIME_SLOTS = ['Morning Slot', 'Afternoon Slot', 'Evening Slot'];
 
 type DoctorDetails = {
   id: string;
@@ -289,8 +288,6 @@ const VisitDetailScreen = () => {
   const [visitType, setVisitType] = useState(defaultVisitType);
   const [outcome, setOutcome] = useState('Follow-up Required');
   const [followUpDate, setFollowUpDate] = useState(''); // stored as ISO yyyy-mm-dd
-  const [followUpSlot, setFollowUpSlot] = useState('Afternoon Slot');
-  const [slotVisible, setSlotVisible] = useState(false);
   const [followUpPickerVisible, setFollowUpPickerVisible] = useState(false);
   const [followUpPickerDate, setFollowUpPickerDate] = useState(new Date());
   // Revisit date for the "Not Met" outcome (stored as ISO yyyy-mm-dd). Must be
@@ -792,6 +789,10 @@ const VisitDetailScreen = () => {
         return;
       }
     }
+    if (outcome === 'Follow-up Required' && !followUpDate) {
+      showFeedback('error', 'Validation', 'Please select a follow-up date for the "Follow-up Required" outcome.');
+      return;
+    }
     if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
 
     const formData = new FormData();
@@ -822,7 +823,6 @@ const VisitDetailScreen = () => {
       // expects a full ISO 8601 datetime string, so anchor it at UTC midnight —
       // this preserves the picked day without any timezone shift.
       formData.append('followUpDate', `${followUpDate}T00:00:00.000Z`);
-      formData.append('followUpSlot', followUpSlot);
     }
 
     // "Not Met" → send the future revisit date so the backend can auto-schedule
@@ -1113,6 +1113,27 @@ const VisitDetailScreen = () => {
             </TouchableOpacity>
             <Text style={styles.revisitHint}>
               A Route Planner meeting will be auto-scheduled for this date.
+            </Text>
+          </>
+        )}
+
+        {/* Follow-up date — required when outcome is "Follow-up Required".
+            Shown right below the outcome so the MR can pick it instantly. The
+            visit gets rescheduled to this date (handled by the backend). */}
+        {outcome === 'Follow-up Required' && (
+          <>
+            <Text style={styles.timeFieldLabel}>Follow-up Date *</Text>
+            <TouchableOpacity
+              style={styles.timeFieldInput}
+              activeOpacity={0.7}
+              onPress={openFollowUpDatePicker}
+            >
+              <Text style={followUpDate ? styles.timeFieldValue : styles.timeFieldPlaceholder}>
+                {followUpDate ? formatDateDisplay(followUpDate) : 'Select a follow-up date'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.revisitHint}>
+              The visit will be rescheduled to this date.
             </Text>
           </>
         )}
@@ -1419,47 +1440,6 @@ const VisitDetailScreen = () => {
             </>
           ) : null;
         })()}
-
-        {/* Follow-up Plan – only when outcome is Follow-up Required */}
-        {outcome === 'Follow-up Required' && (
-          <View style={styles.followUpCard}>
-            <Text style={styles.followUpTitle}>Follow-up Plan</Text>
-            <View style={styles.followUpRow}>
-              <TouchableOpacity
-                style={styles.followUpDateBox}
-                activeOpacity={0.8}
-                onPress={openFollowUpDatePicker}
-              >
-                <Text style={followUpDate ? styles.followUpDateInput : styles.followUpDatePlaceholder}>
-                  {followUpDate ? formatDateDisplay(followUpDate) : 'DD/MM/YYYY'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.followUpSlotBox}
-                activeOpacity={0.8}
-                onPress={() => setSlotVisible(p => !p)}
-              >
-                <Text style={styles.followUpSlotText}>{followUpSlot}</Text>
-                <Down width={14} height={14} />
-              </TouchableOpacity>
-            </View>
-            {slotVisible && (
-              <View style={styles.slotDropdown}>
-                {TIME_SLOTS.map(slot => (
-                  <TouchableOpacity
-                    key={slot}
-                    style={styles.slotOption}
-                    onPress={() => { setFollowUpSlot(slot); setSlotVisible(false); }}
-                  >
-                    <Text style={[styles.slotOptionText, slot === followUpSlot && styles.slotOptionActive]}>
-                      {slot}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
 
         {/* Order History */}
         {(doctorData?.orderHistory ?? pharmacyData?.orderHistory) && (
@@ -2223,27 +2203,6 @@ const styles = StyleSheet.create({
   timelineDate: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark, lineHeight: 20 },
   timelineSubText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, marginTop: 2 },
   timelineNotes: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: COLORS.textMuted, marginTop: 2 },
-
-  // Follow-up Plan
-  followUpCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, padding: 16, marginBottom: 8 },
-  followUpTitle: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, marginBottom: 12 },
-  followUpRow: { flexDirection: 'row', gap: 10 },
-  followUpDateBox: {
-    flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-  },
-  followUpDateInput: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark, padding: 0 },
-  followUpDatePlaceholder: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textMuted, padding: 0 },
-  followUpSlotBox: {
-    flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
-  followUpSlotText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
-  slotDropdown: { marginTop: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, overflow: 'hidden' },
-  slotOption: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  slotOptionText: { fontSize: FONTS.size.md, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
-  slotOptionActive: { color: COLORS.buttonBlue, fontFamily: FONTS.family.bold },
 
   // Order History
   orderCard: { margin: 12, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, gap: 10 },

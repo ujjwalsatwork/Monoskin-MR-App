@@ -363,6 +363,11 @@ const AddPharmacyLeadScreen = () => {
     priority: leadData?.priority || 'Medium',
     source: leadData?.source || '',
     notes: leadData?.notes || '',
+    // Social & web links — optional, sent to the backend as-is.
+    socialInstagram: leadData?.socialInstagram || '',
+    socialFacebook: leadData?.socialFacebook || '',
+    website: leadData?.website || '',
+    socialLinkedIn: leadData?.socialLinkedIn || '',
   });
 
   const [followUpDate, setFollowUpDate] = useState<Date | null>(
@@ -532,6 +537,11 @@ const AddPharmacyLeadScreen = () => {
         showProfile
       />
 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -864,6 +874,64 @@ const AddPharmacyLeadScreen = () => {
           />
         </Field>
 
+        {/* Social & Web Links */}
+        <View style={styles.socialDivider} />
+        <Text style={styles.socialTitle}>Social & Web Links</Text>
+        <Text style={styles.socialSubtitle}>
+          Optional. Paste a full URL or just a handle (e.g. @drsmith).
+        </Text>
+
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Instagram</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="@handle or full URL"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+              value={form.socialInstagram}
+              onChangeText={set('socialInstagram')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Facebook</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Page name or full URL"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+              value={form.socialFacebook}
+              onChangeText={set('socialFacebook')}
+            />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>Website</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="example.com or https://example.com"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+              keyboardType="url"
+              value={form.website}
+              onChangeText={set('website')}
+            />
+          </View>
+          <View style={styles.halfField}>
+            <Text style={styles.label}>LinkedIn</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="@handle or full URL"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+              value={form.socialLinkedIn}
+              onChangeText={set('socialLinkedIn')}
+            />
+          </View>
+        </View>
+
         <View style={styles.spacer} />
       </ScrollView>
 
@@ -884,8 +952,9 @@ const AddPharmacyLeadScreen = () => {
           )}
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
 
-      
+
       {/* Dropdown sheets */}
       <MultiSelectDoctorSheet
         visible={showDoctorsSheet}
@@ -1075,6 +1144,24 @@ const styles = StyleSheet.create({
   },
 
   spacer: { height: 24 },
+
+  socialDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginBottom: 16,
+  },
+  socialTitle: {
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+    marginBottom: 4,
+  },
+  socialSubtitle: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textMuted,
+    marginBottom: 16,
+  },
 
   chip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF',
