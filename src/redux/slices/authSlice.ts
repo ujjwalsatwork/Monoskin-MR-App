@@ -1,5 +1,4 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AxiosError } from 'axios';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
@@ -99,6 +98,20 @@ export const checkSession = createAsyncThunk<User>(
     },
 );
 
+// Server-side logout: invalidates the session and clears the native cookie via the
+// response's Set-Cookie, so a subsequent reload won't silently re-authenticate.
+export const performLogout = createAsyncThunk<void, void>(
+    'auth/performLogout',
+    async (_, { dispatch }) => {
+        try {
+            await apiClient.post(ENDPOINTS.auth.logout);
+        } catch {
+            // Ignore — we clear local auth state regardless of the network result.
+        }
+        dispatch(logout());
+    },
+);
+
 export const verifyOtp = createAsyncThunk<User, VerifyOtpPayload>(
     'auth/verifyOtp',
     async (payload, { rejectWithValue }) => {
@@ -108,13 +121,8 @@ export const verifyOtp = createAsyncThunk<User, VerifyOtpPayload>(
                 url: ENDPOINTS.auth.verifyOtp,
                 data: { phone: payload.phone, otp: payload.otp },
             });
-            const setCookieHeader = response.headers['set-cookie'];
-            if (setCookieHeader) {
-                const rawCookie = Array.isArray(setCookieHeader)
-                    ? setCookieHeader[0]
-                    : setCookieHeader;
-                await AsyncStorage.setItem('session_cookie', rawCookie.split(';')[0]);
-            }
+            // The session cookie from the response is stored automatically by the
+            // native cookie jar and sent on subsequent requests — no manual handling.
             return response.data;
         } catch (error) {
             return rejectWithValue(extractErrorMessage(error, 'OTP verification failed'));
@@ -156,7 +164,6 @@ const authSlice = createSlice({
             state.otpSent = false;
             state.otpFallback = null;
             state.error = null;
-            AsyncStorage.removeItem('session_cookie');
         },
         clearAuthError: (state) => {
             state.error = null;

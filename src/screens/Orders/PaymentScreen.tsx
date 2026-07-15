@@ -96,6 +96,10 @@ type ApiScheme = {
   buyQty: number;
   getQty: number;
   discount: string;
+  // BXGY schemes may carry an additional "+ X% off" / "+ ₹X off" on top of free goods.
+  secondaryDiscountType: 'percentage' | 'fixed' | null;
+  secondaryDiscountValue: string | null;
+  maxDiscount: string | null;
   validFrom: string | null;
   validTo: string | null;
   minOrderValue: string | null;
@@ -144,6 +148,11 @@ const safeFloat = (val: string | number | null | undefined, fallback = 0): numbe
   return isNaN(n) ? fallback : n;
 };
 
+// Indian-grouped currency for display, e.g. 20000 → "20,000.00". Display only —
+// never use for API payloads, which expect plain comma-free decimals.
+const formatINR = (val: number, decimals = 2): string =>
+  val.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
@@ -156,6 +165,10 @@ import { ENDPOINTS } from '@/constants/endpoints';
 
 type RouteProps = RouteProp<AppStackParamList, 'Payment'>;
 type NavProp    = NativeStackNavigationProp<AppStackParamList>;
+
+// Orders qualify for free shipping above this value (display only — the app never
+// charges shipping; this mirrors the web summary's shipping row).
+const FREE_SHIPPING_MIN = 3000;
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
@@ -254,31 +267,69 @@ const PaymentScreen = () => {
     if (!stillEligible) setSelectedScheme(null);
   }, [selectedScheme, subtotal]);
 
-  // ── Canonical pricing formula (§3) ─────────────────────────────────────────
+  // ── Web-aligned pricing (client-confirmed architecture) ─────────────────────
+  // Two independent effects: (1) buyXgetY free goods scale proportionally, and
+  // (2) percentage discounts hit the ex-GST base of the PAID units only, with GST
+  // recomputed AFTER the discount. Flat ₹ discounts are deducted at order level
+  // AFTER tax (they never reduce GST). unitPrice is the GST-INCLUSIVE MRP, so the
+  // ex-GST rate = unitPrice ÷ (1 + GST%).
   const slabPct   = safeFloat(pricingSlab?.discount);
-  // BXGY schemes also apply their discount% on top of free goods (matches web behaviour)
-  const schemePct = selectedScheme && ['percentage', 'buyXgetY', 'bundle'].includes(selectedScheme.type)
+  // buyXgetY schemes only grant free goods — their own `discount` value is ignored.
+  const schemePct = selectedScheme && ['percentage', 'bundle'].includes(selectedScheme.type)
     ? safeFloat(selectedScheme.discount) : 0;
   const schemeFlat = selectedScheme?.type === 'fixed' ? safeFloat(selectedScheme.discount) : 0;
   const clinicPct  = safeFloat(appliedClinicCode?.discount);
   const promoPct   = appliedPromo?.type === 'Percentage' ? safeFloat(appliedPromo.discount) : 0;
   const promoFlat  = appliedPromo?.type === 'Fixed'      ? safeFloat(appliedPromo.discount) : 0;
 
-  const totalPct  = slabPct + schemePct + clinicPct + promoPct;
-  const flatDisc  = schemeFlat + promoFlat;
+  // buyXgetY secondary discount ("+ X% off" / "+ ₹X off"): a percentage joins the
+  // combined rate; a fixed amount is a flat ₹, both capped at maxDiscount when set.
+  const schemeSecondaryType  = selectedScheme?.type === 'buyXgetY' ? selectedScheme.secondaryDiscountType : null;
+  const schemeSecondaryValue = safeFloat(selectedScheme?.secondaryDiscountValue);
+  const schemeMaxDiscount    = selectedScheme?.maxDiscount != null ? safeFloat(selectedScheme.maxDiscount) : null;
+  const schemeSecondaryPct   = schemeSecondaryType === 'percentage' ? schemeSecondaryValue : 0;
+  const schemeSecondaryFlat  = schemeSecondaryType === 'fixed' && schemeSecondaryValue > 0
+    ? (schemeMaxDiscount != null ? Math.min(schemeSecondaryValue, schemeMaxDiscount) : schemeSecondaryValue)
+    : 0;
 
-  const discountAmt    = subtotal > 0 ? Math.min(subtotal, subtotal * (totalPct / 100) + flatDisc) : 0;
-  const discountFactor = subtotal > 0 ? 1 - discountAmt / subtotal : 1;
+  // Combined percentage rate applied per line, capped at 100%.
+  const totalPct = Math.min(100, slabPct + schemePct + schemeSecondaryPct + clinicPct + promoPct);
 
-  const computedTax = orderCreateData.items.reduce((s, item) => {
-    const lineSubtotal = safeFloat(item.unitPrice) * item.quantity;
-    const gstRate = safeFloat(item.gst) / 100;
-    return s + lineSubtotal * discountFactor * gstRate;
-  }, 0);
+  // Per-line breakdown on the ex-GST base of the PAID units (free units are not billed).
+  const computeLine = (item: OrderItemPayload) => {
+    const gstRate   = safeFloat(item.gst) / 100;
+    const exGstRate = safeFloat(item.unitPrice) / (1 + gstRate);   // strip GST from MRP
+    const baseExGst = exGstRate * item.quantity;
+    const discBase  = baseExGst * (1 - totalPct / 100);            // % off, ex-GST
+    return {
+      baseExGst,
+      lineDisc:  baseExGst - discBase,        // percentage discount (ex-GST)
+      lineTax:   discBase * gstRate,          // GST recomputed after the discount
+      lineTotal: discBase + discBase * gstRate,
+    };
+  };
 
-  const total = subtotal - discountAmt + computedTax;
+  const lineBreakdowns = orderCreateData.items.map(computeLine);
+  const subtotalExGst  = lineBreakdowns.reduce((s, l) => s + l.baseExGst, 0);  // ex-GST, pre-discount
+  const pctDiscountAmt = lineBreakdowns.reduce((s, l) => s + l.lineDisc, 0);
+  const computedTax    = lineBreakdowns.reduce((s, l) => s + l.lineTax, 0);
+  const taxedSubtotal  = subtotalExGst - pctDiscountAmt + computedTax;
 
-  // BXGY free goods
+  // Flat ₹ discounts: deducted at order level, after tax (capped so total ≥ 0).
+  const flatDisc    = Math.min(taxedSubtotal, schemeFlat + promoFlat + schemeSecondaryFlat);
+  const discountAmt = pctDiscountAmt + flatDisc;
+  const total       = taxedSubtotal - flatDisc;
+
+  // Whether the selected scheme attaches to a given product line (respects
+  // applicable / excluded product lists).
+  const schemeAppliesTo = (pid: number): boolean => {
+    if (!selectedScheme) return false;
+    if (selectedScheme.excludedProducts?.includes(pid)) return false;
+    return !selectedScheme.applicableProducts?.length
+      || selectedScheme.applicableProducts.includes(pid);
+  };
+
+  // buyXgetY free goods — proportional per-unit scaling with an activation gate.
   const freeGoods: FreeGood[] = (selectedScheme?.type === 'buyXgetY')
     ? orderCreateData.items.reduce<FreeGood[]>((acc, item: OrderItemPayload) => {
         const pid = item.productId;
@@ -288,7 +339,12 @@ const PaymentScreen = () => {
           (selectedScheme.applicableProducts?.includes(pid) ?? false)
         );
         if (!applicable) return acc;
-        const freeQty = Math.floor(item.quantity / selectedScheme.buyQty) * selectedScheme.getQty;
+        // Activation gate: below activationMin (defaults to buyQty) → no free goods.
+        const activationMin = selectedScheme.buyQty;
+        // Proportional scaling: free = floor(qty × getQty ÷ buyQty), not whole blocks.
+        const freeQty = item.quantity >= activationMin
+          ? Math.floor((item.quantity * selectedScheme.getQty) / selectedScheme.buyQty)
+          : 0;
         if (freeQty > 0) {
           acc.push({ productId: pid, productName: item.productName ?? `Product #${pid}`, quantity: freeQty });
         }
@@ -334,7 +390,7 @@ const PaymentScreen = () => {
       if (promo.validTo   && new Date(promo.validTo)   < now) { setCodeError('Code has expired'); return; }
       if (promo.usageLimit != null && promo.usedCount >= promo.usageLimit) { setCodeError('Usage limit reached'); return; }
       if (promo.minOrderValue && subtotal < safeFloat(promo.minOrderValue)) {
-        setCodeError(`Min. order ₹${safeFloat(promo.minOrderValue).toFixed(2)} required`); return;
+        setCodeError(`Min. order ₹${formatINR(safeFloat(promo.minOrderValue))} required`); return;
       }
       if (promo.eligibleProducts?.length) {
         const cartIds = orderCreateData.items.map(i => i.productId);
@@ -379,7 +435,13 @@ const PaymentScreen = () => {
   };
 
   const schemeLabel = (s: ApiScheme) => {
-    if (s.type === 'buyXgetY') return `Buy ${s.buyQty} Get ${s.getQty} Free — Buy ${s.buyQty} Get ${s.getQty} + ${s.discount}% off`;
+    if (s.type === 'buyXgetY') {
+      let label = `${s.name} — Buy ${s.buyQty} Get ${s.getQty}`;
+      const secVal = safeFloat(s.secondaryDiscountValue);
+      if (s.secondaryDiscountType === 'percentage' && secVal > 0) label += ` + ${secVal}% off`;
+      else if (s.secondaryDiscountType === 'fixed' && secVal > 0) label += ` + ₹${secVal} off`;
+      return label;
+    }
     if (s.type === 'percentage') return `${s.name} — ${s.discount}% off`;
     if (s.type === 'fixed') return `${s.name} — ₹${s.discount} off`;
     return s.name;
@@ -387,38 +449,6 @@ const PaymentScreen = () => {
 
   // ── Create order API call ───────────────────────────────────────────────────
   const createOrder = async () => {
-    const df = discountFactor;
-
-    const items = orderCreateData.items.map(item => {
-      const lineSubtotal = safeFloat(item.unitPrice) * item.quantity;
-      const itemDiscAmt  = parseFloat((lineSubtotal * (1 - df)).toFixed(2));
-      const gstRate      = safeFloat(item.gst) / 100;
-      const itemTax      = parseFloat((lineSubtotal * df * gstRate).toFixed(2));
-      const itemTotal    = parseFloat((lineSubtotal * df + itemTax).toFixed(2));
-      return {
-        productId: item.productId,
-        quantity:  item.quantity,
-        unitPrice: item.unitPrice,
-        gst:       item.gst ?? '0',
-        discount:  itemDiscAmt.toFixed(2),
-        tax:       itemTax.toFixed(2),
-        total:     itemTotal.toFixed(2),
-        isFreeGood: false,
-      };
-    });
-
-    // BXGY free good items
-    const freeGoodItems = freeGoods.map(fg => ({
-      productId: fg.productId,
-      quantity:  fg.quantity,
-      unitPrice: '0.00',
-      gst:       '0',
-      discount:  '0.00',
-      tax:       '0.00',
-      total:     '0.00',
-      isFreeGood: true,
-    }));
-
     const orderPayload = {
       doctorId:       orderCreateData.doctorId,
       pharmacyId:     orderCreateData.pharmacyId,
@@ -427,7 +457,7 @@ const PaymentScreen = () => {
       notes:           orderCreateData.notes,
       reasonTag:       orderCreateData.reasonTag,
       status:          'Draft',
-      subtotal:        subtotal.toFixed(2),
+      subtotal:        subtotalExGst.toFixed(2),
       discount:        discountAmt.toFixed(2),
       tax:             computedTax.toFixed(2),
       total:           total.toFixed(2),
@@ -441,9 +471,23 @@ const PaymentScreen = () => {
     const createdOrderId: number = orderRes.data?.id;
     const apiOrderNumber: string = orderRes.data?.orderNumber ?? orderNumber;
 
-    if (createdOrderId && [...items, ...freeGoodItems].length > 0) {
-      for (const item of [...items, ...freeGoodItems]) {
-        await apiClient.post(ENDPOINTS.orders.addItems(createdOrderId), item);
+    if (createdOrderId) {
+      // One row per product. Scheme free goods ride on the SAME line via `freeQty`
+      // (never a separate 0-priced item), and per-line discount/tax stay 0 — the real
+      // discount & GST live at order level. Mirrors the web add-items payload.
+      for (const item of orderCreateData.items) {
+        const free      = freeGoods.find(fg => fg.productId === item.productId);
+        const lineGross = safeFloat(item.unitPrice) * item.quantity;   // MRP × billed qty
+        await apiClient.post(ENDPOINTS.orders.addItems(createdOrderId), {
+          orderId:   createdOrderId,
+          productId: item.productId,
+          quantity:  item.quantity,
+          freeQty:   free?.quantity ?? 0,
+          unitPrice: item.unitPrice,
+          discount:  '0',
+          tax:       '0',
+          total:     lineGross.toFixed(2),
+        });
       }
     }
 
@@ -468,7 +512,7 @@ const PaymentScreen = () => {
       showAlert({
         type: 'success',
         title: 'Order Placed!',
-        message: `Order ${apiOrderNumber} has been placed successfully.${total > 0 ? `\n\nTotal: ₹${total.toFixed(2)}` : ''}`,
+        message: `Order ${apiOrderNumber} has been placed successfully.${total > 0 ? `\n\nTotal: ₹${formatINR(total)}` : ''}`,
         confirmText: 'View Order',
         onConfirm: () => navigation.navigate('OrderDetail', { orderId: createdOrderId, orderNumber: apiOrderNumber }),
       });
@@ -530,7 +574,13 @@ const PaymentScreen = () => {
                 <View style={styles.appliedSchemeCard}>
                   <Text style={styles.appliedSchemeTitle}>
                     Scheme applied: {selectedScheme.name}
-                    {schemePct > 0 ? ` (+ ${selectedScheme.discount}% off)` : ''}
+                    {schemeSecondaryPct > 0
+                      ? ` (+ ${schemeSecondaryValue}% off)`
+                      : schemeSecondaryFlat > 0
+                        ? ` (+ ₹${schemeSecondaryValue} off)`
+                        : schemePct > 0
+                          ? ` (+ ${selectedScheme.discount}% off)`
+                          : ''}
                   </Text>
                   {freeGoods.map((fg, i) => (
                     <Text key={i} style={styles.appliedSchemeDetail}>
@@ -552,7 +602,7 @@ const PaymentScreen = () => {
                       {appliedPromo
                         ? (appliedPromo.type === 'Percentage'
                             ? `${appliedPromo.discount}% off applied`
-                            : `₹${safeFloat(appliedPromo.discount).toFixed(2)} off applied`)
+                            : `₹${formatINR(safeFloat(appliedPromo.discount))} off applied`)
                         : `${appliedClinicCode?.discount}% clinic discount applied`}
                     </Text>
                   </View>
@@ -598,87 +648,74 @@ const PaymentScreen = () => {
         </View>
 
         <View style={styles.summaryCard}>
-          {/* Line items */}
-          {orderCreateData.items.map((item, i) => (
-            <View key={i} style={styles.lineItemRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.lineItemName}>{item.productName ?? `Product #${item.productId}`}</Text>
-                <Text style={styles.lineItemSub}>
-                  ₹{safeFloat(item.unitPrice).toFixed(2)} × {item.quantity}
-                  {freeGoods.find(fg => fg.productId === item.productId)
-                    ? ` +${freeGoods.find(fg => fg.productId === item.productId)!.quantity} free`
-                    : ''}
-                </Text>
+          {/* Line items — mirrors the web summary: MRP × qty, free-goods & scheme notes */}
+          {orderCreateData.items.map((item, i) => {
+            const free     = freeGoods.find(fg => fg.productId === item.productId);
+            const onScheme = !!selectedScheme && schemeAppliesTo(item.productId);
+            return (
+              <View key={i} style={styles.lineItemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.lineItemName}>{item.productName ?? `Product #${item.productId}`}</Text>
+                  <Text style={styles.lineItemSub}>
+                    ₹{formatINR(safeFloat(item.unitPrice))} × {item.quantity}
+                    {free && (
+                      <Text style={styles.lineItemFree}>
+                        {`   +${free.quantity} free · Buy ${selectedScheme?.buyQty} get ${selectedScheme?.getQty} free`}
+                      </Text>
+                    )}
+                  </Text>
+                  {onScheme && (
+                    <Text style={styles.lineItemScheme}>Scheme: {selectedScheme?.name}</Text>
+                  )}
+                </View>
               </View>
-              <Text style={styles.lineItemTotal}>
-                ₹{(safeFloat(item.unitPrice) * item.quantity).toFixed(2)}
-              </Text>
-            </View>
-          ))}
+            );
+          })}
 
           <View style={styles.summaryDivider} />
 
-          {/* Subtotal */}
+          {/* Subtotal (ex-GST taxable value, GST stripped from the MRP) */}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryKey}>Subtotal</Text>
-            <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>₹{formatINR(subtotalExGst)}</Text>
           </View>
 
-          {/* Discount breakdown */}
-          {slabPct > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>{pricingSlab?.name} ({slabPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * slabPct / 100).toFixed(2)}</Text>
-            </View>
-          )}
-          {schemePct > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>{selectedScheme?.name} ({schemePct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * schemePct / 100).toFixed(2)}</Text>
-            </View>
-          )}
-          {schemeFlat > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>{selectedScheme?.name} (Fixed)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{schemeFlat.toFixed(2)}</Text>
-            </View>
-          )}
-          {clinicPct > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>Clinic Code {appliedClinicCode?.code} ({clinicPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * clinicPct / 100).toFixed(2)}</Text>
-            </View>
-          )}
-          {promoPct > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>{appliedPromo?.code} ({promoPct}%)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{(subtotal * promoPct / 100).toFixed(2)}</Text>
-            </View>
-          )}
-          {promoFlat > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryDiscountKey}>{appliedPromo?.code} (Fixed)</Text>
-              <Text style={styles.summaryDiscountVal}>-₹{promoFlat.toFixed(2)}</Text>
-            </View>
-          )}
+          {/* Discount — single combined line, as on web */}
           {discountAmt > 0 && (
-            <View style={[styles.summaryRow, styles.totalDiscountRow]}>
-              <Text style={styles.totalDiscountKey}>Total Discount</Text>
-              <Text style={styles.totalDiscountVal}>-₹{discountAmt.toFixed(2)}</Text>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryDiscountKey}>Discount</Text>
+              <Text style={styles.summaryDiscountVal}>-₹{formatINR(discountAmt)}</Text>
             </View>
           )}
 
-          {/* Tax */}
+          {/* Tax (GST) — recomputed on the discounted ex-GST base */}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryKey}>Tax (GST)</Text>
-            <Text style={styles.summaryValue}>₹{computedTax.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>₹{formatINR(computedTax)}</Text>
           </View>
+
+          {/* Shipping — free only when the order value clears the threshold,
+              otherwise charges are decided later (TBD). */}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryKey}>Shipping</Text>
+            {subtotal >= FREE_SHIPPING_MIN ? (
+              <Text style={styles.shippingFree}>Free</Text>
+            ) : (
+              <Text style={styles.shippingTBD}>TBD</Text>
+            )}
+          </View>
+          <Text style={subtotal >= FREE_SHIPPING_MIN ? styles.shippingNote : styles.shippingNoteMuted}>
+            {subtotal >= FREE_SHIPPING_MIN
+              ? `Free shipping — order above ₹${formatINR(FREE_SHIPPING_MIN, 0)}.`
+              : `Add ₹${formatINR(FREE_SHIPPING_MIN - subtotal, 0)} more for free shipping. Charges will be confirmed later.`}
+          </Text>
+
           <View style={styles.summaryDivider} />
 
           {/* Total */}
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryTotalKey}>Total Amount</Text>
-            <Text style={styles.summaryTotalValue}>₹{total.toFixed(2)}</Text>
+            <Text style={styles.summaryTotalKey}>Total</Text>
+            <Text style={styles.summaryTotalValue}>₹{formatINR(total)}</Text>
           </View>
         </View>
 
@@ -713,7 +750,7 @@ const PaymentScreen = () => {
               const isInelig   = !isNull && !eligibleSchemes.find(e => e.id === scheme?.id);
               const ineligReason = !isNull && isInelig
                 ? (scheme!.minOrderValue && subtotal < safeFloat(scheme!.minOrderValue)
-                    ? `Add ₹${(safeFloat(scheme!.minOrderValue) - subtotal).toFixed(0)} more qualifying units to the cart`
+                    ? `Add ₹${formatINR(safeFloat(scheme!.minOrderValue) - subtotal, 0)} more qualifying units to the cart`
                     : 'Not applicable to current cart')
                 : '';
 
@@ -762,7 +799,7 @@ const PaymentScreen = () => {
           disabled={loading}
         >
           <Text style={styles.proceedBtnText}>
-            {loading ? 'Placing Order…' : `Place Order  ₹${total.toFixed(2)}  →`}
+            {loading ? 'Placing Order…' : `Place Order  ₹${formatINR(total)}  →`}
           </Text>
         </TouchableOpacity>
         <Text style={styles.termsText}>
@@ -923,6 +960,8 @@ const styles = StyleSheet.create({
   },
   lineItemName: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark },
   lineItemSub: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, marginTop: 2 },
+  lineItemFree: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.medium, color: '#16A34A' },
+  lineItemScheme: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.medium, color: '#16A34A', marginTop: 2 },
   lineItemTotal: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.textDark },
   summaryDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 10 },
   summaryRow: {
@@ -933,6 +972,10 @@ const styles = StyleSheet.create({
   },
   summaryKey: { fontSize: FONTS.size.md, fontFamily: FONTS.family.regular, color: COLORS.textSecondary },
   summaryValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.medium, color: COLORS.textDark },
+  shippingFree: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: '#16A34A' },
+  shippingTBD: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: '#E65100' },
+  shippingNote: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: '#16A34A', marginTop: -2, marginBottom: 8 },
+  shippingNoteMuted: { fontSize: FONTS.size.xs, fontFamily: FONTS.family.regular, color: COLORS.textSecondary, marginTop: -2, marginBottom: 8 },
   summaryDiscountKey: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.regular, color: '#16A34A', flex: 1, marginRight: 8 },
   summaryDiscountVal: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: '#16A34A' },
   discountGreen: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: '#16A34A' },

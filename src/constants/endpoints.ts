@@ -22,6 +22,10 @@ export const ENDPOINTS = {
         available: '/products/available',
         detail: (id: number) => `/products/${id}`,
     },
+    sampleAllocations: {
+        // Sample products allocated to the authenticated MR with remaining stock.
+        list: '/mr-sample-allocations',
+    },
     orders: {
         create: '/orders',
         addItems: (orderId: number) => `/orders/${orderId}/items`,

@@ -428,6 +428,14 @@ const ExpenseManagementScreen = () => {
       size: asset.fileSize ?? 0,
     });
 
+    // The API returns uploadURL as a relative path (e.g. /objects/uploads/<uuid>).
+    // XMLHttpRequest can't resolve a relative URL in React Native (no document
+    // origin), so resolve it against the API host (strip the trailing /api).
+    const apiBase = (apiClient.defaults.baseURL ?? '').replace(/\/api\/?$/, '');
+    const uploadURL: string = data.uploadURL.startsWith('http')
+      ? data.uploadURL
+      : `${apiBase}${data.uploadURL}`;
+
     // Decode base64 → Uint8Array.
     // React Native's Blob constructor rejects ArrayBuffer/ArrayBufferView, but
     // XMLHttpRequest.send() handles Uint8Array — it base64-encodes it for the
@@ -440,7 +448,7 @@ const ExpenseManagementScreen = () => {
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('PUT', data.uploadURL);
+      xhr.open('PUT', uploadURL);
       xhr.setRequestHeader('Content-Type', contentType);
       xhr.onreadystatechange = () => {
         if (xhr.readyState !== 4) return;

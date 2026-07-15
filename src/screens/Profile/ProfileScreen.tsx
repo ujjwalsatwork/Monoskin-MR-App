@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import DeviceInfo from 'react-native-device-info';
 import {
   View,
@@ -9,10 +9,13 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  RefreshControl,
+  Alert,
 } from 'react-native';
 import Config from 'react-native-config';
+import dayjs from 'dayjs';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { COLORS } from '@/constants/colors';
@@ -25,10 +28,19 @@ import {
   EmailIcon,
   PhoneSmallIcon,
   CenterLocationIcon,
+  CoffeeIcon,
+  PauseIcon,
+  PlayBlue,
 } from '@/assets/images';
 import { useAuth } from '@/hooks/useAuth';
 import Svg, { Path } from 'react-native-svg';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
+import {
+  fetchTodayStatus,
+  startBreak,
+  endBreak,
+} from '@/redux/slices/attendanceSlice';
+import { formatDurationSeconds, formatElapsedSeconds } from '@/utils/attendanceFormatter';
 import { RootState } from '@/redux/rootReducer';
 import { AppDispatch } from '@/redux/store';
 import apiClient from '@/services/apiClient';
@@ -80,12 +92,41 @@ const ProfileScreen = () => {
     (state: RootState) => state.profile,
   );
 
-  useEffect(() => {
-    dispatch(fetchMyProfile());
-  }, [dispatch]);
+  const {
+    isCheckedIn,
+    breakLoading,
+    currentSession,
+    activeBreak,
+    breaks,
+  } = useSelector((state: RootState) => state.attendance);
 
   const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
   const [appVersion, setAppVersion] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [breakElapsed, setBreakElapsed] = useState(0);
+
+  const fetchMonthlyExpense = useCallback(async (mrId: number) => {
+    const now = new Date();
+    try {
+      const { data } = await apiClient.get<
+        { expenseDate: string; totalAmount: string; status: string }[]
+      >(`/mrs/${mrId}/expenses`);
+      const total = data
+        .filter(e => {
+          if (e.status !== 'Approved') return false;
+          const d = new Date(e.expenseDate);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        })
+        .reduce((sum, e) => sum + parseFloat(e.totalAmount), 0);
+      setApprovedMonthlyTotal(total);
+    } catch {
+      setApprovedMonthlyTotal(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    dispatch(fetchMyProfile());
+  }, [dispatch]);
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
@@ -93,23 +134,63 @@ const ProfileScreen = () => {
 
   useEffect(() => {
     if (!profile?.id) return;
-    const now = new Date();
-    apiClient
-      .get<{ expenseDate: string; totalAmount: string; status: string }[]>(
-        `/mrs/${profile.id}/expenses`,
-      )
-      .then(({ data }) => {
-        const total = data
-          .filter(e => {
-            if (e.status !== 'Approved') return false;
-            const d = new Date(e.expenseDate);
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-          })
-          .reduce((sum, e) => sum + parseFloat(e.totalAmount), 0);
-        setApprovedMonthlyTotal(total);
-      })
-      .catch(() => setApprovedMonthlyTotal(null));
-  }, [profile?.id]);
+    fetchMonthlyExpense(profile.id);
+  }, [profile?.id, fetchMonthlyExpense]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const result = await dispatch(fetchMyProfile()).unwrap();
+      if (result?.id) await fetchMonthlyExpense(result.id);
+      dispatch(fetchTodayStatus());
+    } catch {
+      // errors are reflected in the profile slice / expense state
+    } finally {
+      setRefreshing(false);
+    }
+  }, [dispatch, fetchMonthlyExpense]);
+
+  // ─── Break timer ──────────────────────────────────────────────────────────
+  // Keep today's attendance/break state fresh whenever the profile is focused.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchTodayStatus());
+    }, [dispatch]),
+  );
+
+  useEffect(() => {
+    if (!activeBreak) {
+      setBreakElapsed(0);
+      return;
+    }
+    const start = dayjs(activeBreak.breakStart);
+    const tick = () => setBreakElapsed(dayjs().diff(start, 'second'));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [activeBreak]);
+
+  const handleStartBreak = useCallback(async () => {
+    if (!currentSession) return;
+    const result = await dispatch(startBreak({ attendanceId: currentSession.id }));
+    if (startBreak.rejected.match(result)) {
+      Alert.alert('Break Failed', result.payload?.message ?? 'Failed to start break');
+    }
+  }, [dispatch, currentSession]);
+
+  const handleEndBreak = useCallback(async () => {
+    if (!activeBreak) return;
+    const result = await dispatch(endBreak({ breakId: activeBreak.id }));
+    if (endBreak.rejected.match(result)) {
+      Alert.alert('Break Failed', result.payload?.message ?? 'Failed to end break');
+    }
+  }, [dispatch, activeBreak]);
+
+  // Compute from timestamps for second-level precision (backend `duration` is rounded minutes)
+  const totalBreakSeconds = breaks.reduce((sum, b) => {
+    if (!b.breakEnd) return sum;
+    return sum + dayjs(b.breakEnd).diff(dayjs(b.breakStart), 'second');
+  }, 0);
 
   const conversionRate =
     profile && profile.leadsAssigned > 0
@@ -125,11 +206,11 @@ const ProfileScreen = () => {
     <View style={styles.container}>
       <Header title="My Profile" showBack showNotification />
 
-      {isLoading ? (
+      {isLoading && !profile ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      ) : error ? (
+      ) : error && !profile ? (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
@@ -137,6 +218,14 @@ const ProfileScreen = () => {
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
         >
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
@@ -194,6 +283,34 @@ const ProfileScreen = () => {
               />
             </View>
           </View>
+
+          {/* Edit Profile + Expense Management */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.expenseButton, styles.actionRowBtn]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('EditProfile')}
+            >
+              <Text style={styles.expenseButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.expenseButton, styles.actionRowBtn]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('ExpenseManagement')}
+            >
+              <Text style={styles.expenseButtonText}>Expense Management</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* View Attendance History */}
+          <TouchableOpacity
+            style={[styles.outlineButton, styles.viewHistoryButton]}
+            onPress={() => navigation.navigate('AttendanceHistory')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.outlineButtonText}>View Attendance History</Text>
+          </TouchableOpacity>
 
           {/* Personal Info */}
           <View style={styles.personalInfoSection}>
@@ -284,24 +401,78 @@ const ProfileScreen = () => {
           </View>
 
 
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.expenseButton, styles.actionRowBtn]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('EditProfile')}
-            >
-              <Text style={styles.expenseButtonText}>Edit Profile</Text>
-            </TouchableOpacity>
+          {/* Break Timer */}
+          <View style={styles.breakSection}>
+            <View style={styles.breakCard}>
+              <View style={styles.breakLeft}>
+                <View style={styles.breakIconContainer}>
+                  <CoffeeIcon />
+                </View>
+                <View>
+                  <Text style={styles.breakTitle}>Break Timer</Text>
+                  {activeBreak ? (
+                    <Text style={styles.breakTimer}>
+                      {formatElapsedSeconds(breakElapsed)}
+                    </Text>
+                  ) : (
+                    <Text style={styles.breakSubtitle}>
+                      Log lunch breaks or{'\n'}transport gaps
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.breakButton,
+                  (!isCheckedIn || breakLoading) && styles.buttonDisabled,
+                ]}
+                onPress={activeBreak ? handleEndBreak : handleStartBreak}
+                disabled={!isCheckedIn || breakLoading}
+                activeOpacity={0.8}
+              >
+                {breakLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+                ) : activeBreak ? (
+                  <PlayBlue />
+                ) : (
+                  <PauseIcon />
+                )}
+                <Text style={styles.breakButtonText}>
+                  {activeBreak ? 'END\nBREAK' : 'START\nBREAK'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={[styles.expenseButton, styles.actionRowBtn]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('ExpenseManagement')}
-            >
-              <Text style={styles.expenseButtonText}>Expense Management</Text>
-            </TouchableOpacity>
+            {/* Break Summary */}
+            {(breaks.length > 0 || activeBreak !== null) && (
+              <View style={styles.breakSummaryCard}>
+                <View style={styles.breakSummaryRow}>
+                  <View style={styles.breakSummaryStat}>
+                    <Text style={styles.breakSummaryLabel}>BREAKS TODAY</Text>
+                    <Text style={styles.breakSummaryValue}>
+                      {breaks.length + (activeBreak ? 1 : 0)}
+                    </Text>
+                  </View>
+                  <View style={styles.breakSummaryStat}>
+                    <Text style={styles.breakSummaryLabel}>TOTAL BREAK</Text>
+                    <Text style={styles.breakSummaryValue}>
+                      {formatDurationSeconds(totalBreakSeconds)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
-          
+
+          {/* Submit Leave Request */}
+          <TouchableOpacity
+            style={[styles.outlineButton, styles.leaveRequestButton]}
+            onPress={() => navigation.navigate('SubmitLeave')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.leaveRequestButtonText}>Submit Leave Request</Text>
+          </TouchableOpacity>
+
 
           {/* Logout */}
           <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={logout}>
@@ -557,6 +728,137 @@ const styles = StyleSheet.create({
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.regular,
     color: '#B0B8C4',
+  },
+
+  // ── Outline buttons (View History / Submit Leave) ──────────────────────
+  outlineButton: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    flexDirection: 'row',
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  outlineButtonText: {
+    color: COLORS.primary,
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
+  },
+  viewHistoryButton: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  buttonDisabled: {
+    opacity: 0.45,
+  },
+
+  // ── Break timer ────────────────────────────────────────────────────────
+  breakSection: {
+    marginBottom: 24,
+  },
+  breakCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+  },
+  breakLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  breakIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(46, 80, 178, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  breakTitle: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    marginBottom: 2,
+  },
+  breakSubtitle: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  breakTimer: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    marginTop: 2,
+  },
+  breakButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  breakButtonText: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  breakSummaryCard: {
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#F8F9FF',
+  },
+  breakSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  breakSummaryStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  breakSummaryLabel: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  breakSummaryValue: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: '#000',
+    textAlign: 'center',
+  },
+
+  // ── Submit Leave Request ───────────────────────────────────────────────
+  leaveRequestButton: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    borderColor: COLORS.buttonBlue,
+  },
+  leaveRequestButtonText: {
+    color: COLORS.buttonBlue,
+    fontSize: FONTS.size.lg,
+    fontFamily: FONTS.family.bold,
   },
 });
 

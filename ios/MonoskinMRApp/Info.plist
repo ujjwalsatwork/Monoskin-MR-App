@@ -4,8 +4,14 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDisplayName</key>
 	<string>Monoskin SalesForce</string>
 	<key>CFBundleExecutable</key>
@@ -33,10 +39,23 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow Monoskin MR to take a profile photo or capture expense receipts</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string/>
+	<string>Allow Monoskin MR to access your location for visit tracking and route management</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow Monoskin MR to select a profile photo or upload expense receipts from your library</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>DMSans-Regular.ttf</string>
+		<string>DMSans-Medium.ttf</string>
+		<string>DMSans-Bold.ttf</string>
+		<string>DMSans-Thin.ttf</string>
+		<string>DMSans-Light.ttf</string>
+		<string>DMSans-Italic.ttf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -56,22 +75,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>UIAppFonts</key>
-	<array>
-		<string>DMSans-Regular.ttf</string>
-		<string>DMSans-Medium.ttf</string>
-		<string>DMSans-Bold.ttf</string>
-		<string>DMSans-Thin.ttf</string>
-		<string>DMSans-Light.ttf</string>
-		<string>DMSans-Italic.ttf</string>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Allow Monoskin MR to take a profile photo or capture expense receipts</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Allow Monoskin MR to select a profile photo or upload expense receipts from your library</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow Monoskin MR to record audio for voice-to-text in visit notes</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Allow Monoskin MR to convert your speech into visit note text</string>
 </dict>
 </plist>

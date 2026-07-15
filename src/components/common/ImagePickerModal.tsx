@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
@@ -17,28 +17,40 @@ type Props = {
   onClose: () => void;
 };
 
-const ImagePickerModal = ({ visible, onCamera, onGallery, onClose }: Props) => (
-  <BottomSheetModal visible={visible} onClose={onClose}>
-    <View style={styles.sheet}>
-      <View style={styles.handle} />
-      <Text style={styles.title}>Profile Photo</Text>
+const ImagePickerModal = ({ visible, onCamera, onGallery, onClose }: Props) => {
+  const pendingAction = useRef<(() => void) | null>(null);
 
-      <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onCamera(); }}>
-        <Text style={styles.optionText}>Take Photo</Text>
-      </TouchableOpacity>
+  const selectCamera = () => { pendingAction.current = onCamera; onClose(); };
+  const selectGallery = () => { pendingAction.current = onGallery; onClose(); };
+  const handleDismissed = () => {
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    action?.();
+  };
 
-      <View style={styles.divider} />
+  return (
+    <BottomSheetModal visible={visible} onClose={onClose} onDismissed={handleDismissed}>
+      <View style={styles.sheet}>
+        <View style={styles.handle} />
+        <Text style={styles.title}>Profile Photo</Text>
 
-      <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={() => { onClose(); onGallery(); }}>
-        <Text style={styles.optionText}>Choose from Gallery</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={selectCamera}>
+          <Text style={styles.optionText}>Take Photo</Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.option, styles.cancelOption]} activeOpacity={0.7} onPress={onClose}>
-        <Text style={styles.cancelOptionText}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
-  </BottomSheetModal>
-);
+        <View style={styles.divider} />
+
+        <TouchableOpacity style={styles.option} activeOpacity={0.7} onPress={selectGallery}>
+          <Text style={styles.optionText}>Choose from Gallery</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.option, styles.cancelOption]} activeOpacity={0.7} onPress={onClose}>
+          <Text style={styles.cancelOptionText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </BottomSheetModal>
+  );
+};
 
 const styles = StyleSheet.create({
   sheet: {

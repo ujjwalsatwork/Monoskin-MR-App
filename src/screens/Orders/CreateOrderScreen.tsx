@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
+  // Switch, // FOC field hidden for now
   Platform,
   Modal,
   FlatList,
@@ -96,9 +96,7 @@ import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import {
-  SearchIcon,
   PillIcon,
-  InfoIcon,
   CalendarNoteIcon,
   Up,
   Down,
@@ -143,6 +141,7 @@ type Product = {
   foc: boolean;
   qty: number;
   gst: string;
+  availableQty: number;
 };
 
 type CatalogueItem = {
@@ -155,8 +154,14 @@ type CatalogueItem = {
   gst: string;
   qty: number;
   selected: boolean;
+  availableQty: number;
 };
 
+
+// Indian-grouped currency for display, e.g. 20000 → "20,000.00". Display only —
+// never use for API payloads, which expect plain comma-free decimals.
+const formatINR = (val: number, decimals = 2): string =>
+  val.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
 const ModalSeparator = () => <View style={styles.modalSeparator} />;
 
@@ -168,31 +173,47 @@ const CatalogueRow = React.memo(({
   item: CatalogueItem;
   onToggle: (id: string) => void;
   onQtyUpdate: (id: string, delta: number) => void;
-}) => (
-  <View style={styles.modalItem}>
-    <TouchableOpacity
-      style={[styles.checkbox, item.selected && styles.checkboxSelected]}
-      onPress={() => onToggle(item.id)}
-      activeOpacity={0.8}
-    >
-      {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
-    </TouchableOpacity>
-    <View style={styles.modalItemInfo}>
-      <Text style={styles.modalItemTime}>{item.name}</Text>
-      <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
-      <Text style={styles.modalItemPrice}>₹{item.price.toFixed(2)}</Text>
-    </View>
-    <View style={styles.stepper}>
-      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, -1)}>
-        <Text style={styles.stepperBtnText}>−</Text>
+}) => {
+  const outOfStock = item.availableQty <= 0;
+  const atMax = item.qty >= item.availableQty;
+  return (
+    <View style={[styles.modalItem, outOfStock && styles.modalItemDisabled]}>
+      <TouchableOpacity
+        style={[styles.checkbox, item.selected && styles.checkboxSelected]}
+        onPress={() => onToggle(item.id)}
+        disabled={outOfStock}
+        activeOpacity={0.8}
+      >
+        {item.selected && <Text style={styles.checkboxTick}>✓</Text>}
       </TouchableOpacity>
-      <Text style={styles.stepperValue}>{item.qty}</Text>
-      <TouchableOpacity style={styles.stepperBtn} onPress={() => onQtyUpdate(item.id, 1)}>
-        <Text style={styles.stepperBtnText}>+</Text>
-      </TouchableOpacity>
+      <View style={styles.modalItemInfo}>
+        <Text style={styles.modalItemTime}>{item.name}</Text>
+        <Text style={styles.modalItemDesc}>{item.category} • {item.packSize}</Text>
+        <Text style={styles.modalItemPrice}>₹{formatINR(item.price)}</Text>
+        <Text style={[styles.modalItemAvail, outOfStock && styles.modalItemAvailEmpty]}>
+          {outOfStock ? 'Out of stock' : `Available: ${item.availableQty}`}
+        </Text>
+      </View>
+      <View style={styles.stepper}>
+        <TouchableOpacity
+          style={styles.stepperBtn}
+          onPress={() => onQtyUpdate(item.id, -1)}
+          disabled={outOfStock || item.qty <= 0}
+        >
+          <Text style={[styles.stepperBtnText, (outOfStock || item.qty <= 0) && styles.stepperBtnTextDisabled]}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.stepperValue}>{item.qty}</Text>
+        <TouchableOpacity
+          style={styles.stepperBtn}
+          onPress={() => onQtyUpdate(item.id, 1)}
+          disabled={outOfStock || atMax}
+        >
+          <Text style={[styles.stepperBtnText, (outOfStock || atMax) && styles.stepperBtnTextDisabled]}>+</Text>
+        </TouchableOpacity>
+      </View>
     </View>
-  </View>
-));
+  );
+});
 
 /* ── CollapsibleSection ── */
 const CollapsibleSection = ({
@@ -223,12 +244,12 @@ const CollapsibleSection = ({
 /* ── ProductCard ── */
 const ProductCard = ({
   item,
-  onToggleFoc,
+  // onToggleFoc, // FOC field hidden for now
   onUpdateQty,
   onLongPress,
 }: {
   item: Product;
-  onToggleFoc: (id: string) => void;
+  // onToggleFoc: (id: string) => void; // FOC field hidden for now
   onUpdateQty: (id: string, delta: number) => void;
   onLongPress: () => void;
 }) => (
@@ -256,7 +277,7 @@ const ProductCard = ({
         <Text style={styles.productCategory}>{item.category}</Text>
       </View>
       <View style={styles.productPriceBlock}>
-        <Text style={styles.productPrice}>₹{item.price.toFixed(2)}</Text>
+        <Text style={styles.productPrice}>₹{formatINR(item.price)}</Text>
         <View style={styles.offerBadge}>
           <View style={styles.offerIcon}><OfferTag /></View>
           <Text style={styles.offerText}>{item.offer}</Text>
@@ -264,6 +285,7 @@ const ProductCard = ({
       </View>
     </View>
     <View style={styles.productBottomRow}>
+      {/* FOC field hidden for now
       <View style={styles.focRow}>
         <Text style={styles.focLabel}>FOC</Text>
         <Switch
@@ -274,13 +296,25 @@ const ProductCard = ({
           style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
         />
       </View>
+      */}
+      <Text style={[styles.availabilityText, item.availableQty <= 0 && styles.availabilityTextEmpty]}>
+        {item.availableQty <= 0 ? 'Out of stock' : `Available: ${item.availableQty}`}
+      </Text>
       <View style={styles.stepper}>
-        <TouchableOpacity style={styles.stepperBtn} onPress={() => onUpdateQty(item.id, -1)}>
-          <Text style={styles.stepperBtnText}>−</Text>
+        <TouchableOpacity
+          style={styles.stepperBtn}
+          onPress={() => onUpdateQty(item.id, -1)}
+          disabled={item.qty <= 0}
+        >
+          <Text style={[styles.stepperBtnText, item.qty <= 0 && styles.stepperBtnTextDisabled]}>−</Text>
         </TouchableOpacity>
         <Text style={styles.stepperValue}>{item.qty}</Text>
-        <TouchableOpacity style={styles.stepperBtn} onPress={() => onUpdateQty(item.id, 1)}>
-          <Text style={styles.stepperBtnText}>+</Text>
+        <TouchableOpacity
+          style={styles.stepperBtn}
+          onPress={() => onUpdateQty(item.id, 1)}
+          disabled={item.qty >= item.availableQty}
+        >
+          <Text style={[styles.stepperBtnText, item.qty >= item.availableQty && styles.stepperBtnTextDisabled]}>+</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -323,12 +357,15 @@ const CreateOrderScreen = () => {
         packSize: p.packSize,
         price: parseFloat(p.mrp),
         gst: p.gst,
-        qty: 1,
+        qty: 0,
         selected: false,
+        availableQty: p.availableQty ?? 0,
       }));
       setCatalogue(items);
       return items;
-    } catch {
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load products.';
+      showAlert({ type: 'error', title: 'Error', message });
       return [];
     } finally {
       setCatalogueLoading(false);
@@ -342,17 +379,15 @@ const CreateOrderScreen = () => {
       const existing = products.find(p => p.id === item.id);
       return existing
         ? { ...item, selected: true, qty: existing.qty }
-        : { ...item, selected: false, qty: 1 };
+        : { ...item, selected: false, qty: 0 };
     }));
     setAddItemsVisible(true);
   };
 
-  const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [inventoryExpanded, setInventoryExpanded] = useState(true);
-  const [lastOrderedExpanded, setLastOrderedExpanded] = useState(false);
   const [priority, setPriority] = useState<Priority>('Medium');
   const [deliveryDate, setDeliveryDate] = useState<Date | null>(null);
   const [calendarVisible, setCalendarVisible] = useState(false);
@@ -367,18 +402,20 @@ const CreateOrderScreen = () => {
 
   const updateQty = (id: string, delta: number) => {
     setProducts(prev =>
-      prev.map(p => p.id === id ? { ...p, qty: Math.max(0, p.qty + delta) } : p)
+      // Never let the quantity exceed the product's available stock.
+      prev.map(p => p.id === id ? { ...p, qty: Math.max(0, Math.min(p.availableQty, p.qty + delta)) } : p)
     );
   };
 
-  const toggleFoc = (id: string) => {
-    setProducts(prev =>
-      prev.map(p => p.id === id ? { ...p, foc: !p.foc } : p)
-    );
-  };
+  // FOC field hidden for now
+  // const toggleFoc = (id: string) => {
+  //   setProducts(prev =>
+  //     prev.map(p => p.id === id ? { ...p, foc: !p.foc } : p)
+  //   );
+  // };
 
   const totalItems = products.reduce((s, p) => s + p.qty, 0);
-  const focCount   = products.filter(p => p.foc).length;
+  // const focCount   = products.filter(p => p.foc).length; // FOC field hidden for now
   const orderValue = products.reduce((s, p) => s + p.price * p.qty, 0);
 
   // Base tax (no discounts — discounts are applied in PaymentScreen)
@@ -394,10 +431,20 @@ const CreateOrderScreen = () => {
   const remainingCredit = creditLimit - outstanding - baseTotal;
 
   const toggleCatalogueItem = useCallback((id: string) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c)), []);
+    setCatalogue(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      if (c.availableQty <= 0) return c; // out of stock — cannot select
+      const selected = !c.selected;
+      return { ...c, selected, qty: selected ? Math.min(Math.max(1, c.qty), c.availableQty) : 0 };
+    })), []);
 
   const updateCatalogueQty = useCallback((id: string, delta: number) =>
-    setCatalogue(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c)), []);
+    setCatalogue(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      // Clamp between 0 and the available stock so the order can't exceed it.
+      const qty = Math.max(0, Math.min(c.availableQty, c.qty + delta));
+      return { ...c, qty, selected: qty > 0 };
+    })), []);
 
   const handleSaveItems = () => {
     const selectedItems: Product[] = catalogue
@@ -412,6 +459,7 @@ const CreateOrderScreen = () => {
         offer: '',
         foc: products.find(p => p.id === c.id)?.foc ?? false,
         qty: c.qty,
+        availableQty: c.availableQty,
       }));
     setProducts(selectedItems);
     setAddItemsVisible(false);
@@ -426,11 +474,20 @@ const CreateOrderScreen = () => {
       showAlert({ type: 'error', title: 'Invalid Amount', message: 'Order amount must be greater than ₹0. Please add products with valid prices.' });
       return;
     }
+    const overStock = products.find(p => p.qty > p.availableQty);
+    if (overStock) {
+      showAlert({
+        type: 'error',
+        title: 'Insufficient Stock',
+        message: `Only ${overStock.availableQty} unit(s) of ${overStock.name} are available. Please reduce the quantity.`,
+      });
+      return;
+    }
     if (baseTotal + outstanding > creditLimit && creditLimit > 0) {
       showAlert({
         type: 'info',
         title: 'Credit Limit Exceeded',
-        message: `This order exceeds the doctor's available credit.\n\nCredit Limit: ₹${creditLimit.toFixed(2)}\nOutstanding: ₹${outstanding.toFixed(2)}\nEst. Total: ₹${baseTotal.toFixed(2)}\n\nOrder will be submitted for approval.`,
+        message: `This order exceeds the doctor's available credit.\n\nCredit Limit: ₹${formatINR(creditLimit)}\nOutstanding: ₹${formatINR(outstanding)}\nEst. Total: ₹${formatINR(baseTotal)}\n\nOrder will be submitted for approval.`,
         confirmText: 'Proceed Anyway',
         cancelText: 'Cancel',
         onConfirm: () => proceedWithOrder(),
@@ -528,13 +585,13 @@ const CreateOrderScreen = () => {
               <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
                 <Text style={styles.doctorStatLabel}>CREDIT LIMIT</Text>
                 <Text style={styles.doctorStatValue} numberOfLines={1}>
-                  ₹{creditLimit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{formatINR(creditLimit)}
                 </Text>
               </View>
               <View style={[styles.doctorStatBox, styles.doctorStatBoxActive]}>
                 <Text style={styles.doctorStatLabel}>OUTSTANDING</Text>
                 <Text style={[styles.doctorStatValue, outstanding > 0 && styles.outstandingRed]} numberOfLines={1}>
-                  ₹{outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{formatINR(outstanding)}
                 </Text>
               </View>
             </View>
@@ -583,7 +640,7 @@ const CreateOrderScreen = () => {
               <ProductCard
                 key={item.id}
                 item={item}
-                onToggleFoc={toggleFoc}
+                // onToggleFoc={toggleFoc} // FOC field hidden for now
                 onUpdateQty={updateQty}
                 onLongPress={() => navigation.navigate('ProductDetail', {
                   productId: item.id,
@@ -722,9 +779,19 @@ const CreateOrderScreen = () => {
           />
 
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveItems} activeOpacity={0.85}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
+            {(() => {
+              const canSave = catalogue.some(c => c.selected && c.qty > 0);
+              return (
+                <TouchableOpacity
+                  style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+                  onPress={handleSaveItems}
+                  disabled={!canSave}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.saveBtnText}>Save</Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -735,24 +802,24 @@ const CreateOrderScreen = () => {
       <View style={styles.bottomBar}>
         <View style={styles.bottomBarTop}>
           <Text style={styles.bottomBarItems}>
-            {totalItems} ITEMS ({focCount} FOC)
+            {totalItems} ITEMS{/* ({focCount} FOC) — FOC hidden for now */}
           </Text>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>SUBTOTAL</Text>
-            <Text style={styles.bottomBarValueSmall}>₹{orderValue.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{formatINR(orderValue)}</Text>
           </View>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>TAX (GST)</Text>
-            <Text style={styles.bottomBarValueSmall}>₹{baseTax.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValueSmall}>₹{formatINR(baseTax)}</Text>
           </View>
           <View style={[styles.bottomBarValueRow, styles.bottomBarTotalRow]}>
             <Text style={styles.bottomBarTotalLabel}>EST. TOTAL</Text>
-            <Text style={styles.bottomBarValue}>₹{baseTotal.toFixed(2)}</Text>
+            <Text style={styles.bottomBarValue}>₹{formatINR(baseTotal)}</Text>
           </View>
           <View style={styles.bottomBarValueRow}>
             <Text style={styles.bottomBarValueLabel}>REMAINING CREDIT</Text>
             <Text style={[styles.bottomBarValueSmall, remainingCredit < 0 ? styles.remainingCreditNegative : styles.remainingCreditPositive]}>
-              ₹{remainingCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{formatINR(remainingCredit)}
             </Text>
           </View>
         </View>
@@ -925,7 +992,10 @@ const styles = StyleSheet.create({
   },
   stepperBtn: { paddingHorizontal: 14, paddingVertical: 8 },
   stepperBtnText: { fontSize: FONTS.size.xl, fontFamily: FONTS.family.regular, color: COLORS.textDark, lineHeight: 22 },
+  stepperBtnTextDisabled: { color: COLORS.border },
   stepperValue: { fontSize: FONTS.size.md, fontFamily: FONTS.family.bold, color: COLORS.textDark, minWidth: 28, textAlign: 'center' },
+  availabilityText: { fontSize: FONTS.size.sm, fontFamily: FONTS.family.bold, color: COLORS.success },
+  availabilityTextEmpty: { color: COLORS.error },
 
   // Hint
   emptyProducts: {
@@ -1135,6 +1205,14 @@ const styles = StyleSheet.create({
     color: COLORS.buttonBlue,
     marginTop: 2,
   },
+  modalItemAvail: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.success,
+    marginTop: 2,
+  },
+  modalItemAvailEmpty: { color: COLORS.error },
+  modalItemDisabled: { opacity: 0.45 },
   modalFooter: {
     paddingHorizontal: 16,
     paddingVertical: 16,
@@ -1148,6 +1226,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: {
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.semibold,

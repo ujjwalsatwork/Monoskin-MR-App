@@ -50,6 +50,7 @@ interface OrderItem {
   id: number;
   productId: number;
   quantity: number;
+  freeQty?: number;
   unitPrice: string;
   discount: string;
   tax: string;
@@ -231,7 +232,12 @@ const OrderDetailScreen = () => {
                     </View>
                     <View style={styles.orderItemInfo}>
                       <Text style={styles.orderItemName}>{item.productName ?? `Product #${item.productId}`}</Text>
-                      <Text style={styles.orderItemQty}>Qty: {item.quantity} units  •  ₹{parseFloat(item.unitPrice).toFixed(2)}/unit</Text>
+                      <Text style={styles.orderItemQty}>
+                        Qty: {item.quantity} units  •  ₹{parseFloat(item.unitPrice).toFixed(2)}/unit
+                        {item.freeQty && item.freeQty > 0 ? (
+                          <Text style={styles.freeText}>{`  +${item.freeQty} free`}</Text>
+                        ) : null}
+                      </Text>
                       {parseFloat(item.discount) > 0 && (
                         <Text style={styles.orderItemDiscount}>Discount: ₹{parseFloat(item.discount).toFixed(2)}</Text>
                       )}
