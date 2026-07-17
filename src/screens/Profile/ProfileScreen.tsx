@@ -44,6 +44,7 @@ import { formatDurationSeconds, formatElapsedSeconds } from '@/utils/attendanceF
 import { RootState } from '@/redux/rootReducer';
 import { AppDispatch } from '@/redux/store';
 import apiClient from '@/services/apiClient';
+import { ENDPOINTS } from '@/constants/endpoints';
 
 const LogoutIconUI = ({ stroke = '#FF4D4F' }) => (
   <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -101,9 +102,25 @@ const ProfileScreen = () => {
   } = useSelector((state: RootState) => state.attendance);
 
   const [approvedMonthlyTotal, setApprovedMonthlyTotal] = useState<number | null>(null);
+  const [sampleAvailable, setSampleAvailable] = useState<number | null>(null);
   const [appVersion, setAppVersion] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [breakElapsed, setBreakElapsed] = useState(0);
+
+  // Live remaining sample stock, summed across every allocation. The profile
+  // payload's `sampleAllocation` is the total ever allotted, not what's left.
+  const fetchSampleAvailable = useCallback(async () => {
+    try {
+      const res = await apiClient.get(ENDPOINTS.sampleAllocations.list);
+      const total = (res.data?.data || []).reduce(
+        (sum: number, a: any) => sum + (a.remainingQty ?? 0),
+        0,
+      );
+      setSampleAvailable(total);
+    } catch {
+      setSampleAvailable(null);
+    }
+  }, []);
 
   const fetchMonthlyExpense = useCallback(async (mrId: number) => {
     const now = new Date();
@@ -126,7 +143,8 @@ const ProfileScreen = () => {
 
   useEffect(() => {
     dispatch(fetchMyProfile());
-  }, [dispatch]);
+    fetchSampleAvailable();
+  }, [dispatch, fetchSampleAvailable]);
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
@@ -142,13 +160,14 @@ const ProfileScreen = () => {
     try {
       const result = await dispatch(fetchMyProfile()).unwrap();
       if (result?.id) await fetchMonthlyExpense(result.id);
+      await fetchSampleAvailable();
       dispatch(fetchTodayStatus());
     } catch {
       // errors are reflected in the profile slice / expense state
     } finally {
       setRefreshing(false);
     }
-  }, [dispatch, fetchMonthlyExpense]);
+  }, [dispatch, fetchMonthlyExpense, fetchSampleAvailable]);
 
   // ─── Break timer ──────────────────────────────────────────────────────────
   // Keep today's attendance/break state fresh whenever the profile is focused.
@@ -191,11 +210,6 @@ const ProfileScreen = () => {
     if (!b.breakEnd) return sum;
     return sum + dayjs(b.breakEnd).diff(dayjs(b.breakStart), 'second');
   }, 0);
-
-  const conversionRate =
-    profile && profile.leadsAssigned > 0
-      ? Math.round((profile?.conversions / profile?.leadsAssigned) * 100)
-      : 0;
 
   const hqLocation =
     profile?.territory && profile?.region
@@ -261,12 +275,12 @@ const ProfileScreen = () => {
             <View style={styles.statsRow}>
               <StatCard
                 icon={<CheckCircleIcon stroke={COLORS.success} width={22} height={22} />}
-                value={`${conversionRate}%`}
-                label="Target Achieved"
+                value={profile?.conversions ?? 0}
+                label="Conversions"
               />
               <StatCard
                 icon={<CalendarNoteIcon stroke={COLORS.primary} width={22} height={22} />}
-                value={profile?.sampleAllocation ?? 0}
+                value={sampleAvailable ?? 0}
                 label="Sample Allocation"
               />
             </View>
@@ -278,7 +292,7 @@ const ProfileScreen = () => {
               />
               <StatCard
                 icon={<CenterLocationIcon width={22} height={22} fill={COLORS.primary} stroke={COLORS.primary} />}
-                value={profile?.conversions ?? 0}
+                value={profile?.visitsCount ?? 0}
                 label="Total Visits"
               />
             </View>

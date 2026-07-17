@@ -291,7 +291,7 @@ const VisitDetailScreen = () => {
   const [followUpPickerVisible, setFollowUpPickerVisible] = useState(false);
   const [followUpPickerDate, setFollowUpPickerDate] = useState(new Date());
   // Revisit date for the "Not Met" outcome (stored as ISO yyyy-mm-dd). Must be
-  // a future date — the backend auto-schedules a Route Planner meeting on it.
+  // today or later — the backend auto-schedules a Route Planner meeting on it.
   const [revisitOn, setRevisitOn] = useState('');
   const [revisitPickerVisible, setRevisitPickerVisible] = useState(false);
   const [revisitPickerDate, setRevisitPickerDate] = useState(new Date());
@@ -641,11 +641,10 @@ const VisitDetailScreen = () => {
     setFollowUpPickerVisible(true);
   };
 
-  // "Not Met" revisit must be a strictly future date — earliest selectable day
-  // is tomorrow (today and all past dates are rejected).
+  // "Not Met" revisit cannot be backdated — earliest selectable day is today
+  // (past dates are rejected).
   const minRevisitDate = (): Date => {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
     return d;
   };
@@ -782,10 +781,10 @@ const VisitDetailScreen = () => {
         showFeedback('error', 'Validation', 'Please select a revisit date for the "Not Met" outcome.');
         return;
       }
-      // Guard against a stale/past selection — only future dates are valid.
+      // Guard against a stale/past selection — today or later is valid.
       const [y, m, d] = revisitOn.split('-').map(Number);
       if (new Date(y, m - 1, d).getTime() < minRevisitDate().getTime()) {
-        showFeedback('error', 'Validation', 'The revisit date must be a future date.');
+        showFeedback('error', 'Validation', 'The revisit date cannot be in the past.');
         return;
       }
     }
@@ -825,7 +824,7 @@ const VisitDetailScreen = () => {
       formData.append('followUpDate', `${followUpDate}T00:00:00.000Z`);
     }
 
-    // "Not Met" → send the future revisit date so the backend can auto-schedule
+    // "Not Met" → send the revisit date so the backend can auto-schedule
     // a Route Planner meeting for this doctor on that day.
     if (outcome === 'Not Met' && revisitOn) {
       formData.append('revisitOn', `${revisitOn}T00:00:00.000Z`);
@@ -1730,7 +1729,7 @@ const VisitDetailScreen = () => {
         </Modal>
       )}
 
-      {/* Revisit date picker — Android native dialog (future dates only) */}
+      {/* Revisit date picker — Android native dialog (today onwards) */}
       {Platform.OS === 'android' && revisitPickerVisible && (
         <DateTimePicker
           value={revisitPickerDate}
