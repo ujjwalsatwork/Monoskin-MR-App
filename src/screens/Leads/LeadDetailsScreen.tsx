@@ -54,7 +54,10 @@ type Lead = {
   assignedMRId?: number | null;
   nextFollowUp?: string | null;
   notes?: string | null;
-  
+
+  preferredProducts?: Array<{ id: number; name: string; totalQuantity?: number }>;
+  unpreferredProducts?: Array<{ id: number; name: string }>;
+
   linkedPharmacy?: {
      id?: number;
      pharmacyId?: number;
@@ -589,6 +592,28 @@ const LeadDetailsScreen = () => {
               <Text style={[styles.companyValue, { flex: 1 }]}>{lead.notes}</Text>
             </View>
           ) : null}
+        </View>
+
+        {/* Preferred Products */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>PREFERRED PRODUCTS</Text>
+          {lead.preferredProducts && lead.preferredProducts.length > 0 ? (
+            lead.preferredProducts.map((prod, idx) => (
+              <View
+                key={`pref-${prod.id}`}
+                style={[styles.companyRow, idx === lead.preferredProducts!.length - 1 && { marginBottom: 0 }]}
+              >
+                <Text style={[styles.infoValue, { flex: 1, color: COLORS.textDark }]}>{prod.name}</Text>
+                {prod.totalQuantity !== undefined ? (
+                  <View style={[styles.smallBadge, { backgroundColor: '#E8F5E9' }]}>
+                    <Text style={[styles.smallBadgeText, { color: '#2E7D32' }]}>x{prod.totalQuantity}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noDataText}>No preferred products on record.</Text>
+          )}
         </View>
       </ScrollView>
 

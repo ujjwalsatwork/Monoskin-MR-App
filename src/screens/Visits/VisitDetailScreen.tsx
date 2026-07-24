@@ -198,11 +198,10 @@ const ensureCameraPermission = async (): Promise<'granted' | 'denied' | 'setting
 
 const ensureGalleryPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
   if (Platform.OS !== 'android') return 'granted';
-  const permission =
-    Number(Platform.Version) >= 33
-      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-  const result = await requestAndroidPermission(permission, {
+  // Android 13+ (API 33+): launchImageLibrary uses the system photo picker, which needs no
+  // media permission. Only legacy devices (API <= 32) require READ_EXTERNAL_STORAGE.
+  if (Number(Platform.Version) >= 33) return 'granted';
+  const result = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE, {
     title: 'Gallery Permission',
     message: 'Monoskin MR needs access to your photo library to attach photos to this visit.',
     buttonPositive: 'Allow',
@@ -385,6 +384,7 @@ const VisitDetailScreen = () => {
       setError(null);
       const res = await apiClient.get(ENDPOINTS.portfolio.leadDetail(leadId!));
       setLeadData(res.data);
+      seedPreferredProducts(res.data?.preferredProducts);
     } catch(fetchErr) {
       console.log('🚀 ~ fetchLeadDetails ~ error:', fetchErr);
       setError('Failed to load lead details. Please try again.');
@@ -1584,6 +1584,7 @@ const VisitDetailScreen = () => {
                   value={pickerDate}
                   mode="time"
                   display="spinner"
+                  themeVariant="light"
                   onValueChange={(_e, date) => setPickerDate(date)}
                   style={styles.timePickerSpinner}
                 />
@@ -1658,6 +1659,7 @@ const VisitDetailScreen = () => {
                   value={followUpPickerDate}
                   mode="date"
                   display="spinner"
+                  themeVariant="light"
                   minimumDate={new Date()}
                   onValueChange={(_e, date) => { if (date) { setFollowUpPickerDate(date); } }}
                   style={styles.timePickerSpinner}
@@ -1719,6 +1721,7 @@ const VisitDetailScreen = () => {
                   value={revisitPickerDate}
                   mode="date"
                   display="spinner"
+                  themeVariant="light"
                   minimumDate={minRevisitDate()}
                   onValueChange={(_e, date) => { if (date) { setRevisitPickerDate(date); } }}
                   style={styles.timePickerSpinner}

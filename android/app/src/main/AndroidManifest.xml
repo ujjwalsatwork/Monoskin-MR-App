@@ -1,15 +1,30 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Gallery access: READ_MEDIA_IMAGES for Android 13+, READ_EXTERNAL_STORAGE for older -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Gallery access: on Android 13+ (API 33+) launchImageLibrary uses the system photo
+         picker, which needs NO media permission — so READ_MEDIA_IMAGES/READ_MEDIA_VIDEO are
+         removed (and blocked in case a dependency merges them in) to satisfy Google Play's
+         photo & video permissions policy. Legacy devices (API <= 32) still use scoped
+         READ_EXTERNAL_STORAGE. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Downloads (assets) need write access only on legacy storage (API <= 28); scoped
+         storage handles API 29+. Scope it so Play doesn't flag a broad storage grant. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:node="replace" />
+
+    <!-- Permissions pulled in transitively by Play/AndroidX AARs that this app does not
+         use (no background/boot work, no first-party foreground service). Removed to keep
+         the requested permission set minimal and avoid Play declaration prompts. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
 
     <application
       android:name=".MainApplication"
