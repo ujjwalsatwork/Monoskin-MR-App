@@ -18,6 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchTodayRoute, RouteStop, setRouteNeedsRefresh } from '@/redux/slices/routeSlice';
+import { useStartVisit } from '@/hooks/useStartVisit';
 
 type StopStatus = 'in_progress' | 'upcoming' | 'completed';
 
@@ -36,6 +37,7 @@ const mapStatus = (s: RouteStop['status']): StopStatus => {
 const TodayVisitsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const dispatch = useDispatch<AppDispatch>();
+  const { start: startVisit } = useStartVisit();
 
   const { data, loading, error } = useSelector((state: RootState) => state.route.today);
   const needsRefresh = useSelector((state: RootState) => state.route.needsRefresh);
@@ -65,11 +67,22 @@ const TodayVisitsScreen = () => {
   const total = data?.summary.total ?? 0;
 
   const handleStopPress = (stop: RouteStop) => {
-    navigation.navigate('VisitDetail', {
-      doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
-      pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
-      leadId: stop.leadId ? String(stop.leadId) : undefined,
+    // A completed stop is a record, not a visit — open it without a timer.
+    if (stop.status === 'DONE') {
+      navigation.navigate('VisitDetail', {
+        doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
+        pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
+        leadId: stop.leadId ? String(stop.leadId) : undefined,
+        routeStopId: stop.id,
+      });
+      return;
+    }
+    startVisit({
+      visitType: stop.doctorId ? 'DOCTOR' : stop.pharmacyId ? 'PHARMACY' : 'LEAD',
+      targetId: stop.doctorId ?? stop.pharmacyId ?? stop.leadId ?? stop.id,
       routeStopId: stop.id,
+      name: stop.name,
+      subtitle: stop.address,
     });
   };
 

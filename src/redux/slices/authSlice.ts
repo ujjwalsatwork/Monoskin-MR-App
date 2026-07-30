@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { AxiosError } from 'axios';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import { clearVisitSession } from '@/services/visitSessionStorage';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,9 @@ export const performLogout = createAsyncThunk<void, void>(
         } catch {
             // Ignore — we clear local auth state regardless of the network result.
         }
+        // `auth/logout` resets every Redux slice, but AsyncStorage does not wipe
+        // itself — an abandoned visit must not follow the handset to the next MR.
+        await clearVisitSession();
         dispatch(logout());
     },
 );

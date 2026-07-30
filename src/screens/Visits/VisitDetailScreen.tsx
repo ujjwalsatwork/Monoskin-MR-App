@@ -1,5 +1,5 @@
 /* eslint-disable react/no-unstable-nested-components */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   TextInput,
   Platform,
   Alert,
+  AppState,
   Modal,
   FlatList,
   ActivityIndicator,
@@ -36,12 +37,25 @@ import {
   AddCircle,
   MonoskinLogo,
 } from '@/assets/images';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  RouteProp,
+  useNavigation,
+  useRoute,
+  usePreventRemove,
+} from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '@/redux/store';
 import { setRouteNeedsRefresh } from '@/redux/slices/routeSlice';
+import {
+  endVisitSession,
+  heartbeatVisitSession,
+  selectActiveSession,
+  sessionCleared,
+} from '@/redux/slices/visitSessionSlice';
+import { sessionMatchesParams } from '@/services/visitSessionStorage';
+import VisitTimer from '@/components/common/VisitTimer';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -294,7 +308,23 @@ const VisitDetailScreen = () => {
   const [revisitOn, setRevisitOn] = useState('');
   const [revisitPickerVisible, setRevisitPickerVisible] = useState(false);
   const [revisitPickerDate, setRevisitPickerDate] = useState(new Date());
+  // Fallback anchor for session-less opens (a read-only `visitId` entry, or a
+  // storage failure). Never used while a real session exists.
   const screenEntryTime = useRef(Date.now());
+
+  // ─── Ongoing visit session ─────────────────────────────────────────────────
+  // The duration anchor lives in the persisted session — stamped the moment the
+  // MR confirmed "Start Visit" — not in this component. That is what lets the
+  // elapsed time survive the screen unmounting, hours of screen-lock, and the OS
+  // killing the process outright.
+  const activeSession = useSelector(selectActiveSession);
+  const isTimedVisit = sessionMatchesParams(activeSession, {
+    doctorId: doctorId ? String(doctorId) : undefined,
+    pharmacyId: pharmacyId ? String(pharmacyId) : undefined,
+    leadId: leadId ? String(leadId) : undefined,
+  });
+  const visitStartedAt = isTimedVisit && activeSession ? activeSession.startTimeStamp : null;
+
   const [location, setLocation] = useState<{
     latitude: string;
     longitude: string;
@@ -308,6 +338,50 @@ const VisitDetailScreen = () => {
   const [prefExpanded, setPrefExpanded] = useState(false);
   const [orderedProductsExpanded, setOrderedProductsExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(true);
+
+  // Ends the session in both layers. Redux first — synchronous, so the other two
+  // modules and the resume banner update instantly; then the durable wipe.
+  const clearVisitSession = useCallback(async () => {
+    dispatch(sessionCleared());
+    await dispatch(endVisitSession());
+  }, [dispatch]);
+
+  // ─── Exit interception ─────────────────────────────────────────────────────
+  // `usePreventRemove` hooks the navigation POP action itself rather than a
+  // platform key, so the Android hardware back, the iOS swipe-back and the
+  // header chevron all funnel through this one dialog. What it cannot cover — a
+  // recents-swipe or an OS kill — is exactly why the session is persisted.
+  usePreventRemove(isTimedVisit, ({ data }) => {
+    Alert.alert(
+      'Active visit running',
+      'An active visit is running. Are you sure you want to STOP and cancel this visit? (Progress will be lost)',
+      [
+        // Non-destructive option first: an MR fat-fingering back at a doctor's
+        // desk must not lose a 40-minute visit to a mis-tap.
+        { text: 'Keep Visiting', style: 'cancel' },
+        {
+          text: 'Stop & Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            // Mandatory — a leftover session would lock the MR out of all three
+            // modules with no visible cause.
+            await clearVisitSession();
+            navigation.dispatch(data.action);
+          },
+        },
+      ],
+    );
+  });
+
+  // Heartbeat refresh on foreground. Diagnostics only — the reported duration
+  // never depends on it.
+  useEffect(() => {
+    if (!isTimedVisit) { return; }
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'active') { dispatch(heartbeatVisitSession()); }
+    });
+    return () => sub.remove();
+  }, [isTimedVisit, dispatch]);
 
   useEffect(() => {
     if (doctorId) {
@@ -764,6 +838,10 @@ const VisitDetailScreen = () => {
   }, [capturing, captureDims]);
 
   const handleSubmit = async () => {
+    // Captured first, before any validation gate can bounce the submit — this is
+    // the millisecond the MR confirmed the report.
+    const endTimeStamp = Date.now();
+
     if (!location) {
       showFeedback(
         'error',
@@ -810,7 +888,11 @@ const VisitDetailScreen = () => {
     if (mrInteractionTime) formData.append('mrInteractionTime', mrInteractionTime);
     if (doctorArrivalTime) formData.append('doctorArrivalTime', doctorArrivalTime);
     
-    const calculatedDuration = Math.floor((Date.now() - screenEntryTime.current) / 1000);
+    // Derived from the persisted anchor, so a screen-lock, a remount or an OS
+    // kill mid-visit cannot shorten it. Clamped at 0 in case the device clock
+    // moved backwards during the visit. Field name is unchanged — no backend work.
+    const anchor = visitStartedAt ?? screenEntryTime.current;
+    const calculatedDuration = Math.max(0, Math.floor((endTimeStamp - anchor) / 1000));
     formData.append('duration', String(calculatedDuration));
 
     if (location?.address) formData.append('location', location.address);
@@ -871,11 +953,17 @@ const VisitDetailScreen = () => {
         },
       });
       dispatch(setRouteNeedsRefresh(true));
+      // Cleanup happens on the 200 path ONLY. Clearing on a failure would destroy
+      // the anchor mid-recovery; the 422 branch below is a real, reachable retry
+      // loop and the timer has to survive it.
+      await clearVisitSession();
       showFeedback('success', 'Success', 'Visit report submitted successfully.', () => navigation.goBack());
     } catch (err: any) {
       const status = err?.response?.status;
       const data = err?.response?.data;
       // Backend rejects (422) when a sample line exceeds the MR's remaining stock.
+      // The session is deliberately left running — the MR fixes the samples and
+      // resubmits, and the extra time really was spent at the visit.
       if (status === 422 && Array.isArray(data?.errors)) {
         const lines = data.errors.map((e: any) => {
           const prod = sampleProducts.find(p => String(p.productId) === String(e.productId));
@@ -1468,6 +1556,23 @@ const VisitDetailScreen = () => {
 
       {/* Submit Report */}
       <View style={styles.submitContainer}>
+        {/* Live visit duration — pinned above Submit so it is always on screen.
+            Rendered only for a real timed session, never for a read-only open. */}
+        {visitStartedAt !== null && (
+          <>
+            <VisitTimer startTimeStamp={visitStartedAt} />
+            <TouchableOpacity
+              style={styles.cancelVisitBtn}
+              activeOpacity={0.7}
+              // Routed through goBack() on purpose: `usePreventRemove` intercepts
+              // it and raises the same confirm dialog as every other exit path.
+              onPress={() => navigation.goBack()}
+              disabled={submitting}
+            >
+              <Text style={styles.cancelVisitText}>Cancel Visit</Text>
+            </TouchableOpacity>
+          </>
+        )}
         {locationError ? (
           <View style={styles.gpsErrorBanner}>
             <Text style={styles.gpsErrorText}>GPS unavailable: {locationError}</Text>
@@ -2241,6 +2346,17 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.6 },
   submitButtonText: { fontSize: FONTS.size.lg, fontFamily: FONTS.family.semibold, color: COLORS.white },
+  cancelVisitBtn: {
+    alignSelf: 'center',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  cancelVisitText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.error,
+    textDecorationLine: 'underline',
+  },
 
   // Product Modal
   catalogueLoader: { marginVertical: 32 },

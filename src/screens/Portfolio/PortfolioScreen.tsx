@@ -34,6 +34,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
+import { TargetVisitState, useStartVisit } from '@/hooks/useStartVisit';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type Category = 'A' | 'B' | 'C';
@@ -189,12 +190,14 @@ const DoctorCard = ({
   onCreateOrder,
   onViewDetail,
   onTagPress,
+  visitState = 'idle',
 }: {
   item: Doctor;
   onStartVisit: () => void;
   onCreateOrder: () => void;
   onViewDetail: () => void;
   onTagPress: () => void;
+  visitState?: TargetVisitState;
 }) => {
   const catConfig = CATEGORY_CONFIG[item.category];
   const progressPercent = item.achievement.total > 0 ? item.achievement.done / item.achievement.total : 0;
@@ -291,12 +294,18 @@ const DoctorCard = ({
       {/* Action buttons */}
       <View style={styles.actionRow}>
         <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnFilled]}
+          style={[
+            styles.actionBtn,
+            styles.actionBtnFilled,
+            visitState === 'active-elsewhere' && styles.actionBtnDimmed,
+          ]}
           activeOpacity={0.8}
           onPress={onStartVisit}
         >
           <PlayIcon width={16} height={16} />
-          <Text style={styles.actionBtnFilledText}>Start Visit</Text>
+          <Text style={styles.actionBtnFilledText}>
+            {visitState === 'active-here' ? 'Resume Visit' : 'Start Visit'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -327,12 +336,14 @@ const PharmacyCard = ({
   onCreateOrder,
   onViewDetail,
   onTagPress,
+  visitState = 'idle',
 }: {
   item: Pharmacy;
   onStartVisit: () => void;
   onCreateOrder: () => void;
   onViewDetail: () => void;
   onTagPress: () => void;
+  visitState?: TargetVisitState;
 }) => {
   const progressPercent = Math.min(item.salesCurrent / item.salesTarget, 1);
   const hasTags = item.tags && item.tags.length > 0;
@@ -429,12 +440,18 @@ const PharmacyCard = ({
       {/* Action buttons */}
       <View style={styles.actionRow}>
         <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnFilled]}
+          style={[
+            styles.actionBtn,
+            styles.actionBtnFilled,
+            visitState === 'active-elsewhere' && styles.actionBtnDimmed,
+          ]}
           activeOpacity={0.8}
           onPress={onStartVisit}
         >
           <PlayIcon width={16} height={16} />
-          <Text style={styles.actionBtnFilledText}>Start Visit</Text>
+          <Text style={styles.actionBtnFilledText}>
+            {visitState === 'active-here' ? 'Resume Visit' : 'Start Visit'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -476,6 +493,7 @@ const EmptyList = ({ tab }: { tab: Tab }) => (
 const PortfolioScreen = () => {
   const navigation = useNavigation<NavProp>();
   const dispatch = useDispatch<AppDispatch>();
+  const { start: startVisit, getTargetState } = useStartVisit();
 
   const [activeTab, setActiveTab] = useState<Tab>('Doctors');
   const [searchText, setSearchText] = useState('');
@@ -541,7 +559,16 @@ const PortfolioScreen = () => {
   const renderDoctor = ({ item }: { item: Doctor }) => (
     <DoctorCard
       item={item}
-      onStartVisit={() => navigation.navigate('VisitDetail', { doctorId: String(item.id) })}
+      visitState={getTargetState('DOCTOR', item.id)}
+      onStartVisit={() =>
+        startVisit({
+          visitType: 'DOCTOR',
+          targetId: item.id,
+          name: item.name,
+          subtitle: item.specialty ?? item.hospital,
+          category: 'Doctors',
+        })
+      }
       onCreateOrder={() => navigation.navigate('CreateOrder', { doctorId: item.id })}
       onViewDetail={() => navigation.navigate('VisitDetail', { visitId: item.id, doctorId: item.id })}
       onTagPress={() => setTagModalDoctor(item)}
@@ -551,7 +578,16 @@ const PortfolioScreen = () => {
   const renderPharmacy = ({ item }: { item: Pharmacy }) => (
     <PharmacyCard
       item={item}
-      onStartVisit={() => navigation.navigate('VisitDetail', { pharmacyId: String(item.id) })}
+      visitState={getTargetState('PHARMACY', item.id)}
+      onStartVisit={() =>
+        startVisit({
+          visitType: 'PHARMACY',
+          targetId: item.id,
+          name: item.name,
+          subtitle: item.location,
+          category: 'Pharmacies',
+        })
+      }
       onCreateOrder={() => navigation.navigate('PharmacyOrder', { pharmacyId: item.id, pharmacyName: item.name })}
       onViewDetail={() => navigation.navigate('PharmacyDetail', { pharmacyId: item.id, pharmacyName: item.name })}
       onTagPress={() => setTagModalPharmacy(item)}
@@ -994,6 +1030,11 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.semibold,
+  },
+  // Dimmed but still tappable: the tap explains why it's locked and offers a
+  // route back to the running visit, which a dead disabled button cannot.
+  actionBtnDimmed: {
+    opacity: 0.45,
   },
   actionBtnCircle: {
     width: 42,

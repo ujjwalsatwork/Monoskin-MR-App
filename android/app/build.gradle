@@ -110,14 +110,14 @@ android {
             dimension "environment"
             applicationId "com.monoskin.mrapp"
             resValue "string", "app_name", "Monoskin SalesForce"
-            versionCode 5
+            versionCode 6
             versionName "1.0.2"
         }
         staging {
             dimension "environment"
             applicationId "com.monoskin.mrapp.staging"
             resValue "string", "app_name", "Monoskin SalesForce Staging"
-            versionCode 4
+            versionCode 5
             versionName "1.0.2"
         }
     }
