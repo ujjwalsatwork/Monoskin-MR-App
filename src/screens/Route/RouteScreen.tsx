@@ -34,6 +34,8 @@ import {
   setRouteNeedsRefresh,
   RouteStop,
 } from '@/redux/slices/routeSlice';
+import { useStartVisit } from '@/hooks/useStartVisit';
+import { VisitTargetType } from '@/services/visitSessionStorage';
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
@@ -83,6 +85,7 @@ const getCalendarGrid = (year: number, month: number): (Date | null)[] => {
 const RouteScreen = () => {
   const navigation = useNavigation<RouteScreenNavigationProp>();
   const dispatch = useDispatch<AppDispatch>();
+  const { start: startVisit, getTargetState } = useStartVisit();
 
   const [selectedDate, setLocalSelectedDate] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
@@ -143,12 +146,19 @@ const RouteScreen = () => {
     });
   };
 
+  const stopTargetType = (stop: RouteStop): VisitTargetType =>
+    stop.doctorId ? 'DOCTOR' : stop.pharmacyId ? 'PHARMACY' : 'LEAD';
+
+  const stopTargetId = (stop: RouteStop) =>
+    stop.doctorId ?? stop.pharmacyId ?? stop.leadId ?? stop.id;
+
   const handleStartVisit = (stop: RouteStop) => {
-    navigation.navigate('VisitDetail', {
-      doctorId: stop.doctorId ? String(stop.doctorId) : undefined,
-      pharmacyId: stop.pharmacyId ? String(stop.pharmacyId) : undefined,
-      leadId: stop.leadId ? String(stop.leadId) : undefined,
+    startVisit({
+      visitType: stopTargetType(stop),
+      targetId: stopTargetId(stop),
       routeStopId: stop.id,
+      name: stop.name,
+      subtitle: stop.address,
     });
   };
 
@@ -529,17 +539,27 @@ const RouteScreen = () => {
                           )}
 
                           {stop.status !== 'DONE' &&
-                            !routeData.readOnly && (
-                              <TouchableOpacity
-                                style={styles.startVisitButton}
-                                onPress={() => handleStartVisit(stop)}
-                              >
-                                <PlayIcon />
-                                <Text style={styles.startVisitButtonText}>
-                                  Start Visit
-                                </Text>
-                              </TouchableOpacity>
-                            )}
+                            !routeData.readOnly && (() => {
+                              const visitState = getTargetState(
+                                stopTargetType(stop),
+                                stopTargetId(stop),
+                              );
+                              return (
+                                <TouchableOpacity
+                                  style={[
+                                    styles.startVisitButton,
+                                    visitState === 'active-elsewhere' &&
+                                      styles.startVisitButtonDimmed,
+                                  ]}
+                                  onPress={() => handleStartVisit(stop)}
+                                >
+                                  <PlayIcon />
+                                  <Text style={styles.startVisitButtonText}>
+                                    {visitState === 'active-here' ? 'Resume Visit' : 'Start Visit'}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })()}
                         </View>
                       </View>;
                     })}
@@ -919,6 +939,11 @@ const styles = StyleSheet.create({
   },
   startVisitButtonDisabled: {
     opacity: 0.6,
+  },
+  // Dimmed but still tappable: the tap explains why it's locked and offers a
+  // route back to the running visit, which a dead disabled button cannot.
+  startVisitButtonDimmed: {
+    opacity: 0.45,
   },
   startVisitButtonText: {
     color: '#FFFFFF',

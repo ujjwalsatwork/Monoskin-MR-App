@@ -1,3 +1,10 @@
 <resources>
-    <string name="app_name">Monoskin SalesForce</string>
+    <!-- app_name is provided per product flavor via resValue in app/build.gradle
+         (production = "Monoskin SalesForce", staging = "Monoskin SalesForce Staging"). -->
+
+    <!-- react-native-config reads BuildConfig via reflection on getPackageName(),
+         which returns the applicationId. Since our applicationId (com.monoskin.mrapp[.staging])
+         differs from the namespace, we must tell it where BuildConfig actually lives
+         (the namespace), otherwise every Config.* value is undefined at runtime. -->
+    <string name="build_config_package" translatable="false">com.monoskinmrapp</string>
 </resources>

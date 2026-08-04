@@ -16,6 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import apiClient from '@/services/apiClient';
+import { useStartVisit } from '@/hooks/useStartVisit';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -63,6 +64,8 @@ const LeadCard = ({ item }: { item: Lead }) => {
   const stageStyle = STAGE_COLORS[item.stage] ?? { bg: '#F0F0F0', color: '#666666' };
   const priorityStyle = PRIORITY_COLORS[item.priority] ?? { bg: '#F0F0F0', color: '#666666' };
   const navigation = useNavigation<NavProp>();
+  const { start: startVisit, getTargetState } = useStartVisit();
+  const visitState = getTargetState('LEAD', item.id);
 
   let currentIndex = PIPELINE_STAGES.findIndex(s => s.toLowerCase() === item.stage.toLowerCase());
 
@@ -174,12 +177,25 @@ const LeadCard = ({ item }: { item: Lead }) => {
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={styles.startVisitBtn}
+          style={[
+            styles.startVisitBtn,
+            visitState === 'active-elsewhere' && styles.startVisitBtnDimmed,
+          ]}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('VisitDetail', { leadId: String(item.id) })}
+          onPress={() =>
+            startVisit({
+              visitType: 'LEAD',
+              targetId: item.id,
+              name: item.name,
+              subtitle: item.clinic || item.city || undefined,
+              category: item.leadType === 'pharmacy' ? 'Pharmacies' : 'Doctors',
+            })
+          }
         >
           <PlayIcon width={16} height={16} />
-          <Text style={styles.startVisitBtnText}>Start Visit</Text>
+          <Text style={styles.startVisitBtnText}>
+            {visitState === 'active-here' ? 'Resume Visit' : 'Start Visit'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.7}
@@ -575,6 +591,11 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.semibold,
+  },
+  // Dimmed but still tappable: the tap explains why it's locked and offers a
+  // route back to the running visit, which a dead disabled button cannot.
+  startVisitBtnDimmed: {
+    opacity: 0.45,
   },
   detailsLink: {
     fontSize: FONTS.size.md,

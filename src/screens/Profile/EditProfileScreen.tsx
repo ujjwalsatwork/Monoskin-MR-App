@@ -161,11 +161,10 @@ const ensureCameraPermission = async (): Promise<'granted' | 'denied' | 'setting
 
 const ensureGalleryPermission = async (): Promise<'granted' | 'denied' | 'settings'> => {
   if (Platform.OS !== 'android') return 'granted';
-  const permission =
-    Number(Platform.Version) >= 33
-      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-  const result = await requestAndroidPermission(permission, {
+  // Android 13+ (API 33+): launchImageLibrary uses the system photo picker, which needs no
+  // media permission. Only legacy devices (API <= 32) require READ_EXTERNAL_STORAGE.
+  if (Number(Platform.Version) >= 33) return 'granted';
+  const result = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE, {
     title: 'Gallery Permission',
     message: 'Monoskin MR needs access to your photo library to choose a profile photo.',
     buttonPositive: 'Allow',

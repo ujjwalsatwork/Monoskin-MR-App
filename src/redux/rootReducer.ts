@@ -2,6 +2,7 @@ import { combineReducers, AnyAction } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
 import userReducer from './slices/userSlice';
 import visitReducer from './slices/visitSlice';
+import visitSessionReducer from './slices/visitSessionSlice';
 import attendanceReducer from './slices/attendanceSlice';
 import portfolioReducer from './slices/portfolioSlice';
 import profileReducer from './slices/profileSlice';
@@ -12,6 +13,7 @@ const appReducer = combineReducers({
     auth: authReducer,
     user: userReducer,
     visits: visitReducer,
+    visitSession: visitSessionReducer,
     attendance: attendanceReducer,
     portfolio: portfolioReducer,
     profile: profileReducer,

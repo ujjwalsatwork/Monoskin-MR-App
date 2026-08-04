@@ -108,7 +108,11 @@ const OTPScreen = ({ route, navigation }: Props) => {
   useFocusEffect(
     useCallback(() => {
       setIsScreenFocused(true);
+      // Focus the first box once the push animation settles — focusing while
+      // the screen is still transitioning leaves the keyboard hidden.
+      const focusTimer = setTimeout(() => inputRefs.current[0]?.focus(), 350);
       return () => {
+        clearTimeout(focusTimer);
         setIsScreenFocused(false);
       };
     }, []),

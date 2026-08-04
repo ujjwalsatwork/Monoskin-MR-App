@@ -3,7 +3,9 @@ import Config from 'react-native-config';
 import { store } from '@/redux/store';
 import { logout } from '@/redux/slices/authSlice';
 
-const BASE_URL = Config.BASE_URL_API ?? 'https://erp.monoskin.in/api';
+// Base URL comes from the active environment file (.env.production / .env.staging),
+// selected automatically per build variant/scheme. Never hardcode a host here.
+const BASE_URL = Config.BASE_URL_API;
 
 const apiClient = axios.create({
     baseURL: BASE_URL,

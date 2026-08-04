@@ -81,3 +81,4 @@ MR_Mobile_App_API_Guide.md
 .env
 .env.local
 .env.production
+.env.staging
