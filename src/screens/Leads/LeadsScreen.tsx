@@ -17,6 +17,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import apiClient from '@/services/apiClient';
 import { useStartVisit } from '@/hooks/useStartVisit';
+import { LeadDraft } from '@/services/leadDraftStorage';
+import { shortReasonForKind } from '@/services/apiError';
+import {
+  discardLeadDraft,
+  retryLeadDraft,
+  selectDraftsSyncing,
+  selectLastSyncSummary,
+  selectLeadDrafts,
+  syncLeadDrafts,
+  syncSummaryConsumed,
+} from '@/redux/slices/leadDraftSlice';
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
@@ -208,6 +219,71 @@ const LeadCard = ({ item }: { item: Lead }) => {
   );
 };
 
+/* ─── Unsent drafts ──────────────────────────────────────────────── */
+
+const formatSavedAt = (ts: number): string => {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return sameDay ? time : `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}, ${time}`;
+};
+
+/**
+ * One queued submission.
+ *
+ * Three states are shown distinctly because they mean different things to the MR:
+ * `pending` needs nothing from them, `syncing` is happening right now, and
+ * `failed` will NEVER clear on its own — collapsing that last one into "waiting"
+ * would leave a rejected lead looking healthy forever.
+ */
+const DraftRow = ({
+  draft, syncing, onOpen, onRetry, onDiscard,
+}: {
+  draft: LeadDraft;
+  syncing: boolean;
+  onOpen: () => void;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) => {
+  const failed = draft.status === 'failed';
+  const inFlight = syncing && draft.status !== 'failed';
+
+  return (
+    <View style={[styles.draftCard, failed ? styles.draftCardFailed : styles.draftCardPending]}>
+      <View style={styles.draftTop}>
+        <View style={styles.draftTextBlock}>
+          <Text style={styles.draftName} numberOfLines={1}>{draft.displayName}</Text>
+          <Text style={[styles.draftStatus, failed && styles.draftStatusFailed]} numberOfLines={2}>
+            {inFlight
+              ? 'Submitting now…'
+              : failed
+                ? `Needs your attention — ${draft.lastErrorMessage || shortReasonForKind(draft.lastErrorKind)}`
+                : `Waiting to sync · saved ${formatSavedAt(draft.createdAt)}`}
+          </Text>
+        </View>
+        {inFlight
+          ? <ActivityIndicator size="small" color={COLORS.buttonBlue} />
+          : <View style={[styles.draftDot, failed && styles.draftDotFailed]} />}
+      </View>
+
+      {!inFlight && (
+        <View style={styles.draftActions}>
+          <TouchableOpacity onPress={onOpen} style={styles.draftAction}>
+            <Text style={styles.draftActionText}>{failed ? 'Review & fix' : 'View'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onRetry} style={styles.draftAction}>
+            <Text style={styles.draftActionText}>Retry now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDiscard} style={styles.draftAction}>
+            <Text style={[styles.draftActionText, styles.draftDiscard]}>Discard</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+};
+
 /* ─── Screen ─────────────────────────────────────────────────────── */
 const LeadsScreen = () => {
   const navigation = useNavigation<NavProp>();
@@ -218,6 +294,10 @@ const LeadsScreen = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const drafts = useSelector(selectLeadDrafts);
+  const draftsSyncing = useSelector(selectDraftsSyncing);
+  const lastSyncSummary = useSelector(selectLastSyncSummary);
 
   const fetchLeads = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -237,7 +317,73 @@ const LeadsScreen = () => {
     useCallback(() => {
       if (!currentUserId) dispatch(fetchMyProfile());
       fetchLeads();
+      // Opening this screen is one of the moments an MR is most likely to have
+      // regained signal, and it is where they come to check on a queued lead —
+      // so try to drain the queue before they have to ask for it.
+      dispatch(syncLeadDrafts());
     }, [fetchLeads, currentUserId, dispatch])
+  );
+
+  // Drafts for the tab being viewed. A doctor lead queued from the Doctors tab
+  // must not surface under Pharmacies.
+  const visibleDrafts = drafts.filter(d =>
+    activeTab === 'Doctors' ? d.leadType === 'doctor' : d.leadType === 'pharmacy'
+  );
+
+  const openDraft = (draft: LeadDraft) => {
+    // Reopens the form on the stored payload AND the stored `code`, so resubmitting
+    // resolves to the lead the server may already hold rather than a duplicate.
+    if (draft.leadType === 'pharmacy') {
+      navigation.navigate('AddPharmacyLead', { draftId: draft.draftId });
+    } else {
+      navigation.navigate('AddDoctorLead', { draftId: draft.draftId });
+    }
+  };
+
+  /**
+   * Header shared by both tabs: the "it landed" confirmation, then any drafts.
+   *
+   * A count that silently drops to zero is not confirmation — an MR looking at
+   * another screen when the queue drained would never learn it worked.
+   */
+  const listHeader = (
+    <View>
+      {lastSyncSummary && lastSyncSummary.submitted > 0 && (
+        <TouchableOpacity
+          style={styles.syncBanner}
+          activeOpacity={0.8}
+          onPress={() => dispatch(syncSummaryConsumed())}
+        >
+          <Text style={styles.syncBannerText}>
+            {lastSyncSummary.submitted === 1
+              ? '1 saved lead was submitted.'
+              : `${lastSyncSummary.submitted} saved leads were submitted.`}
+          </Text>
+          <Text style={styles.syncBannerDismiss}>Dismiss</Text>
+        </TouchableOpacity>
+      )}
+
+      {visibleDrafts.length > 0 && (
+        <View style={styles.draftSection}>
+          <Text style={styles.draftSectionTitle}>
+            NOT SUBMITTED YET ({visibleDrafts.length})
+          </Text>
+          {/* Anything needing the MR sorts to the top. */}
+          {[...visibleDrafts]
+            .sort((a, b) => Number(b.status === 'failed') - Number(a.status === 'failed'))
+            .map(draft => (
+              <DraftRow
+                key={draft.draftId}
+                draft={draft}
+                syncing={draftsSyncing}
+                onOpen={() => openDraft(draft)}
+                onRetry={() => dispatch(retryLeadDraft(draft.draftId))}
+                onDiscard={() => dispatch(discardLeadDraft(draft.draftId))}
+              />
+            ))}
+        </View>
+      )}
+    </View>
   );
 
   const filteredDoctors = leads.filter(l => {
@@ -310,7 +456,9 @@ const LeadsScreen = () => {
             style={styles.list}
             contentContainerStyle={[
               styles.listContent,
-              filteredDoctors.length === 0 && styles.listEmpty,
+              // Drafts render in the header, so the list is only "empty" when there
+              // is nothing at all to show — otherwise the centring fights the rows.
+              filteredDoctors.length === 0 && visibleDrafts.length === 0 && styles.listEmpty,
             ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -320,12 +468,15 @@ const LeadsScreen = () => {
                 tintColor={COLORS.buttonBlue}
               />
             }
+            ListHeaderComponent={listHeader}
             ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
-                </Text>
-              </View>
+              visibleDrafts.length > 0 ? null : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>
+                    {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
+                  </Text>
+                </View>
+              )
             }
           />
         )
@@ -343,7 +494,9 @@ const LeadsScreen = () => {
             style={styles.list}
             contentContainerStyle={[
               styles.listContent,
-              filteredDoctors.length === 0 && styles.listEmpty,
+              // Drafts render in the header, so the list is only "empty" when there
+              // is nothing at all to show — otherwise the centring fights the rows.
+              filteredDoctors.length === 0 && visibleDrafts.length === 0 && styles.listEmpty,
             ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -353,12 +506,15 @@ const LeadsScreen = () => {
                 tintColor={COLORS.buttonBlue}
               />
             }
+            ListHeaderComponent={listHeader}
             ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
-                </Text>
-              </View>
+              visibleDrafts.length > 0 ? null : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>
+                    {search ? 'No leads match your search.' : `No ${activeTab.toLowerCase()} leads yet. Add your first lead!`}
+                  </Text>
+                </View>
+              )
             }
           />
         )
@@ -419,6 +575,103 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family.regular,
     color: COLORS.textMuted,
     textAlign: 'center',
+  },
+
+  /* ── Unsent drafts ─────────────────────────────────────────────── */
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E2EFE8',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  syncBannerText: {
+    flex: 1,
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
+    color: COLORS.success,
+  },
+  syncBannerDismiss: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.success,
+    marginLeft: 12,
+  },
+  draftSection: {
+    marginBottom: 14,
+  },
+  draftSectionTitle: {
+    fontSize: FONTS.size.xs,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  draftCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  draftCardPending: {
+    backgroundColor: '#FDF6EC',
+    borderColor: '#E7C79A',
+  },
+  draftCardFailed: {
+    backgroundColor: '#FBEAE8',
+    borderColor: '#E2A9A3',
+  },
+  draftTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  draftTextBlock: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  draftName: {
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.textDark,
+  },
+  draftStatus: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.regular,
+    color: '#8A5A1B',
+    marginTop: 2,
+  },
+  draftStatusFailed: {
+    color: COLORS.error,
+  },
+  draftDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 5,
+    backgroundColor: '#B45309',
+  },
+  draftDotFailed: {
+    backgroundColor: COLORS.error,
+  },
+  draftActions: {
+    flexDirection: 'row',
+    marginTop: 10,
+    gap: 18,
+  },
+  draftAction: {
+    paddingVertical: 2,
+  },
+  draftActionText: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.bold,
+    color: COLORS.buttonBlue,
+  },
+  draftDiscard: {
+    color: COLORS.textMuted,
   },
 
   card: {

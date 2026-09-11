@@ -81,8 +81,11 @@ export type AppStackParamList = {
     TodayVisits: undefined;
     PharmacyDetail: { pharmacyId: string; pharmacyName: string };
     PharmacyOrder: { pharmacyId: string; pharmacyName: string };
-    AddDoctorLead: { editMode?: boolean; leadData?: any } | undefined;
-    AddPharmacyLead: { editMode?: boolean; leadData?: any } | undefined;
+    // `draft` reopens an unsent local submission (see leadDraftStorage): the form
+    // is refilled from the stored payload and keeps the draft's original `code`, so
+    // resubmitting resolves to the same lead server-side instead of a duplicate.
+    AddDoctorLead: { editMode?: boolean; leadData?: any; draftId?: string } | undefined;
+    AddPharmacyLead: { editMode?: boolean; leadData?: any; draftId?: string } | undefined;
     LeadDetails: { leadId: string; category?: 'Doctors' | 'Pharmacies' };
     Notifications: undefined;
     Profile: undefined;

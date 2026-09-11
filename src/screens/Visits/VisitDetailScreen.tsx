@@ -58,6 +58,26 @@ import { sessionMatchesParams } from '@/services/visitSessionStorage';
 import VisitTimer from '@/components/common/VisitTimer';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import {
+  classifyApiError,
+  extractServerMessage,
+  isRetriable,
+  messageForKind,
+} from '@/services/apiError';
+import {
+  clearVisitReport,
+  readVisitReport,
+  visitTargetKey,
+  writeVisitReport,
+} from '@/services/visitReportStorage';
+
+/**
+ * Idempotency key for one visit report. Same shape as the lead code generator:
+ * base36 of the full epoch plus randomness, so it never wraps and fits the
+ * server's varchar(64).
+ */
+const makeClientRequestId = (): string =>
+  `mv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Geolocation from '@react-native-community/geolocation';
 import { captureRef } from 'react-native-view-shot';
@@ -306,11 +326,98 @@ const VisitDetailScreen = () => {
   // Revisit date for the "Not Met" outcome (stored as ISO yyyy-mm-dd). Must be
   // today or later — the backend auto-schedules a Route Planner meeting on it.
   const [revisitOn, setRevisitOn] = useState('');
+
+  // ─── In-progress report persistence ────────────────────────────────────────
+  // The visit session already survives an OS kill, but only the timer anchor did
+  // — the MR came back to a running visit and an empty form. These two effects
+  // snapshot what they have typed and put it back.
+  const reportTargetKey = visitTargetKey({ doctorId, pharmacyId, leadId });
+  // Blocks the save effect until the restore has run, so an empty initial render
+  // can never overwrite a good snapshot before it is read.
+  const reportRestored = useRef(false);
   const [revisitPickerVisible, setRevisitPickerVisible] = useState(false);
   const [revisitPickerDate, setRevisitPickerDate] = useState(new Date());
   // Fallback anchor for session-less opens (a read-only `visitId` entry, or a
   // storage failure). Never used while a real session exists.
   const screenEntryTime = useRef(Date.now());
+
+  /**
+   * State that must stay identical across every retry of ONE visit report.
+   *
+   * `endTimeStamp` stops the reported duration inflating each time an MR retries
+   * on a weak link; `clientRequestId` stops the retry becoming a second visit row.
+   * Both are cleared only when a report is actually accepted, so the next visit
+   * starts clean.
+   */
+  const submissionRef = useRef<{ endTimeStamp: number | null; clientRequestId: string | null }>({
+    endTimeStamp: null,
+    clientRequestId: null,
+  });
+
+  // Restore anything the MR had typed before the app was killed. Runs once, and
+  // only fills fields the restored snapshot actually has a value for — so a
+  // partial snapshot can never blank out a field the screen defaulted sensibly.
+  useEffect(() => {
+    let cancelled = false;
+    // Re-closed on every run (mrId resolves asynchronously, so this effect fires
+    // again once it does). Without this the save effect below could schedule a
+    // write of the still-empty form and clobber the snapshot before the second
+    // read returns.
+    reportRestored.current = false;
+    (async () => {
+      const saved = await readVisitReport(mrId ?? null, reportTargetKey);
+      if (cancelled) { return; }
+      if (saved) {
+        if (saved.visitType) { setVisitType(saved.visitType); }
+        if (saved.outcome) { setOutcome(saved.outcome); }
+        if (saved.visitNote) { setVisitNote(saved.visitNote); }
+        if (saved.clinicConsultationTime) { setClinicConsultationTime(saved.clinicConsultationTime); }
+        if (saved.mrInteractionTime) { setMrInteractionTime(saved.mrInteractionTime); }
+        if (saved.doctorArrivalTime) { setDoctorArrivalTime(saved.doctorArrivalTime); }
+        if (saved.followUpDate) { setFollowUpDate(saved.followUpDate); }
+        if (saved.revisitOn) { setRevisitOn(saved.revisitOn); }
+        if (Array.isArray(saved.objections) && saved.objections.length) {
+          setObjections(saved.objections);
+        }
+        if (Array.isArray(saved.sampleProducts) && saved.sampleProducts.length) {
+          setSampleProducts(saved.sampleProducts as SampleProduct[]);
+        }
+        if (Array.isArray(saved.preferredProducts) && saved.preferredProducts.length) {
+          setPreferredProducts(saved.preferredProducts as PreferredProduct[]);
+        }
+        // Photos are restored by local URI. The OS can reclaim the cache directory
+        // between the kill and the relaunch, in which case a thumbnail renders
+        // blank and the MR can remove and retake it — the report body, which is
+        // the expensive part to retype, is what this is really protecting.
+        if (Array.isArray(saved.attachments) && saved.attachments.length) {
+          setAttachments(saved.attachments as Attachment[]);
+        }
+      }
+      reportRestored.current = true;
+    })();
+    return () => { cancelled = true; };
+    // Runs once per visit target, once the MR identity is known.
+  }, [mrId, reportTargetKey]);
+
+  // Snapshot on change, debounced so typing a note is not a write per keystroke.
+  useEffect(() => {
+    if (!reportRestored.current || mrId == null) { return; }
+    const timer = setTimeout(() => {
+      writeVisitReport(mrId, reportTargetKey, {
+        visitType, outcome, visitNote,
+        clinicConsultationTime, mrInteractionTime, doctorArrivalTime,
+        followUpDate, revisitOn,
+        objections, sampleProducts, preferredProducts, attachments,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    mrId, reportTargetKey,
+    visitType, outcome, visitNote,
+    clinicConsultationTime, mrInteractionTime, doctorArrivalTime,
+    followUpDate, revisitOn,
+    objections, sampleProducts, preferredProducts, attachments,
+  ]);
 
   // ─── Ongoing visit session ─────────────────────────────────────────────────
   // The duration anchor lives in the persisted session — stamped the moment the
@@ -344,6 +451,10 @@ const VisitDetailScreen = () => {
   const clearVisitSession = useCallback(async () => {
     dispatch(sessionCleared());
     await dispatch(endVisitSession());
+    // The saved report belongs to the visit that just ended — on a submit it is
+    // now redundant, and on a cancel the MR chose to discard it. Either way it
+    // must not survive to refill the next visit at this contact.
+    await clearVisitReport();
   }, [dispatch]);
 
   // ─── Exit interception ─────────────────────────────────────────────────────
@@ -838,9 +949,6 @@ const VisitDetailScreen = () => {
   }, [capturing, captureDims]);
 
   const handleSubmit = async () => {
-    // Captured first, before any validation gate can bounce the submit — this is
-    // the millisecond the MR confirmed the report.
-    const endTimeStamp = Date.now();
 
     if (!location) {
       showFeedback(
@@ -872,8 +980,35 @@ const VisitDetailScreen = () => {
     }
     if (!mrId) { showFeedback('error', 'Error', 'User session not found. Please login again.'); return; }
 
+    // ── The end-of-visit instant, frozen for this report ──────────────────────
+    // Sep 10 2026. This used to be a fresh `Date.now()` on every call, so a submit
+    // that failed on a weak link and was retried 25 minutes later logged a visit
+    // 25 minutes LONGER than it was — silently wrong data in the ERP that nobody
+    // downstream could detect, and it compounded with every retry.
+    //
+    // Frozen here rather than at the top of the function, deliberately: a report
+    // bounced by the validation gates above never reached the server, so the MR may
+    // still be with the contact and the clock should keep running. Only once a real
+    // request is about to go out does the instant become the visit's end.
+    //
+    // Cleared on success (and when a new visit starts), so the next report reads
+    // the clock fresh.
+    if (submissionRef.current.endTimeStamp == null) {
+      submissionRef.current.endTimeStamp = Date.now();
+    }
+    const endTimeStamp = submissionRef.current.endTimeStamp;
+
+    // Idempotency key for this report, minted with the timestamp and equally stable
+    // across retries. The server keys its replay guard on it and returns the visit
+    // it already created (200) rather than inserting a second one — mr_visits had
+    // no uniqueness at all before this, only a notes-matching heuristic.
+    if (!submissionRef.current.clientRequestId) {
+      submissionRef.current.clientRequestId = makeClientRequestId();
+    }
+
     const formData = new FormData();
-    
+
+    formData.append('clientRequestId', submissionRef.current.clientRequestId);
     formData.append('mrId', String(mrId));
     if (doctorId) formData.append('doctorId', String(doctorId));
     if (pharmacyId) formData.append('pharmacyId', String(pharmacyId));
@@ -953,6 +1088,10 @@ const VisitDetailScreen = () => {
         },
       });
       dispatch(setRouteNeedsRefresh(true));
+      // The report is filed (201 created, or 200 when the server already had this
+      // clientRequestId from an attempt whose response never reached us). Release
+      // the frozen instant and key so the MR's next visit starts clean.
+      submissionRef.current = { endTimeStamp: null, clientRequestId: null };
       // Cleanup happens on the 200 path ONLY. Clearing on a failure would destroy
       // the anchor mid-recovery; the 422 branch below is a real, reachable retry
       // loop and the timer has to survive it.
@@ -978,7 +1117,23 @@ const VisitDetailScreen = () => {
           `${lines.join('\n')}\n\nPlease adjust the samples and submit again.`,
         );
       } else {
-        showFeedback('error', 'Error', 'Failed to submit visit report. Please try again.');
+        // Everything that is not the sample-stock 422. Classified so the MR is told
+        // what actually happened instead of one generic line covering offline,
+        // timeout, validation and 500 alike.
+        //
+        // The visit session is deliberately left running (see above), so the report
+        // and its timer survive — the MR simply taps Submit again once they have a
+        // signal, and the frozen clientRequestId means that retry can never create
+        // a second visit.
+        const kind = classifyApiError(err);
+        const serverMessage = extractServerMessage(err);
+        showFeedback(
+          'error',
+          isRetriable(kind) ? 'Could not submit yet' : 'Error',
+          isRetriable(kind)
+            ? `${messageForKind(kind, { queued: false, serverMessage, noun: 'visit report' })} Your report is still here — nothing has been lost.`
+            : messageForKind(kind, { queued: false, serverMessage, noun: 'visit report' }),
+        );
       }
     } finally {
       setSubmitting(false);
