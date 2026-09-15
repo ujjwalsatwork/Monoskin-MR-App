@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Linking,
   RefreshControl,
   Modal,
   TouchableWithoutFeedback,
@@ -17,6 +16,7 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { COLORS } from '@/constants/colors';
+import { openEmailAddress, openPhoneNumber } from '@/utils/externalLinks';
 import { FONTS } from '@/constants/fonts';
 import {
   BackArrowIconBlack,
@@ -378,12 +378,12 @@ const LeadDetailsScreen = () => {
             {
               icon: <PhoneIconOutline stroke={COLORS.white} height={18} width={18} />,
               label: 'CALL',
-              onPress: () => lead.phone && Linking.openURL(`tel:${lead.phone}`),
+              onPress: () => { openPhoneNumber(lead.phone); },
             },
             {
               icon: <EmailIcon stroke={COLORS.white} height={18} width={18} />,
               label: 'EMAIL',
-              onPress: () => lead.email && Linking.openURL(`mailto:${lead.email}`),
+              onPress: () => { openEmailAddress(lead.email); },
             },
             {
               icon: <CalendarNoteIcon stroke={COLORS.white} height={18} width={18} />,
@@ -442,7 +442,7 @@ const LeadDetailsScreen = () => {
           {lead.phone ? (
             <TouchableOpacity
               style={styles.infoRow}
-              onPress={() => Linking.openURL(`tel:${lead.phone!}`)}
+              onPress={() => { openPhoneNumber(lead.phone); }}
             >
               <PhoneIconOutline stroke={COLORS.primary} width={20} height={20} />
               <View style={styles.infoTextContainer}>
@@ -463,7 +463,7 @@ const LeadDetailsScreen = () => {
           {lead.email ? (
             <TouchableOpacity
               style={styles.infoRow}
-              onPress={() => Linking.openURL(`mailto:${lead.email!}`)}
+              onPress={() => { openEmailAddress(lead.email); }}
             >
               <EmailIcon stroke={COLORS.primary} width={20} height={20} />
               <View style={styles.infoTextContainer}>

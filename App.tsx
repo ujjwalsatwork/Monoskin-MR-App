@@ -17,6 +17,8 @@ import {
   selectPendingDraftCount,
   syncLeadDrafts,
 } from '@/redux/slices/leadDraftSlice';
+import { checkDeviceIntegrity } from '@/services/deviceIntegrity';
+import { runRetentionSweep } from '@/services/localDataRetention';
 
 const AppContent = () => {
   const { checkAuth } = useAuth();
@@ -31,6 +33,19 @@ const AppContent = () => {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // MOB-06 — establish whether the handset's own protections are intact, once per
+  // launch. Fire-and-forget on purpose: the result is reported to the ERP on
+  // subsequent requests and nothing in the UI waits on it, so a slow filesystem
+  // cannot hold up the splash screen.
+  //
+  // MOB-09 — and sweep out local records that have outlived their retention
+  // window. Runs before hydration reads them back, so an expired draft never
+  // reappears in the UI on its way to being deleted.
+  useEffect(() => {
+    checkDeviceIntegrity();
+    runRetentionSweep();
+  }, []);
 
   // Restore any visit that was running when the OS killed the process. Must run
   // *after* auth resolves so the owner id is known — a session is validated

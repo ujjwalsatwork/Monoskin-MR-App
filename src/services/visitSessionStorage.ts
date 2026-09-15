@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSecureItem, removeSecureItem, setSecureItem } from './secureStorage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ongoing visit session — crash-survivable storage layer.
@@ -134,7 +134,7 @@ export const buildSession = (input: {
 
 export const readVisitSession = async (ownerId: number | null): Promise<OngoingVisit | null> => {
     try {
-        const raw = await AsyncStorage.getItem(VISIT_SESSION_KEY);
+        const raw = await getSecureItem(VISIT_SESSION_KEY);
         if (!raw) { return null; }
         const parsed = JSON.parse(raw);
         const verdict = verifySession(parsed, ownerId);
@@ -155,7 +155,7 @@ export const readVisitSession = async (ownerId: number | null): Promise<OngoingV
 
 export const writeVisitSession = async (session: OngoingVisit): Promise<void> => {
     try {
-        await AsyncStorage.setItem(VISIT_SESSION_KEY, JSON.stringify(session));
+        await setSecureItem(VISIT_SESSION_KEY, JSON.stringify(session));
     } catch (err) {
         console.log('🚀 ~ writeVisitSession ~ error:', err);
     }
@@ -163,7 +163,7 @@ export const writeVisitSession = async (session: OngoingVisit): Promise<void> =>
 
 export const clearVisitSession = async (): Promise<void> => {
     try {
-        await AsyncStorage.removeItem(VISIT_SESSION_KEY);
+        await removeSecureItem(VISIT_SESSION_KEY);
     } catch (err) {
         console.log('🚀 ~ clearVisitSession ~ error:', err);
     }

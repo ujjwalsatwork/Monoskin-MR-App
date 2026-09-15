@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Staging-flavour overlay. Merged on top of src/main/AndroidManifest.xml for
+      stagingDebug and stagingRelease only.
+
+      MOB-05 — wires the certificate-pinning policy in res/xml/network_security_config.xml.
+      The attribute is set here rather than in the main manifest so the production
+      build is byte-identical to before in this respect, per the decision to prove
+      pinning on staging first.
+    -->
+    <application
+        android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>

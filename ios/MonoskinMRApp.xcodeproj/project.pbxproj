@@ -310,7 +310,7 @@
 				DEVELOPMENT_TEAM = ZC3U7WQH6G;
 				ENABLE_BITCODE = NO;
 				ENVFILE = .env.production;
-				INFOPLIST_FILE = MonoskinMRApp/Info.plist;
+				INFOPLIST_FILE = MonoskinMRApp/Info.debug.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -378,11 +378,11 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = ZC3U7WQH6G;
 				ENABLE_BITCODE = NO;
 				ENVFILE = .env.staging;
-				INFOPLIST_FILE = MonoskinMRApp/Info.plist;
+				INFOPLIST_FILE = MonoskinMRApp/Info.debug.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -414,7 +414,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ZC3U7WQH6G;
 				ENABLE_BITCODE = NO;
