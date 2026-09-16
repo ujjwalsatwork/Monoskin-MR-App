@@ -8,7 +8,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  Linking,
   RefreshControl,
   Alert,
 } from 'react-native';
@@ -20,6 +19,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import { COLORS } from '@/constants/colors';
 import { FONTS } from '@/constants/fonts';
+import { openPhoneNumber } from '@/utils/externalLinks';
+import { clearAllLocalData } from '@/services/localDataRetention';
+import { hydrateLeadDrafts, selectPendingDraftCount } from '@/redux/slices/leadDraftSlice';
+import { hydrateVisitSession } from '@/redux/slices/visitSessionSlice';
 import Header from '@/components/common/Header';
 import {
   ProfileIcon,
@@ -88,6 +91,54 @@ const ProfileScreen = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { logout } = useAuth();
+
+  /** Named in the confirmation so nobody discards unsent work unknowingly. */
+  const pendingDraftCount = useSelector(selectPendingDraftCount);
+
+  /**
+   * MOB-09 — the handset-reassignment action.
+   *
+   * Signing out deliberately keeps unsent leads on the device, because an expired
+   * session is exactly when a representative has work that has not reached the
+   * ERP. That is the right default, but it left no way to hand a phone to someone
+   * else cleanly. This is that way: it erases every local record and the key that
+   * encrypts them, for every representative who has used this handset.
+   *
+   * Destructive, so it is confirmed twice over — once for the action, and with the
+   * pending count named so nobody discards unsent work by accident. Deliberately
+   * NOT wired into Logout.
+   */
+  const handleClearLocalData = useCallback(() => {
+    const pending = pendingDraftCount;
+    const warning = pending > 0
+      ? `\n\n${pending} unsent lead${pending === 1 ? '' : 's'} ${pending === 1 ? 'has' : 'have'} not reached the ERP yet and will be lost.`
+      : '';
+
+    Alert.alert(
+      'Clear local data',
+      `This erases every lead draft, visit and report stored on this handset, for all representatives who have used it. Work already submitted to the ERP is unaffected.${warning}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Erase',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearAllLocalData();
+              // Re-read from the (now empty) stores so the UI reflects the wipe
+              // immediately instead of still rendering what Redux holds in memory.
+              await dispatch(hydrateLeadDrafts());
+              await dispatch(hydrateVisitSession());
+              Alert.alert('Cleared', 'All local data on this handset has been erased.');
+            } catch {
+              Alert.alert('Error', 'Could not clear local data. Please try again.');
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  }, [pendingDraftCount, dispatch]);
 
   const { data: profile, isLoading, error } = useSelector(
     (state: RootState) => state.profile,
@@ -378,7 +429,7 @@ const ProfileScreen = () => {
                 </View>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoLabel}>Helpline</Text>
-                  <TouchableOpacity onPress={() => Linking.openURL('tel:+917400900852')}>
+                  <TouchableOpacity onPress={() => { openPhoneNumber('+917400900852'); }}>
                     <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 74009 00852</Text>
                   </TouchableOpacity>
                 </View>
@@ -392,7 +443,7 @@ const ProfileScreen = () => {
                 </View>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoLabel}>HR - Pooja Khandelwal</Text>
-                  <TouchableOpacity onPress={() => Linking.openURL('tel:+917500610020')}>
+                  <TouchableOpacity onPress={() => { openPhoneNumber('+917500610020'); }}>
                     <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 75006 10020</Text>
                   </TouchableOpacity>
                 </View>
@@ -406,7 +457,7 @@ const ProfileScreen = () => {
                 </View>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoLabel}>Finance - Chetan Kannojiya</Text>
-                  <TouchableOpacity onPress={() => Linking.openURL('tel:+916268993566')}>
+                  <TouchableOpacity onPress={() => { openPhoneNumber('+916268993566'); }}>
                     <Text style={[styles.infoValue, { color: COLORS.primary, textDecorationLine: 'underline' }]}>+91 62689 93566</Text>
                   </TouchableOpacity>
                 </View>
@@ -487,6 +538,15 @@ const ProfileScreen = () => {
             <Text style={styles.leaveRequestButtonText}>Submit Leave Request</Text>
           </TouchableOpacity>
 
+
+          {/* Clear local data — handset reassignment (MOB-09) */}
+          <TouchableOpacity
+            style={styles.clearDataButton}
+            activeOpacity={0.8}
+            onPress={handleClearLocalData}
+          >
+            <Text style={styles.clearDataButtonText}>Clear Local Data</Text>
+          </TouchableOpacity>
 
           {/* Logout */}
           <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={logout}>
@@ -718,6 +778,27 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONTS.size.sm,
     fontFamily: FONTS.family.bold,
+  },
+
+  // Clear Local Data Button — deliberately quieter than Logout: it is rarer and
+  // more destructive, so it should not compete for the thumb.
+  clearDataButton: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#D9DEE6',
+    height: 56,
+    borderRadius: 28,
+    gap: 8,
+  },
+  clearDataButtonText: {
+    color: '#6B7482',
+    fontSize: FONTS.size.md,
+    fontFamily: FONTS.family.semibold,
   },
 
   // Logout Button

@@ -2,14 +2,30 @@ import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'ax
 import Config from 'react-native-config';
 import { store } from '@/redux/store';
 import { logout } from '@/redux/slices/authSlice';
+import { getDeviceIntegrity } from './deviceIntegrity';
 
 // Base URL comes from the active environment file (.env.production / .env.staging),
 // selected automatically per build variant/scheme. Never hardcode a host here.
 const BASE_URL = Config.BASE_URL_API;
 
+/**
+ * Sep 10 2026 — raised from 15s to 30s for every request.
+ *
+ * MRs work in rural territories on EDGE/2G, where a legitimate round trip
+ * (TLS handshake + payload + response) regularly runs past 15 seconds. The old
+ * ceiling turned "slow but working" into a failure the MR then retried, which is
+ * how duplicate leads and visits were created. 30s is long enough for a real
+ * weak-signal request and short enough that a genuinely dead link still gives up
+ * while the MR is watching.
+ *
+ * Screens that submit show a "still submitting" hint before this fires so the
+ * wait never reads as a frozen app.
+ */
+export const API_TIMEOUT_MS = 30000;
+
 const apiClient = axios.create({
     baseURL: BASE_URL,
-    timeout: 15000,
+    timeout: API_TIMEOUT_MS,
     withCredentials: true, // include cookies from the native cookie store
     headers: {
         'Content-Type': 'application/json',
@@ -23,6 +39,21 @@ apiClient.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        // MOB-06 — report device integrity rather than block on it.
+        //
+        // The verdict from the launch-time root/jailbreak check rides along on every
+        // request, so the ERP can start counting compromised handsets in the real
+        // field estate before anyone decides to enforce anything. A server that does
+        // not read the header simply ignores it, which is why this is safe to ship
+        // ahead of the server-side work.
+        //
+        // Omitted entirely while the verdict is still 'unknown', so the header never
+        // asserts something the app has not actually established.
+        const integrity = getDeviceIntegrity();
+        if (integrity.verdict !== 'unknown') {
+            config.headers['X-Device-Integrity'] = integrity.verdict;
+        }
+
         // Cookie-session auth is handled by the native cookie store (withCredentials).
         // We intentionally do NOT inject a manual `Cookie` header — doing so overrode
         // the native cookie and was rejected by the server, causing a 401 on first login.

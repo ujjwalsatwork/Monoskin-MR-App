@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, ActivityIndicator,
@@ -88,8 +88,30 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '@/navigation/types';
 import DatePickerModal from '@/components/common/DatePickerModal';
 import StateCitySelector from '@/components/common/StateCitySelector';
+import { useDispatch, useSelector } from 'react-redux';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
+import { AppDispatch } from '@/redux/store';
+import {
+  classifyApiError,
+  extractServerMessage,
+  isRetriable,
+  messageForKind,
+} from '@/services/apiError';
+import { buildLeadDraft, makeLeadCode } from '@/services/leadDraftStorage';
+import {
+  discardLeadDraft,
+  saveLeadDraft,
+  selectDraftOwnerId,
+  selectLeadDrafts,
+} from '@/redux/slices/leadDraftSlice';
+
+/**
+ * How long the MR waits before the button admits the network is struggling.
+ * Well inside the 30s request timeout, so a weak-signal submit reads as "working
+ * on it" rather than a frozen screen.
+ */
+const SLOW_NETWORK_HINT_MS = 6000;
 
 type AddDoctorRouteProp = RouteProp<AppStackParamList, 'AddDoctorLead'>;
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
@@ -339,43 +361,76 @@ const CustomPharmacyModal = ({ visible, initialData, onClose, onSave }: { visibl
 const AddLeadScreen = () => {
   const route = useRoute<AddDoctorRouteProp>();
   const navigation = useNavigation<NavProp>();
-  const { editMode, leadData } = route.params || {};
+  const { editMode, leadData, draftId } = route.params || {};
+  const dispatch = useDispatch<AppDispatch>();
+  const ownerId = useSelector(selectDraftOwnerId);
+  const allDrafts = useSelector(selectLeadDrafts);
 
+  // The unsent draft this screen was opened from, if any. Reopening one must reuse
+  // its stored payload AND its `code`, so resubmitting resolves to the lead the
+  // server may already hold rather than creating a second.
+  const openedDraft = draftId ? allDrafts.find(d => d.draftId === draftId) ?? null : null;
+  const draftPayload = (openedDraft?.payload ?? null) as Record<string, any> | null;
+
+  /**
+   * THE idempotency key, minted once for the life of this form.
+   *
+   * It used to be generated inside handleSave, so every retry carried a different
+   * code and the server had no way to tell a retry from a new lead — that is how a
+   * timed-out submit on a weak link became two leads. A ref (not state) because it
+   * must survive re-renders without ever being recomputed.
+   */
+  const leadCodeRef = useRef<string>(openedDraft?.code ?? makeLeadCode());
+
+  // Adopt the draft's own code if the draft resolves after the first render (the
+  // drafts slice hydrates asynchronously). Without this the form could submit a
+  // reopened draft under a NEW code, which is exactly the duplicate this whole
+  // mechanism exists to prevent. Never overwrites a code once a submit is under
+  // way, and never runs for a brand-new form.
+  useEffect(() => {
+    if (openedDraft && leadCodeRef.current !== openedDraft.code) {
+      leadCodeRef.current = openedDraft.code;
+    }
+  }, [openedDraft]);
+
+  // A reopened draft refills the form from its stored payload; `leadData` still
+  // drives the edit-an-existing-lead case. Draft wins when both are somehow present.
+  const seed: any = draftPayload ?? leadData ?? {};
   const [form, setForm] = useState({
     // Name is now split into prefix + first + last (backend composes the full
     // `name`). Fall back to the legacy single `name` for older records.
-    prefix: leadData?.prefix || 'Dr.',
-    firstName: leadData?.firstName || leadData?.name || '',
-    lastName: leadData?.lastName || '',
-    designation: leadData?.designation || '',
-    specialization: leadData?.specialization || '',
-    clinic: leadData?.clinic || leadData?.company || '',
-    licenseNumber: leadData?.licenseNumber || '',
-    city: leadData?.city || '',
-    state: leadData?.state || '',
-    area: leadData?.area || '',
-    pincode: leadData?.pincode || '',
-    address: leadData?.address || '',
-    googleMapsUrl: leadData?.googleMapsUrl || '',
-    phone: leadData?.phone || '',
-    whatsappNumber: leadData?.whatsappNumber || '',
-    email: leadData?.email || '',
-    receptionistPhone: leadData?.receptionistPhone || '',
-    nearbyChemistName: leadData?.nearbyChemistName || '',
-    nearbyChemistPhone: leadData?.nearbyChemistPhone || '',
-    stage: leadData?.stage || 'New',
-    priority: leadData?.priority || 'Medium',
-    source: leadData?.source || '',
-    notes: leadData?.notes || '',
+    prefix: seed?.prefix || 'Dr.',
+    firstName: seed?.firstName || seed?.name || '',
+    lastName: seed?.lastName || '',
+    designation: seed?.designation || '',
+    specialization: seed?.specialization || '',
+    clinic: seed?.clinic || seed?.company || '',
+    licenseNumber: seed?.licenseNumber || '',
+    city: seed?.city || '',
+    state: seed?.state || '',
+    area: seed?.area || '',
+    pincode: seed?.pincode || '',
+    address: seed?.address || '',
+    googleMapsUrl: seed?.googleMapsUrl || '',
+    phone: seed?.phone || '',
+    whatsappNumber: seed?.whatsappNumber || '',
+    email: seed?.email || '',
+    receptionistPhone: seed?.receptionistPhone || '',
+    nearbyChemistName: seed?.nearbyChemistName || '',
+    nearbyChemistPhone: seed?.nearbyChemistPhone || '',
+    stage: seed?.stage || 'New',
+    priority: seed?.priority || 'Medium',
+    source: seed?.source || '',
+    notes: seed?.notes || '',
     // Social & web links — optional, sent to the backend as-is.
-    socialInstagram: leadData?.socialInstagram || '',
-    socialFacebook: leadData?.socialFacebook || '',
-    website: leadData?.website || '',
-    socialLinkedIn: leadData?.socialLinkedIn || '',
+    socialInstagram: seed?.socialInstagram || '',
+    socialFacebook: seed?.socialFacebook || '',
+    website: seed?.website || '',
+    socialLinkedIn: seed?.socialLinkedIn || '',
   });
 
   const [followUpDate, setFollowUpDate] = useState<Date | null>(
-    leadData?.nextFollowUp ? new Date(leadData.nextFollowUp) : null
+    seed?.nextFollowUp ? new Date(seed.nextFollowUp) : null
   );
 
   const [showStage, setShowStage] = useState(false);
@@ -383,6 +438,18 @@ const AddLeadScreen = () => {
   const [showSource, setShowSource] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Flipped once the request has been outstanding long enough that silence would
+  // read as a hang. Reset in the same `finally` that clears `saving`.
+  const [slowNetwork, setSlowNetwork] = useState(false);
+  const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A submit can outlive the screen (the MR backgrounds the app mid-request), so
+  // never touch state after unmount.
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+    if (slowTimer.current) { clearTimeout(slowTimer.current); }
+  }, []);
   const [alertState, setAlertState] = useState<AlertState>(ALERT_HIDDEN);
 
   const showAlert = (title: string, message: string, type: AlertType = 'error') =>
@@ -410,11 +477,14 @@ const AddLeadScreen = () => {
     };
     fetchPharmacies();
     
-    if (editMode && leadData?.linkedPharmacy) {
-       // initialize selected from edit
-       const preSelectedIds = leadData.linkedPharmacy.filter((p: any) => p.pharmacyId).map((p: any) => p.pharmacyId);
+    // Restore the linked-pharmacy selection when editing an existing lead OR when
+    // reopening an unsent draft — a draft that lost its links on reopen would
+    // silently submit less than the MR originally entered.
+    const linked = (editMode ? leadData?.linkedPharmacy : null) ?? draftPayload?.linkedPharmacy;
+    if (Array.isArray(linked)) {
+       const preSelectedIds = linked.filter((p: any) => p.pharmacyId).map((p: any) => p.pharmacyId);
        setSelectedPharmacyIds(preSelectedIds);
-       const preCustom: CustomPharmacy[] = leadData.linkedPharmacy.filter((p: any) => !p.pharmacyId).map((p: any) => ({
+       const preCustom: CustomPharmacy[] = linked.filter((p: any) => !p.pharmacyId).map((p: any) => ({
          prefix: p.prefix || 'Mr.',
          firstName: p.firstName || '',
          lastName: p.lastName || '',
@@ -427,6 +497,7 @@ const AddLeadScreen = () => {
        }));
        setCustomPharmacies(preCustom);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, leadData]);
 
 
@@ -490,54 +561,103 @@ const AddLeadScreen = () => {
       return;
     }
 
-    setSaving(true);
-    try {
-      const timestamp = Date.now().toString().slice(-6);
-      
-      // Convert date to YYYY-MM-DD format in local timezone
-      const formatDateToISO = (date: Date | null): string | undefined => {
-        if (!date) return undefined;
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-      
-      
-      const payload: Record<string, unknown> = {
-        ...form,
-        leadType: 'doctor',
-        nextFollowUp: formatDateToISO(followUpDate),
-        linkedPharmacy: [
-          ...selectedPharmacyIds.map(id => ({ pharmacyId: id })),
-          ...customPharmacies.map(p => ({
-            name: p.name,
-            prefix: p.prefix,
-            firstName: cap(p.firstName.trim()),
-            lastName: cap(p.lastName.trim()),
-            phone: p.phone,
-            gstin: p.gst,
-            licenseNumber: p.license,
-            city: p.city,
-            state: p.state,
-          })),
-        ]
-      };
-      console.log('🚀 ~ handleSave ~ payload:', payload)
+    // Convert date to YYYY-MM-DD format in local timezone
+    const formatDateToISO = (date: Date | null): string | undefined => {
+      if (!date) return undefined;
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
 
+    const payload: Record<string, unknown> = {
+      ...form,
+      leadType: 'doctor',
+      nextFollowUp: formatDateToISO(followUpDate),
+      linkedPharmacy: [
+        ...selectedPharmacyIds.map(id => ({ pharmacyId: id })),
+        ...customPharmacies.map(p => ({
+          name: p.name,
+          prefix: p.prefix,
+          firstName: cap(p.firstName.trim()),
+          lastName: cap(p.lastName.trim()),
+          phone: p.phone,
+          gstin: p.gst,
+          licenseNumber: p.license,
+          city: p.city,
+          state: p.state,
+        })),
+      ],
+    };
+    // Stable across every retry of THIS form — the server keys its replay guard on
+    // it, which is what stops a timed-out submit from becoming a second lead.
+    if (!(editMode && leadData?.id)) {
+      payload.code = leadCodeRef.current;
+    }
+
+    setSaving(true);
+    setSlowNetwork(false);
+    slowTimer.current = setTimeout(() => {
+      if (mounted.current) { setSlowNetwork(true); }
+    }, SLOW_NETWORK_HINT_MS);
+
+    try {
       if (editMode && leadData?.id) {
         await apiClient.patch(`/leads/${leadData.id}`, payload);
       } else {
-        payload.code = `LED${timestamp}`;
+        // 201 = created, 200 = the server already had this `code` from an earlier
+        // attempt whose response never reached us. Both mean the lead is filed.
         await apiClient.post('/leads', payload);
       }
 
+      // The submission landed, so any local copy of it is now redundant.
+      if (openedDraft) { dispatch(discardLeadDraft(openedDraft.draftId)); }
       navigation.goBack();
     } catch (err: any) {
-      const message = err?.response?.data?.message || 'Something went wrong. Please try again.';
-      showAlert('Error', message);
+      const kind = classifyApiError(err);
+      const serverMessage = extractServerMessage(err);
+
+      // Editing an existing lead is not queued: a PATCH has no idempotency key, and
+      // replaying one blindly could overwrite a newer change made elsewhere.
+      const canQueue = !editMode && isRetriable(kind) && ownerId != null;
+
+      if (canQueue) {
+        const displayName = [form.prefix, form.firstName, form.lastName]
+          .filter(Boolean).join(' ').trim() || 'Untitled lead';
+        const draft = openedDraft
+          ? { ...openedDraft, payload, displayName, status: 'pending' as const, lastErrorKind: kind }
+          : buildLeadDraft({
+              mrId: ownerId as number,
+              leadType: 'doctor',
+              code: leadCodeRef.current,
+              payload,
+              displayName,
+            });
+        await dispatch(saveLeadDraft(draft));
+        // Informational, not an error: the work IS safe. A red error dialog here
+        // teaches MRs to panic and resubmit, which is the habit that created
+        // duplicates in the first place. Dismissing returns to the Leads list,
+        // where the draft is now visible as a row.
+        setAlertState({
+          visible: true,
+          type: 'info',
+          title: 'Saved to drafts',
+          message: messageForKind(kind, { queued: true, serverMessage, noun: 'lead' }),
+          confirmText: 'OK',
+          onConfirm: () => navigation.goBack(),
+        });
+      } else {
+        showAlert(
+          isRetriable(kind) ? 'Could not submit' : 'Error',
+          messageForKind(kind, { queued: false, serverMessage, noun: 'lead' }),
+        );
+      }
     } finally {
-      setSaving(false);
+      if (slowTimer.current) { clearTimeout(slowTimer.current); slowTimer.current = null; }
+      if (mounted.current) {
+        setSaving(false);
+        setSlowNetwork(false);
+      }
     }
   };
 
@@ -567,7 +687,7 @@ const AddLeadScreen = () => {
         </View>
 
         {/* Prefix dropdown */}
-        <Field label="Prefix">
+        <Field label="Prefix *">
           <TouchableOpacity
             style={styles.dropdown}
             activeOpacity={0.8}
@@ -993,7 +1113,12 @@ const AddLeadScreen = () => {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color={COLORS.white} />
+            <View style={styles.savingRow}>
+              <ActivityIndicator color={COLORS.white} />
+              {slowNetwork && (
+                <Text style={styles.savingHint}>Still submitting — weak signal</Text>
+              )}
+            </View>
           ) : (
             <Text style={styles.saveBtnText}>
               {editMode ? 'Update Lead' : 'Save Lead'}
@@ -1241,6 +1366,16 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontSize: FONTS.size.lg,
     fontFamily: FONTS.family.bold,
+    color: COLORS.white,
+  },
+  savingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  savingHint: {
+    fontSize: FONTS.size.sm,
+    fontFamily: FONTS.family.medium,
     color: COLORS.white,
   },
 });

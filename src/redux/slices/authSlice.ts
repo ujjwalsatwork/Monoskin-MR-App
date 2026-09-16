@@ -3,6 +3,7 @@ import { AxiosError } from 'axios';
 import apiClient from '@/services/apiClient';
 import { ENDPOINTS } from '@/constants/endpoints';
 import { clearVisitSession } from '@/services/visitSessionStorage';
+import { isMedicalRepresentative } from '@/constants/roles';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,25 @@ export const sendOtp = createAsyncThunk<SendOtpResponse, SendOtpPayload>(
     },
 );
 
+/** Shown when a live session belongs to an account that is not a medical rep. */
+export const NON_MR_SESSION_MESSAGE =
+    'This account is not a Medical Representative. Access to the MR app has been denied.';
+
+/**
+ * Terminate the server session, ignoring the network result.
+ *
+ * Split out of `performLogout` so the role gate below can end a session without
+ * dispatching anything — `checkSession` is itself mid-flight at that point and
+ * its own `rejected` case is what clears local state.
+ */
+const endServerSession = async (): Promise<void> => {
+    try {
+        await apiClient.post(ENDPOINTS.auth.logout);
+    } catch {
+        // Best effort. Local state is cleared regardless.
+    }
+};
+
 export const checkSession = createAsyncThunk<User>(
     'auth/checkSession',
     async (_, { rejectWithValue }) => {
@@ -91,7 +111,26 @@ export const checkSession = createAsyncThunk<User>(
                 method: 'GET',
                 url: ENDPOINTS.auth.me,
             });
-            console.log('🚀 ~ response:', response)
+
+            // MOB-01 — the role gate now lives on the session-restore path, not
+            // only on the screen that first signs an MR in.
+            //
+            // Before this, a non-MR who dismissed "Access Denied" still held a
+            // valid server session in the native cookie store; the next launch
+            // asked "am I signed in?", the server said yes, and this thunk
+            // admitted them with no role condition. A single force-close was the
+            // whole of the bypass.
+            //
+            // Rejecting here means the app never enters its main navigator for a
+            // non-MR role, however that session was obtained — and the session is
+            // killed server-side on the way out so the cookie cannot be replayed.
+            if (!isMedicalRepresentative(response.data?.role)) {
+                console.log('🚀 ~ checkSession ~ non-MR role rejected:', response.data?.role);
+                await endServerSession();
+                await clearVisitSession();
+                return rejectWithValue(NON_MR_SESSION_MESSAGE);
+            }
+
             return response.data;
         } catch (error) {
             return rejectWithValue(extractErrorMessage(error, 'Session expired'));
@@ -125,6 +164,23 @@ export const verifyOtp = createAsyncThunk<User, VerifyOtpPayload>(
                 url: ENDPOINTS.auth.verifyOtp,
                 data: { phone: payload.phone, otp: payload.otp },
             });
+
+            // MOB-01 — reject a non-MR here, inside the thunk, rather than on the
+            // screen after the fact.
+            //
+            // `verifyOtp.fulfilled` flips `isAuthenticated`, which swaps the root
+            // navigator to the main app on the very next render. Checking the role
+            // in the screen's callback therefore ran AFTER the MR-only UI had
+            // already mounted. Failing the thunk means the authenticated state is
+            // never entered at all, and the server session is ended on the way out
+            // so the cookie left in the native store cannot be replayed on the
+            // next launch.
+            if (!isMedicalRepresentative(response.data?.role)) {
+                console.log('🚀 ~ verifyOtp ~ non-MR role rejected:', response.data?.role);
+                await endServerSession();
+                return rejectWithValue(NON_MR_SESSION_MESSAGE);
+            }
+
             // The session cookie from the response is stored automatically by the
             // native cookie jar and sent on subsequent requests — no manual handling.
             return response.data;

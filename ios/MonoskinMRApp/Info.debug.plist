@@ -32,16 +32,26 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!-- MOB-10 — NSAllowsLocalNetworking was removed here.
+	<!-- DEBUG BUILDS ONLY (Debug and Staging.Debug configurations).
 
-	     It permits plaintext HTTP to .local names and private IP ranges. That is a
-	     development convenience for reaching a Metro bundler on the same Wi-Fi, and
-	     it has no place in a shipping build. It now lives only in Info.debug.plist,
-	     which the Debug and Staging.Debug configurations use. -->
+	     This file exists so the local-network exemption a developer needs to reach
+	     the Metro bundler over Wi-Fi cannot reach a shipping build (MOB-10). It is
+	     otherwise identical to Info.plist — keep the two in step when adding keys. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
+		<!-- Metro bundler over the LAN / on a physical device. Debug only. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
 		<!-- MOB-05 — certificate pinning, STAGING ONLY.
 
 		     Scoped to staging.monoskin.in deliberately. NSPinnedDomains applies

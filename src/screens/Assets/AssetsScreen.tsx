@@ -44,6 +44,8 @@ import {
   downloadAssetFile,
   resolveAssetUrl,
   formatFileSize,
+  assetCachePath,
+  prepareShareableAssetFile,
 } from '@/services/assetsService';
 
 // ─── Screen constants ──────────────────────────────────────────────────────────
@@ -91,8 +93,8 @@ const useLocalFile = (
 
     (async () => {
       try {
-        const ext = (item.fileType || 'bin').toLowerCase();
-        const path = `${RNFS.CachesDirectoryPath}/asset_${item.id}.${ext}`;
+        // Shared with Share, which reuses this copy instead of fetching again.
+        const path = assetCachePath(item);
 
         // Reuse the cached file only if it's fully downloaded. A partial file
         // from an interrupted download makes ExoPlayer read past EOF
@@ -766,29 +768,47 @@ const AssetsScreen = () => {
   };
 
   // ── Share ────────────────────────────────────────────────────────────────────
-  // Shares the document link (URL) as text rather than attaching the file.
+  // Attaches the ORIGINAL file — the same PDF or video that View shows — so every
+  // target in the share sheet receives the file itself. This used to share the
+  // link as a text message, and iOS "Save to Files" then saved a .txt holding the
+  // URL instead of the brochure.
+  //
+  // No `message` goes with the file: iOS adds a message as its own share item, and
+  // "Save to Files" would write it out as a separate .txt next to the PDF.
   const handleShare = async (item: AssetItem) => {
     const idStr = String(item.id);
     if (sharingId) return;
 
-    const rawUrl = item.fileUrl || item.imageUrl;
-    if (!rawUrl) {
+    if (!item.fileUrl && !item.imageUrl) {
       Alert.alert('Not available', 'No link is available to share for this item yet.');
       return;
     }
 
-    const link = resolveAssetUrl(rawUrl);
     setSharingId(idStr);
     try {
-      const message = buildShareMessage(item, link);
-      await Share.open({
-        title: item.title,
-        message,
-        failOnCancel: false,
-      });
+      if (item.fileUrl) {
+        // Reuses the copy View already cached when there is one, and verifies the
+        // file before sharing so an error page can never go out as the brochure.
+        const file = await prepareShareableAssetFile(item);
+        await Share.open({
+          title: item.title,
+          subject: item.title,
+          url: `file://${file.path}`,
+          type: file.mime,
+          failOnCancel: false,
+        });
+      } else if (item.imageUrl) {
+        // An image-only item has no file to attach, so its link is still shared.
+        await Share.open({
+          title: item.title,
+          message: buildShareMessage(item, resolveAssetUrl(item.imageUrl)),
+          failOnCancel: false,
+        });
+      }
     } catch (error) {
       if (!isUserCancelError(error)) {
         console.warn('Share error:', error);
+        Alert.alert('Could not share', 'This file could not be shared. Check your connection and try again.');
       }
     } finally {
       setSharingId(null);
