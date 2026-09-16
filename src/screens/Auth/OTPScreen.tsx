@@ -22,9 +22,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
-import { verifyOtp, sendOtp, logout } from '@/redux/slices/authSlice';
-
-const MR_ROLE = 'Medical Representative';
+import { verifyOtp, sendOtp, NON_MR_SESSION_MESSAGE } from '@/redux/slices/authSlice';
 
 const BACKGROUND_IMAGE = require('@/assets/images/background/background.png');
 
@@ -193,27 +191,38 @@ const OTPScreen = ({ route, navigation }: Props) => {
     const result = await dispatch(
       verifyOtp({ phone: mobileNumber, otp: otpValue }),
     );
+
+    // MOB-01 — the role gate moved into the `verifyOtp` thunk, which now fails
+    // rather than fulfilling for a non-MR account and ends the server session on
+    // its way out. So there is no longer a "signed in but rejected" state to
+    // unwind here: a non-MR simply never reaches the fulfilled branch, and no
+    // usable session is left in the cookie store for the next app launch.
+    //
+    // On success there is nothing left to navigate to either — `isAuthenticated`
+    // flips and the root navigator swaps the whole auth stack for the main app.
+    // The old `navigate('DeviceBinding')` raced that swap and never landed.
     if (verifyOtp.fulfilled.match(result)) {
-      if (result.payload.role !== MR_ROLE) {
-        dispatch(logout());
-        Alert.alert(
-          'Access Denied',
-          'No MR found with this account.',
-          [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
-          { cancelable: false },
-        );
-        return;
-      }
-      navigation.navigate('DeviceBinding');
-    } else {
-      const errorMsg =
-        typeof result.payload === 'string'
-          ? result.payload
-          : 'OTP verification failed';
-      Alert.alert('Error', errorMsg);
-      setOtp(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
+      return;
     }
+
+    const errorMsg =
+      typeof result.payload === 'string'
+        ? result.payload
+        : 'OTP verification failed';
+
+    if (errorMsg === NON_MR_SESSION_MESSAGE) {
+      Alert.alert(
+        'Access Denied',
+        'No MR found with this account.',
+        [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
+        { cancelable: false },
+      );
+      return;
+    }
+
+    Alert.alert('Error', errorMsg);
+    setOtp(['', '', '', '', '', '']);
+    inputRefs.current[0]?.focus();
   }, [otp, mobileNumber, dispatch, navigation]);
 
   const handleResend = useCallback(async () => {

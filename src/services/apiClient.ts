@@ -2,6 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'ax
 import Config from 'react-native-config';
 import { store } from '@/redux/store';
 import { logout } from '@/redux/slices/authSlice';
+import { getDeviceIntegrity } from './deviceIntegrity';
 
 // Base URL comes from the active environment file (.env.production / .env.staging),
 // selected automatically per build variant/scheme. Never hardcode a host here.
@@ -38,6 +39,21 @@ apiClient.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        // MOB-06 — report device integrity rather than block on it.
+        //
+        // The verdict from the launch-time root/jailbreak check rides along on every
+        // request, so the ERP can start counting compromised handsets in the real
+        // field estate before anyone decides to enforce anything. A server that does
+        // not read the header simply ignores it, which is why this is safe to ship
+        // ahead of the server-side work.
+        //
+        // Omitted entirely while the verdict is still 'unknown', so the header never
+        // asserts something the app has not actually established.
+        const integrity = getDeviceIntegrity();
+        if (integrity.verdict !== 'unknown') {
+            config.headers['X-Device-Integrity'] = integrity.verdict;
+        }
+
         // Cookie-session auth is handled by the native cookie store (withCredentials).
         // We intentionally do NOT inject a manual `Cookie` header — doing so overrode
         // the native cookie and was rejected by the server, causing a 401 on first login.

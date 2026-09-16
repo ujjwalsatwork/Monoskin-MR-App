@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '@/constants/colors';
+import { openPhoneNumber, openWhatsAppNumber } from '@/utils/externalLinks';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import {
@@ -1261,7 +1262,7 @@ const VisitDetailScreen = () => {
               style={[styles.contactBtn, {backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.black}]}
               onPress={() => {
                 const phone = doctorData?.phone ?? pharmacyData?.phone ?? leadData?.phone;
-                if (phone) { Linking.openURL(`tel:${phone}`); }
+                openPhoneNumber(phone);
               }}
             >
               <PhoneIconOutline width={18} height={18} />
@@ -1270,7 +1271,7 @@ const VisitDetailScreen = () => {
               style={styles.contactBtn}
               onPress={() => {
                 const whatsapp = doctorData?.whatsappNumber ?? pharmacyData?.whatsappNumber ?? leadData?.whatsappNumber;
-                if (whatsapp) { Linking.openURL(`whatsapp://send?phone=${whatsapp}`); }
+                openWhatsAppNumber(whatsapp);
               }}
             >
               <WhatsAppIcon width={18} height={18} />

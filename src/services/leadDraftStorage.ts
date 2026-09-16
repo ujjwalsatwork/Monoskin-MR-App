@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSecureItem, setSecureItem } from './secureStorage';
 import type { ApiFailureKind } from './apiError';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +28,21 @@ export const MAX_SYNC_ATTEMPTS = 8;
 
 /** Hard ceiling so a runaway queue can never fill the device. */
 const MAX_DRAFTS = 50;
+
+/**
+ * Upper bound on how long an abandoned draft may sit on the handset (MOB-09).
+ *
+ * Keeping drafts across logout is deliberate — an expired session is exactly when
+ * an MR has unsent work — but "kept indefinitely" is how a resold phone ends up
+ * carrying year-old doctor contact details. Thirty days is far longer than any
+ * legitimate offline gap: the queue drains on every app open, so a draft that has
+ * not moved in a month is not going to.
+ *
+ * Measured from `updatedAt`, which every attempt refreshes. That covers both cases
+ * the report asks for — a draft that never synced, and a draft whose owner has not
+ * signed in on this device — because neither advances the timestamp.
+ */
+export const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type LeadDraftStatus =
     /** Queued, waiting for a flush. */
@@ -155,7 +170,7 @@ const serialize = <T>(task: () => Promise<T>): Promise<T> => {
 
 const readRaw = async (): Promise<LeadDraft[]> => {
     try {
-        const raw = await AsyncStorage.getItem(LEAD_DRAFTS_KEY);
+        const raw = await getSecureItem(LEAD_DRAFTS_KEY);
         if (!raw) { return []; }
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) { return []; }
@@ -185,7 +200,7 @@ const capPerOwner = (drafts: LeadDraft[]): LeadDraft[] => {
 
 const writeRaw = async (drafts: LeadDraft[]): Promise<void> => {
     try {
-        await AsyncStorage.setItem(LEAD_DRAFTS_KEY, JSON.stringify(capPerOwner(drafts)));
+        await setSecureItem(LEAD_DRAFTS_KEY, JSON.stringify(capPerOwner(drafts)));
     } catch (err) {
         console.log('🚀 ~ writeLeadDrafts ~ error:', err);
     }
@@ -254,4 +269,34 @@ export const clearLeadDraftsForOwner = async (ownerId: number): Promise<void> =>
     serialize(async () => {
         const all = await readRaw();
         await writeRaw(all.filter(d => d.mrId !== ownerId));
+    });
+
+/**
+ * Delete every draft, for every owner, regardless of age.
+ *
+ * Backs the explicit "Clear local data" action for handset reassignment (MOB-09).
+ * Unlike `clearLeadDraftsForOwner` this is not scoped to the signed-in MR — the
+ * whole point is to leave nothing behind for the next person to hold the phone.
+ */
+export const clearAllLeadDrafts = async (): Promise<void> =>
+    serialize(async () => {
+        await writeRaw([]);
+    });
+
+/**
+ * Drop drafts that have sat untouched past the retention window.
+ *
+ * Runs at launch rather than inside `readRaw`, so a deletion is never a surprise
+ * side effect of an unrelated read or write. Returns how many went, for the log.
+ */
+export const purgeExpiredLeadDrafts = async (now = Date.now()): Promise<number> =>
+    serialize(async () => {
+        const all = await readRaw();
+        const kept = all.filter(d => now - d.updatedAt < DRAFT_MAX_AGE_MS);
+        const removed = all.length - kept.length;
+        if (removed > 0) {
+            await writeRaw(kept);
+            console.log('🚀 ~ purgeExpiredLeadDrafts ~ removed:', removed);
+        }
+        return removed;
     });

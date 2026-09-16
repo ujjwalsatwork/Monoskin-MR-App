@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Linking,
   Platform,
   ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
 import { FONTS } from '@/constants/fonts';
+import { openNavigationTo, openPhoneNumber } from '@/utils/externalLinks';
 import {
   SendArrowIcon,
   PhoneIconOutline,
@@ -197,17 +197,14 @@ const RouteMapScreen = () => {
 
   const handleStartNavigation = () => {
     if (!targetStop || routeData.readOnly || !hasCoords(targetStop)) return;
-    const url = Platform.select({
-      ios: `maps://maps.apple.com/?daddr=${targetStop.lat},${targetStop.lng}&dirflg=d`,
-      android: `google.navigation:q=${targetStop.lat},${targetStop.lng}`,
-    });
-    if (url) Linking.openURL(url);
+    // MOB-08 — coordinates are validated and the URL rebuilt inside the helper,
+    // so a stop whose lat/lng arrived as text from the server cannot smuggle in a
+    // second scheme or a query string.
+    openNavigationTo(targetStop.lat, targetStop.lng, Platform.OS === 'ios' ? 'ios' : 'android');
   };
 
   const handleCall = () => {
-    if (targetStop?.phone) {
-      Linking.openURL(`tel:${targetStop.phone}`);
-    }
+    openPhoneNumber(targetStop?.phone);
   };
 
   const handleRecenter = () => {

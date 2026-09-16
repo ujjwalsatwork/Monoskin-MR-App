@@ -2,12 +2,13 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, TextInput, Platform, ActivityIndicator,
-  RefreshControl, Linking,
+  RefreshControl,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/redux/store';
 import { fetchMyProfile } from '@/redux/slices/profileSlice';
 import { COLORS } from '@/constants/colors';
+import { openEmailAddress, openPhoneNumber } from '@/utils/externalLinks';
 import { FONTS } from '@/constants/fonts';
 import Header from '@/components/common/Header';
 import { SearchIcon, PhoneIconOutline, EmailIcon, PlayIcon } from '@/assets/images';
@@ -175,14 +176,14 @@ const LeadCard = ({ item }: { item: Lead }) => {
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => item.phone && Linking.openURL(`tel:${item.phone}`)}
+            onPress={() => { openPhoneNumber(item.phone); }}
           >
             <PhoneIconOutline width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => item.email && Linking.openURL(`mailto:${item.email}`)}
+            onPress={() => { openEmailAddress(item.email); }}
           >
             <EmailIcon width={20} height={20} stroke={COLORS.white} />
           </TouchableOpacity>

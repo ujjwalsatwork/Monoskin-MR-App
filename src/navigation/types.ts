@@ -20,12 +20,20 @@ export type OrderCreateData = {
     items: OrderItemPayload[];
 };
 
+// MOB-02 — the `DeviceBinding` / `RequestUnbind` / `UnbindSuccess` routes were
+// removed. They presented a device-binding control that was wired to nothing: the
+// confirm button called a `login` function that does not exist on `useAuth()`, so
+// it always threw, and the session had already been granted at the previous step
+// regardless. The ERP has no device-registration endpoint to bind against either
+// (there is no device column in the schema and no bind/unbind route on the server),
+// so the screens could not be made real from the app side alone.
+//
+// An inert control is worse than an absent one, because it gets relied upon. If
+// device binding becomes a product requirement, it needs a server-side register
+// step first; the removed screens are in git history at commit dd7e6e0.
 export type AuthStackParamList = {
     Login: undefined;
     OTP: { mobileNumber: string };
-    DeviceBinding: undefined;
-    RequestUnbind: undefined;
-    UnbindSuccess: { deviceName: string; deviceId: string; reason: string };
     ContactSupport: undefined;
 };
 

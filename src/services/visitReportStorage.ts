@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSecureItem, removeSecureItem, setSecureItem } from './secureStorage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // In-progress visit report — crash-survivable snapshot.
@@ -96,7 +96,7 @@ export const readVisitReport = async (
 ): Promise<VisitReportSnapshot['report'] | null> => {
     if (ownerId == null) { return null; }
     try {
-        const raw = await AsyncStorage.getItem(VISIT_REPORT_KEY);
+        const raw = await getSecureItem(VISIT_REPORT_KEY);
         if (!raw) { return null; }
         const parsed = JSON.parse(raw);
         if (!isValid(parsed)) { await clearVisitReport(); return null; }
@@ -123,7 +123,7 @@ export const writeVisitReport = async (
             savedAt: Date.now(),
             report,
         };
-        await AsyncStorage.setItem(VISIT_REPORT_KEY, JSON.stringify(snapshot));
+        await setSecureItem(VISIT_REPORT_KEY, JSON.stringify(snapshot));
     } catch (err) {
         console.log('🚀 ~ writeVisitReport ~ error:', err);
     }
@@ -131,7 +131,7 @@ export const writeVisitReport = async (
 
 export const clearVisitReport = async (): Promise<void> => {
     try {
-        await AsyncStorage.removeItem(VISIT_REPORT_KEY);
+        await removeSecureItem(VISIT_REPORT_KEY);
     } catch (err) {
         console.log('🚀 ~ clearVisitReport ~ error:', err);
     }
