@@ -8,6 +8,14 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# Map custom build configurations to their base type so CocoaPods generates the
+# correct xcconfig for each (production = Debug/Release, staging = Staging.*).
+project 'MonoskinMRApp',
+  'Debug' => :debug,
+  'Release' => :release,
+  'Staging.Debug' => :debug,
+  'Staging.Release' => :release
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green

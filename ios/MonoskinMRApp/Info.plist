@@ -4,10 +4,16 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDisplayName</key>
-	<string>MonoskinMRApp</string>
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,17 +32,81 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- MOB-10 — NSAllowsLocalNetworking was removed here.
+
+	     It permits plaintext HTTP to .local names and private IP ranges. That is a
+	     development convenience for reaching a Metro bundler on the same Wi-Fi, and
+	     it has no place in a shipping build. It now lives only in Info.debug.plist,
+	     which the Debug and Staging.Debug configurations use. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
+		<!-- MOB-05 — certificate pinning, STAGING ONLY.
+
+		     Scoped to staging.monoskin.in deliberately. NSPinnedDomains applies
+		     only to the domains named here, so a production build using this same
+		     file is completely unaffected: it never contacts staging.monoskin.in.
+		     Validate pinning through a staging release cycle, then add an
+		     erp.monoskin.in entry with the same four pins to enforce it in
+		     production. See docs/SECURITY_REMEDIATION.md.
+
+		     CA identities, not leaf: the certificate is issued by Let's Encrypt and
+		     renews roughly every 60 days with a possible key change, so pinning the
+		     leaf would lock the field force out on renewal. Pinning the issuing
+		     chain survives every renewal while still refusing any certificate from
+		     an attacker-installed authority, which is the threat in scope.
+
+		     Any ONE of these matching the presented chain is sufficient. -->
+		<key>NSPinnedDomains</key>
+		<dict>
+			<key>staging.monoskin.in</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+				<key>NSPinnedCAIdentities</key>
+				<array>
+					<!-- ISRG Root X1 — expires 2035-06-04 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</string>
+					</dict>
+					<!-- ISRG Root X2 — expires 2032-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</string>
+					</dict>
+					<!-- ISRG Root YE — expires 2032-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=</string>
+					</dict>
+					<!-- Let's Encrypt YE1 intermediate — expires 2028-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=</string>
+					</dict>
+				</array>
+			</dict>
+		</dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow Monoskin MR to take a profile photo or capture expense receipts</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Allow Monoskin MR to access your location for visit tracking and route management</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow Monoskin MR to select a profile photo or upload expense receipts from your library</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>DMSans-Regular.ttf</string>
+		<string>DMSans-Medium.ttf</string>
+		<string>DMSans-Bold.ttf</string>
+		<string>DMSans-Thin.ttf</string>
+		<string>DMSans-Light.ttf</string>
+		<string>DMSans-Italic.ttf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

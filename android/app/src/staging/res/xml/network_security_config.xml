@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MOB-05 — certificate pinning. STAGING FLAVOUR ONLY.
+
+  This file lives in the `staging` source set, so it is merged into staging builds
+  and is not present in the production APK/AAB at all. Validate pinning through a
+  staging release cycle, then copy this file to src/main/res/xml/ and add the
+  erp.monoskin.in domain-config to enforce it in production. See
+  docs/SECURITY_REMEDIATION.md.
+
+  WHY CA PINS AND NOT A LEAF PIN
+  staging.monoskin.in presents a Let's Encrypt certificate, which renews roughly
+  every 60 days and may change key on renewal. Pinning the leaf would lock the
+  field force out of the app at the first renewal. Pinning the issuing chain
+  survives every renewal while still refusing any certificate signed by an
+  attacker-installed authority — a corporate MDM CA or one planted on a rooted
+  handset — which is precisely the threat the assessment describes.
+
+  Android requires at least one match ANYWHERE in the presented chain, so listing
+  four pins increases availability without weakening the control.
+
+  THE EXPIRATION IS A SAFETY VALVE, NOT A DEADLINE
+  After the date below Android stops enforcing pinning rather than failing closed.
+  That is deliberate: an unattended field handset that misses an update must
+  degrade to ordinary TLS validation, not to a brick. Refresh the pins and push the
+  date out well before it arrives.
+
+  TO RE-GENERATE THESE PINS:
+    openssl s_client -connect staging.monoskin.in:443 -servername staging.monoskin.in \
+      -showcerts </dev/null 2>/dev/null \
+      | openssl x509 -pubkey -noout \
+      | openssl pkey -pubin -outform der \
+      | openssl dgst -sha256 -binary | openssl enc -base64
+  (repeat per certificate in the chain)
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">staging.monoskin.in</domain>
+        <pin-set expiration="2028-06-01">
+            <!-- ISRG Root X1 — expires 2035-06-04 -->
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- ISRG Root X2 — expires 2032-09-02 -->
+            <pin digest="SHA-256">diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</pin>
+            <!-- ISRG Root YE — expires 2032-09-02 -->
+            <pin digest="SHA-256">sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=</pin>
+            <!-- Let's Encrypt YE1 intermediate — expires 2028-09-02 -->
+            <pin digest="SHA-256">brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>

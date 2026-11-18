@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>CFBundleDisplayName</key>
+	<string>$(APP_DISPLAY_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<!-- DEBUG BUILDS ONLY (Debug and Staging.Debug configurations).
+
+	     This file exists so the local-network exemption a developer needs to reach
+	     the Metro bundler over Wi-Fi cannot reach a shipping build (MOB-10). It is
+	     otherwise identical to Info.plist — keep the two in step when adding keys. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<!-- Metro bundler over the LAN / on a physical device. Debug only. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+		<!-- MOB-05 — certificate pinning, STAGING ONLY.
+
+		     Scoped to staging.monoskin.in deliberately. NSPinnedDomains applies
+		     only to the domains named here, so a production build using this same
+		     file is completely unaffected: it never contacts staging.monoskin.in.
+		     Validate pinning through a staging release cycle, then add an
+		     erp.monoskin.in entry with the same four pins to enforce it in
+		     production. See docs/SECURITY_REMEDIATION.md.
+
+		     CA identities, not leaf: the certificate is issued by Let's Encrypt and
+		     renews roughly every 60 days with a possible key change, so pinning the
+		     leaf would lock the field force out on renewal. Pinning the issuing
+		     chain survives every renewal while still refusing any certificate from
+		     an attacker-installed authority, which is the threat in scope.
+
+		     Any ONE of these matching the presented chain is sufficient. -->
+		<key>NSPinnedDomains</key>
+		<dict>
+			<key>staging.monoskin.in</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+				<key>NSPinnedCAIdentities</key>
+				<array>
+					<!-- ISRG Root X1 — expires 2035-06-04 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</string>
+					</dict>
+					<!-- ISRG Root X2 — expires 2032-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</string>
+					</dict>
+					<!-- ISRG Root YE — expires 2032-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=</string>
+					</dict>
+					<!-- Let's Encrypt YE1 intermediate — expires 2028-09-02 -->
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=</string>
+					</dict>
+				</array>
+			</dict>
+		</dict>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow Monoskin MR to take a profile photo or capture expense receipts</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Allow Monoskin MR to access your location for visit tracking and route management</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow Monoskin MR to select a profile photo or upload expense receipts from your library</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>DMSans-Regular.ttf</string>
+		<string>DMSans-Medium.ttf</string>
+		<string>DMSans-Bold.ttf</string>
+		<string>DMSans-Thin.ttf</string>
+		<string>DMSans-Light.ttf</string>
+		<string>DMSans-Italic.ttf</string>
+	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+</dict>
+</plist>
